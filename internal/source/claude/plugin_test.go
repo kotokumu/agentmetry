@@ -52,7 +52,7 @@ func TestPluginProfilesClaudeCodeRequestUsage(t *testing.T) {
 	if context.RunID != "session-1" || context.AgentID != "agent-1" || context.ParentAgentID != "parent-1" {
 		t.Fatalf("canonical identity was not derived: %#v", context)
 	}
-	if context.Tokens.Input != 100 || context.Tokens.Output != 20 || context.Tokens.CacheRead != 70 || context.Tokens.CacheWrite != 4 {
+	if context.Tokens.Input != 174 || context.Tokens.Output != 20 || context.Tokens.CacheRead != 70 || context.Tokens.CacheWrite != 4 {
 		t.Fatalf("canonical usage was not derived: %#v", context.Tokens)
 	}
 }
@@ -71,8 +71,26 @@ func TestPluginProfilesClaudePromptCacheInputAliases(t *testing.T) {
 	})
 
 	usage := canonical.DeriveAgentContext(event.Attributes).Tokens
-	if usage.Input != 100 || usage.Output != 20 || usage.CacheRead != 70 || usage.CacheWrite != 4 {
+	if usage.Input != 174 || usage.Output != 20 || usage.CacheRead != 70 || usage.CacheWrite != 4 {
 		t.Fatalf("Claude prompt-cache usage was not normalized: %#v", usage)
+	}
+}
+
+func TestPluginDoesNotDoubleCountAlreadyNormalizedClaudeInput(t *testing.T) {
+	event := claude.New().Normalize(source.Event{
+		Name: "claude_code.api_request",
+		Attributes: map[string]any{
+			"input_tokens":                         int64(100),
+			"cache_read_tokens":                    int64(70),
+			"cache_creation_tokens":                int64(4),
+			"gen_ai.usage.input_tokens":            int64(174),
+			"gen_ai.usage.cache_read.input_tokens": int64(70),
+		},
+	})
+
+	usage := canonical.DeriveAgentContext(event.Attributes).Tokens
+	if usage.Input != 174 || usage.CacheRead != 70 {
+		t.Fatalf("already normalized Claude input was changed: %#v", usage)
 	}
 }
 

@@ -58,7 +58,7 @@ func TestClaudeTelemetryBuildsDashboardParityProjection(t *testing.T) {
 	if len(overview.Sessions) != 1 || overview.Sessions[0].ID != "claude-session" {
 		t.Fatalf("sessions = %#v", overview.Sessions)
 	}
-	if overview.Tokens != (canonical.TokenUsage{Input: 100, Output: 20, CacheRead: 70, CacheWrite: 4}) {
+	if overview.Tokens != (canonical.TokenUsage{Input: 174, Output: 20, CacheRead: 70, CacheWrite: 4}) {
 		t.Fatalf("token usage = %#v", overview.Tokens)
 	}
 	if overview.SignalCounts != (query.SignalCounts{Traces: 2, Logs: 3, Metrics: 4}) {
@@ -71,7 +71,7 @@ func TestClaudeTelemetryBuildsDashboardParityProjection(t *testing.T) {
 		case activity.Name == "gen_ai.user_prompt":
 			prompt = activity.Kind == canonical.ActivityPrompt && activity.Content == "Inspect the repository"
 		case activity.Name == "gen_ai.model.request":
-			request = activity.Kind == canonical.ActivityResponse && activity.Model == "claude-example" && activity.Tokens.Input == 100
+			request = activity.Kind == canonical.ActivityResponse && activity.Model == "claude-example" && activity.Tokens.Input == 174
 		case activity.Name == "gen_ai.model.request.trace":
 			tracedRequest = activity.Kind == canonical.ActivityResponse && activity.AgentID == "agent-7" && activity.TraceID != "" && activity.Tokens.Total() == 0
 		case activity.Name == "gen_ai.response.completed":
