@@ -69,11 +69,11 @@ func TestClaudeTelemetryBuildsDashboardParityProjection(t *testing.T) {
 	for _, activity := range overview.Sessions[0].Activities {
 		switch {
 		case activity.Name == "gen_ai.user_prompt":
-			prompt = activity.Kind == canonical.ActivityPrompt && activity.Content == "Inspect the repository"
+			prompt = activity.Kind == canonical.ActivityPrompt && activity.Content == "Inspect the repository" && activity.PromptID == "prompt-1" && activity.RelatedTraceID != ""
 		case activity.Name == "gen_ai.model.request":
-			request = activity.Kind == canonical.ActivityResponse && activity.Model == "claude-example" && activity.Tokens.Input == 100
+			request = activity.Kind == canonical.ActivityResponse && activity.Model == "claude-example" && activity.Tokens.Input == 100 && activity.PromptID == "prompt-1" && activity.UsageID == "client-request-1" && activity.RelatedTraceID != ""
 		case activity.Name == "gen_ai.model.request.trace":
-			tracedRequest = activity.Kind == canonical.ActivityResponse && activity.AgentID == "agent-7" && activity.TraceID != "" && activity.Tokens.Total() == 0
+			tracedRequest = activity.Kind == canonical.ActivityResponse && activity.AgentID == "agent-7" && activity.TraceID != "" && activity.UsageID == "client-request-1" && activity.Tokens.Total() == 0
 		case activity.Name == "gen_ai.response.completed":
 			response = activity.Kind == canonical.ActivityResponse && activity.Content == "Inspection complete"
 		case activity.Name == "gen_ai.tool":
@@ -139,6 +139,7 @@ func claudeTraces(now time.Time) ptrace.Traces {
 	request.Attributes().PutStr("agent.name", "Explore")
 	request.Attributes().PutStr("gen_ai.request.model", "claude-example")
 	request.Attributes().PutStr("client_request_id", "client-request-1")
+	request.Attributes().PutStr("prompt.id", "prompt-1")
 	request.Attributes().PutInt("input_tokens", 100)
 	request.Attributes().PutInt("output_tokens", 20)
 

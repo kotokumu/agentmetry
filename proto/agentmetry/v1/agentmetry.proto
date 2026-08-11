@@ -106,6 +106,10 @@ message Activity {
   TokenUsage tokens = 22;
   optional double cost_usd = 23;
   bool contributes_to_total = 24;
+  string prompt_id = 25;
+  string usage_id = 26;
+  string related_trace_id = 27;
+  string related_span_id = 28;
 }
 
 message AgentSummary {

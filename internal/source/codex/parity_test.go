@@ -54,11 +54,22 @@ func TestCodexNativeUsageBuildsOneObservedDashboardTotal(t *testing.T) {
 	if overview.Tokens != want {
 		t.Fatalf("token usage = %#v, want %#v", overview.Tokens, want)
 	}
-	if len(overview.Sessions[0].Activities) != 2 {
+	if len(overview.Sessions[0].Activities) != 3 {
+		// The prompt event is part of the conversation evidence as well.
 		t.Fatalf("activities = %#v", overview.Sessions[0].Activities)
 	}
 	contributing := 0
+	var prompt, usage, tracedUsage bool
 	for _, activity := range overview.Sessions[0].Activities {
+		if activity.Kind == canonical.ActivityPrompt {
+			prompt = activity.PromptID == "turn-1" && activity.RelatedTraceID != ""
+		}
+		if activity.Name == "gen_ai.response.completed" {
+			usage = activity.UsageID == "response-1" && activity.PromptID == "turn-1" && activity.RelatedTraceID != ""
+		}
+		if activity.Signal == canonical.SignalTrace {
+			tracedUsage = activity.UsageID == "response-1" && activity.TraceID != ""
+		}
 		if activity.ContributesToTotal {
 			contributing++
 			if activity.Tokens != want {
@@ -69,6 +80,9 @@ func TestCodexNativeUsageBuildsOneObservedDashboardTotal(t *testing.T) {
 	if contributing != 1 {
 		t.Fatalf("contributing activities = %d, want one authoritative call", contributing)
 	}
+	if !prompt || !usage || !tracedUsage {
+		t.Fatalf("missing Codex prompt/usage correlation: %#v", overview.Sessions[0].Activities)
+	}
 }
 
 func codexUsageLogs(now time.Time) plog.Logs {
@@ -77,10 +91,18 @@ func codexUsageLogs(now time.Time) plog.Logs {
 	resource.Resource().Attributes().PutStr("service.name", "codex")
 	resource.Resource().Attributes().PutStr("conversation.id", "thread-1")
 	record := resource.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	prompt := resource.ScopeLogs().At(0).LogRecords().AppendEmpty()
+	prompt.SetTimestamp(pcommon.NewTimestampFromTime(now.Add(-time.Second)))
+	prompt.SetEventName("codex.user_prompt")
+	prompt.Attributes().PutStr("turn_id", "turn-1")
+	prompt.Attributes().PutStr("prompt", "Review the repository")
+
+	record = resource.ScopeLogs().At(0).LogRecords().AppendEmpty()
 	record.SetTimestamp(pcommon.NewTimestampFromTime(now))
 	record.SetEventName("codex.sse_event")
 	record.Attributes().PutStr("event.kind", "response.completed")
 	record.Attributes().PutStr("response.id", "response-1")
+	record.Attributes().PutStr("turn_id", "turn-1")
 	record.Attributes().PutInt("input_tokens", 32161)
 	record.Attributes().PutInt("cached_input_tokens", 1920)
 	record.Attributes().PutInt("output_tokens", 47)
@@ -100,6 +122,7 @@ func codexUsageTraces(now time.Time) ptrace.Traces {
 	span.SetStartTimestamp(pcommon.NewTimestampFromTime(now.Add(-time.Second)))
 	span.SetEndTimestamp(pcommon.NewTimestampFromTime(now))
 	span.Attributes().PutStr("response.id", "response-1")
+	span.Attributes().PutStr("turn_id", "turn-1")
 	span.Attributes().PutInt("input_tokens", 32161)
 	span.Attributes().PutInt("cached_input_tokens", 1920)
 	span.Attributes().PutInt("output_tokens", 47)

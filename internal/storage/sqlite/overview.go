@@ -75,7 +75,7 @@ func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since st
   agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, started_at, ended_at, observed_at, status, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, usage_id
+  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id
 FROM (
   SELECT source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
@@ -84,6 +84,7 @@ FROM (
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') AS usage_role,
+    COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), '') AS prompt_id,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '') AS usage_id
   FROM (SELECT source, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
@@ -100,6 +101,7 @@ FROM (
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), ''),
+    COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
   FROM (SELECT source, trace_id, span_id, name, body,
     activity_kind, tool_name, target_agent_id, target_agent_type,
@@ -114,6 +116,7 @@ FROM (
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, observed_at, observed_at, observed_at, '', cost_usd,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), 'aggregate'),
+    COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
   FROM (SELECT source, name, value, agent_id, agent_definition, agent_type, parent_agent_id,
     run_id, model, observed_at, cost_usd, attributes_json
@@ -143,7 +146,7 @@ LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 	if err := rows.Err(); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("iterate recent activity: %w", err)
 	}
-	return activities, nil
+	return enrichActivityRelationships(activities), nil
 }
 
 // activityWhere only interpolates trusted SQL fragments while keeping all
@@ -184,7 +187,7 @@ func (store *Store) scanActivity(row rowScanner) (query.Activity, error) {
 		&startedAt, &endedAt, &observedAt, &activity.Status, &cost,
 		&activity.Tokens.Input, &activity.Tokens.Output, &activity.Tokens.CacheRead, &activity.Tokens.CacheWrite, &activity.Tokens.Reasoning,
 		&inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported,
-		&activity.UsageRole, &activity.UsageID,
+		&activity.UsageRole, &activity.PromptID, &activity.UsageID,
 	); err != nil {
 		return query.Activity{}, err
 	}
@@ -442,6 +445,51 @@ func enrichAgentEvidence(activities []query.Activity) []query.Activity {
 		activity.Model = evidence.model.value
 	}
 	return enriched
+}
+
+type activityLink struct {
+	traceID string
+	spanID  string
+}
+
+// enrichActivityRelationships keeps native trace identity intact while making
+// source events navigable through the trace/span that carries the same usage
+// or prompt identity. Source-specific plugins define the identity aliases;
+// storage only resolves relationships between already-normalized evidence.
+func enrichActivityRelationships(activities []query.Activity) []query.Activity {
+	byUsage := make(map[string]activityLink)
+	byPrompt := make(map[string]activityLink)
+	for _, activity := range activities {
+		if activity.TraceID == "" {
+			continue
+		}
+		link := activityLink{traceID: activity.TraceID, spanID: activity.SpanID}
+		if activity.UsageID != "" {
+			byUsage[activity.Source+"|"+activity.UsageID] = link
+		}
+		if activity.PromptID != "" {
+			byPrompt[activity.Source+"|"+activity.PromptID] = link
+		}
+	}
+	result := append([]query.Activity(nil), activities...)
+	for index := range result {
+		activity := &result[index]
+		if activity.TraceID != "" {
+			continue
+		}
+		var link activityLink
+		if activity.UsageID != "" {
+			link = byUsage[activity.Source+"|"+activity.UsageID]
+		}
+		if link.traceID == "" && activity.PromptID != "" {
+			link = byPrompt[activity.Source+"|"+activity.PromptID]
+		}
+		if link.traceID != "" {
+			activity.RelatedTraceID = link.traceID
+			activity.RelatedSpanID = link.spanID
+		}
+	}
+	return result
 }
 
 func mergeAgentMetadataField(field *agentMetadataField, value string, priority int) {

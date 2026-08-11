@@ -52,8 +52,11 @@ type Activity struct {
 	Tokens             canonical.TokenUsage   `json:"tokens"`
 	CostUSD            *float64               `json:"costUsd,omitempty"`
 	ContributesToTotal bool                   `json:"contributesToTotal"`
+	PromptID           string                 `json:"promptId,omitempty"`
+	UsageID            string                 `json:"usageId,omitempty"`
+	RelatedTraceID     string                 `json:"relatedTraceId,omitempty"`
+	RelatedSpanID      string                 `json:"relatedSpanId,omitempty"`
 	UsageRole          string                 `json:"-"`
-	UsageID            string                 `json:"-"`
 }
 
 type AgentSession struct {

@@ -14,6 +14,7 @@ import "../components/trace-waterfall";
 import { agentmetryClient, type ActivityPage } from "../api/agentmetry-client";
 import type { RangeSelectedDetail } from "../components/time-range-filter";
 import { observedActivityCount, selectedSession } from "../model/selectors";
+import { agentDisplayLabel } from "../model/agent-label";
 import { conversationTargetFromLocation } from "../model/trace-analysis";
 import {
   initialModel,
@@ -198,7 +199,7 @@ export class AgentmetryApp extends LitElement {
     const agentPage = this.agentActivityPage?.sessionId === selected.id && this.agentActivityPage.agentId === selectedAgentId
       ? this.agentActivityPage
       : undefined;
-    return html`<section class="panel operations-panel"><div class="operations-heading"><h2>Operations & messages</h2>${selectedAgent ? html`<div class="agent-filter"><span>Filtered by</span><strong>${selectedAgent.agentDefinition || selectedAgent.agentId}</strong><button type="button" @click=${this.clearAgentSelection}>All agents</button></div>` : null}</div><am-activity-table
+    return html`<section class="panel operations-panel"><div class="operations-heading"><h2>Operations & messages</h2>${selectedAgent ? html`<div class="agent-filter"><span>Filtered by</span><strong>${agentDisplayLabel(selectedAgent)}</strong><button type="button" @click=${this.clearAgentSelection}>All agents</button></div>` : null}</div><am-activity-table
       .activities=${activities}
       .hasEarlier=${selectedAgentId ? agentPage?.hasEarlier ?? false : selected.hasEarlier ?? false}
       .hasMore=${selectedAgentId ? agentPage?.hasMore ?? false : selected.hasMore ?? selected.activities.length < selected.activityCount}

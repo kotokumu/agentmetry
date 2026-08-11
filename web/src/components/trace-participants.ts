@@ -1,7 +1,9 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Trace } from "../model/update";
-import { aggregateTraceAgentUsage, tokenEvidence } from "../model/trace-analysis";
+import { aggregateTraceAgentUsage } from "../model/trace-analysis";
+import { agentDisplayLabel } from "../model/agent-label";
+import "./token-breakdown";
 
 @customElement("am-trace-participants")
 export class TraceParticipants extends LitElement {
@@ -26,21 +28,9 @@ export class TraceParticipants extends LitElement {
       <li><small>${conversation.sourceId || "unknown source"}</small><code>${conversation.id}</code></li>`)}
     </ul></section>
     <section><h3>Agents</h3><ul>${agents.map((agent) => html`
-      <li><small>${agent.sourceId} · ${agent.conversationId}</small><strong>${agent.agentDefinition || agent.agentId || "N/A"}</strong><code>${agent.agentId || "N/A"}</code><small>${[agent.agentType, agent.model].filter(Boolean).join(" · ") || "N/A"}</small><small>${agent.activityCount.toLocaleString()} activities · ${tokenSummary(agent.tokens)}</small><small>${tokenComponents(agent.tokens)}</small></li>`)}
+      <li><small>${agent.sourceId} · ${agent.conversationId}</small><strong>${agentDisplayLabel(agent)}</strong><code>${agent.agentId || "unavailable"}</code><small>${[agent.agentType, agent.model].filter(Boolean).join(" · ") || "Metadata unavailable"}</small><small>${agent.activityCount.toLocaleString()} activities</small><am-token-breakdown .usage=${agent.tokens} .compact=${true}></am-token-breakdown></li>`)}
     </ul></section>`;
   }
 }
-
-const tokenComponents = (tokens: import("../model/update").TokenUsage) => {
-  const { components } = tokenEvidence(tokens);
-  return components.length === 0 ? "N/A" : components.map(([label, value]) => `${label} ${value.toLocaleString()}`).join(" · ");
-};
-
-const tokenSummary = (tokens: import("../model/update").TokenUsage) => {
-  const evidence = tokenEvidence(tokens);
-  if (evidence.kind === "total") return `${evidence.total?.toLocaleString()} observed tokens`;
-  if (evidence.kind === "partial") return `Partial usage · ${evidence.components.map(([label, value]) => `${label} ${value.toLocaleString()}`).join(" · ")}`;
-  return "N/A";
-};
 
 declare global { interface HTMLElementTagNameMap { "am-trace-participants": TraceParticipants } }

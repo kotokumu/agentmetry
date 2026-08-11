@@ -1,6 +1,8 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, ActivityDirection } from "../model/update";
+import { agentDisplayLabel } from "../model/agent-label";
+import "./token-breakdown";
 
 @customElement("am-activity-table")
 export class ActivityTable extends LitElement {
@@ -43,6 +45,9 @@ export class ActivityTable extends LitElement {
     .kind { display: inline-block; border: 1px solid var(--am-border); border-radius: 99px; padding: 3px 7px; font-size: .68rem; text-transform: uppercase; }
     .tokens { white-space: nowrap; }
     .tokens small { display: block; color: var(--am-muted); white-space: normal; }
+    .correlation { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+    .correlation small { border: 1px solid var(--am-border); border-radius: 99px; padding: 2px 6px; color: var(--am-muted); font: .64rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
+    .rollup { margin-top: 5px; color: var(--am-muted); font-size: .64rem; white-space: normal; }
     .trace { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--am-accent); cursor: pointer; padding: 0; font: .72rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
     .trace:hover, .trace:focus-visible { color: var(--am-text); }
     .loading { padding: 16px; color: var(--am-muted); text-align: center; font-size: .78rem; }
@@ -80,13 +85,13 @@ export class ActivityTable extends LitElement {
           && activity.spanId === this.highlightedSpanId;
         return html`<tr data-highlighted=${String(highlighted)} aria-current=${highlighted ? "location" : "false"}>
         <td>${formatTime(activity.observedAt)}</td>
-        <td><small>Definition</small><br><strong>${activity.agentDefinition || "N/A"}</strong><br><small>Runtime ID: <code>${activity.agentId || "main"}</code></small><br><small>Type: ${activity.agentType || "N/A"}</small></td>
+        <td><small>Agent</small><br><strong>${agentDisplayLabel(activity)}</strong><br><small>Runtime ID: <code>${activity.agentId || "main"}</code></small><br><small>Type: ${activity.agentType || "unavailable"}</small></td>
         <td><span class="kind">${activity.kind}</span></td>
-        <td><strong>${operationLabel(activity)}</strong>${contentView(activity)}${activity.targetAgentId || activity.targetAgentType ? html`<small>→ ${activity.targetAgentId || "subagent"}${activity.targetAgentType ? ` · ${activity.targetAgentType}` : ""}</small>` : null}</td>
+        <td><strong>${operationLabel(activity)}</strong>${contentView(activity)}${activity.targetAgentId || activity.targetAgentType ? html`<small>→ ${activity.targetAgentId || "subagent"}${activity.targetAgentType ? ` · ${activity.targetAgentType}` : ""}</small>` : null}${correlationView(activity)}</td>
         <td>${activity.source || "unknown"}</td>
         <td>${activity.model || "N/A"}</td>
         <td class="tokens">${tokenView(activity)}</td>
-        <td>${this.traceView(activity.traceId)}</td>
+        <td>${this.traceView(activity)}</td>
       </tr>`;})}</tbody>
     </table></div>${this.continuation("older")}`;
   }
@@ -151,15 +156,17 @@ export class ActivityTable extends LitElement {
     return html`<div class="continuation" data-paging=${direction} aria-hidden="true"></div>`;
   }
 
-  private traceView(traceId?: string) {
+  private traceView(activity: Activity) {
+    const traceId = activity.traceId || activity.relatedTraceId;
     return traceId
-      ? html`<a class="trace" href=${`/traces/${encodeURIComponent(traceId)}`} aria-label=${`Open trace ${traceId}`}>${shortId(traceId)}</a>`
+      ? html`<a class="trace" href=${`/traces/${encodeURIComponent(traceId)}`} aria-label=${`Open trace ${traceId}`}>${activity.traceId ? shortId(traceId) : html`Linked ${shortId(traceId)}`}</a>`
       : html`N/A`;
   }
 }
 
 const formatTime = (value: string) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
 const shortId = (value?: string) => value ? `${value.slice(0, 8)}…` : "N/A";
+const shortValue = (value: string) => value.length > 18 ? `${value.slice(0, 14)}…` : value;
 export const operationLabel = (activity: Activity) => {
   if (activity.toolName) return activity.toolName;
   switch (activity.kind) {
@@ -181,16 +188,14 @@ const contentView = (activity: Activity) => {
   return html`<details class="content"><summary>${content.slice(0, 180)}…</summary><pre>${content}</pre></details>`;
 };
 const tokenView = (activity: Activity) => {
-  const parts = [
-    ["in", activity.tokens.input],
-    ["out", activity.tokens.output],
-    ["cache read", activity.tokens.cacheRead],
-    ["cache write", activity.tokens.cacheWrite],
-    ["reasoning", activity.tokens.reasoning],
-  ].filter((entry): entry is [string, number] => entry[1] !== null);
-  if (parts.length === 0) return html`N/A<small>N/A</small>`;
-  return html`${activity.tokens.total === null ? "Partial usage" : activity.tokens.total.toLocaleString()}
-    <small>${parts.map(([label, value]) => `${label} ${value.toLocaleString()}`).join(" · ")}</small>
-    ${activity.contributesToTotal ? null : html`<small>Excluded from rollup to prevent duplicate accounting</small>`}`;
+  return html`<am-token-breakdown .usage=${activity.tokens} .compact=${true}></am-token-breakdown>
+    ${activity.contributesToTotal ? null : html`<small class="rollup">Corroborating; excluded from total</small>`}`;
+};
+const correlationView = (activity: Activity) => {
+  const values = [
+    activity.promptId ? ["Prompt", activity.promptId] : null,
+    activity.usageId ? ["Usage", activity.usageId] : null,
+  ].filter((entry): entry is [string, string] => entry !== null);
+  return values.length === 0 ? null : html`<div class="correlation">${values.map(([label, value]) => html`<small title=${value}>${label} ${shortValue(value)}</small>`)}</div>`;
 };
 declare global { interface HTMLElementTagNameMap { "am-activity-table": ActivityTable } }

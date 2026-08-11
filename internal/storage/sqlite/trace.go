@@ -40,7 +40,7 @@ func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (que
   started_at, ended_at, observed_at, status, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, usage_id
+  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id
 FROM (
   SELECT source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
@@ -50,6 +50,7 @@ FROM (
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') AS usage_role,
+    COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), '') AS prompt_id,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '') AS usage_id
   FROM (SELECT source, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
@@ -70,6 +71,7 @@ FROM (
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), ''),
+    COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
   FROM (SELECT source, trace_id, span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, body,
@@ -102,7 +104,7 @@ LIMIT ? OFFSET ?`
 	if err := rows.Err(); err != nil && err != sql.ErrNoRows {
 		return query.Trace{}, fmt.Errorf("iterate trace activities: %w", err)
 	}
-	activities = enrichAgentEvidence(activities)
+	activities = enrichActivityRelationships(enrichAgentEvidence(activities))
 	usageContributions := selectUsageContributions(activities)
 	for index := range activities {
 		activities[index].ContributesToTotal = usageContributions[index]

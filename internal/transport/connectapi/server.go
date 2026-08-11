@@ -271,6 +271,7 @@ func mapActivities(values []query.Activity) []*v1.Activity {
 			Content: value.Content, AgentId: value.AgentID, AgentDefinition: value.AgentDefinition, AgentType: value.AgentType, ParentAgentId: value.ParentAgentID,
 			RunId: value.RunID, Model: value.Model, StartedAt: timestamp(value.StartedAt), EndedAt: timestamp(value.EndedAt), ObservedAt: timestamp(value.ObservedAt),
 			Status: value.Status, Tokens: mapTokens(value.Tokens), CostUsd: value.CostUSD, ContributesToTotal: value.ContributesToTotal,
+			PromptId: value.PromptID, UsageId: value.UsageID, RelatedTraceId: value.RelatedTraceID, RelatedSpanId: value.RelatedSpanID,
 		})
 	}
 	return result

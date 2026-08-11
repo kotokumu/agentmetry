@@ -9,6 +9,7 @@ import "./session-list";
 import "./trace-summary";
 import "./trace-participants";
 import "./trace-waterfall";
+import "./token-chart";
 import type { ActivityTable } from "./activity-table";
 import type { KpiCard } from "./kpi-card";
 import type { TimeRangeFilter } from "./time-range-filter";
@@ -85,7 +86,7 @@ describe("dashboard components", () => {
 
     expect(table.shadowRoot?.textContent).toContain("Model call usage");
     expect(table.shadowRoot?.textContent).not.toContain("vendor.response.completed");
-    expect(table.shadowRoot?.textContent).toContain("Definition");
+    expect(table.shadowRoot?.textContent).toContain("Agent");
     expect(table.shadowRoot?.textContent).toContain("N/A");
     expect(table.shadowRoot?.textContent).toContain("Runtime ID: main");
     expect(table.shadowRoot?.querySelector("a.trace")).toBeNull();
@@ -220,6 +221,22 @@ describe("dashboard components", () => {
     expect(traceLink?.getAttribute("href")).toBe("/traces/trace-123456789");
   });
 
+  it("shows prompt and usage correlation next to a linked trace", async () => {
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = [{
+      source: "claude", signal: "log", name: "gen_ai.model.request", kind: "response", agentId: "main", runId: "run-1",
+      model: "claude-example", observedAt: "2026-08-11T00:00:00Z", promptId: "prompt-1", usageId: "request-1",
+      relatedTraceId: "trace-123456789", relatedSpanId: "span-1", contributesToTotal: true,
+      tokens: { input: 100, output: 20, cacheRead: 70, cacheWrite: 4, reasoning: null, total: 120 },
+    }];
+    document.body.append(table);
+    await table.updateComplete;
+
+    expect(table.shadowRoot?.textContent).toContain("Prompt prompt-1");
+    expect(table.shadowRoot?.textContent).toContain("Usage request-1");
+    expect(table.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/traces/trace-123456789"]')).not.toBeNull();
+  });
+
   it("reveals a highlighted target only once while adjacent pages are appended", async () => {
     const reveal = vi.fn();
     const original = HTMLElement.prototype.scrollIntoView;
@@ -291,6 +308,19 @@ describe("dashboard components", () => {
     expect(limits.shadowRoot?.textContent).not.toContain("tokens");
   });
 
+  it("groups token totals and modifiers instead of concatenating them", async () => {
+    const chart = document.createElement("am-token-chart");
+    (chart as { usage: object }).usage = { input: 100, output: 20, cacheRead: 60, cacheWrite: 4, reasoning: 8, total: 120 };
+    document.body.append(chart);
+    await (chart as { updateComplete: Promise<unknown> }).updateComplete;
+
+    const content = chart.shadowRoot?.textContent ?? "";
+    expect(content).toContain("Observed total");
+    expect(content).toContain("Primary usage");
+    expect(content).toContain("Modifiers and additional evidence");
+    expect(content).toContain("Cache read");
+  });
+
   it("renders agent relationships as a root-first tree", async () => {
     const tree = document.createElement("am-agent-tree") as AgentTree;
     const missing = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
@@ -309,12 +339,14 @@ describe("dashboard components", () => {
     expect(child?.textContent).toContain("repository-review");
     expect(child?.textContent).toContain("example-large");
     expect(child?.textContent).toContain("Runtime ID:");
-    expect(child?.textContent).toContain("120 observed tokens");
-    expect(child?.textContent).toContain("input 100");
-    expect(child?.textContent).toContain("cache read 60");
-    expect(child?.textContent).toContain("reasoning 8");
-    expect(child?.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
-    expect(root?.textContent).toContain("N/A");
+    const childTokens = child?.querySelector("am-token-breakdown");
+    await (childTokens as { updateComplete?: Promise<unknown> } | null)?.updateComplete;
+    expect(childTokens?.shadowRoot?.textContent).toContain("120");
+    expect(childTokens?.shadowRoot?.textContent).toContain("Input");
+    expect(childTokens?.shadowRoot?.textContent).toContain("Cache read");
+    expect(childTokens?.shadowRoot?.textContent).toContain("Reasoning");
+    expect(childTokens?.shadowRoot?.querySelector("details")?.open).toBe(false);
+    expect(root?.textContent).toContain("Main agent");
     expect(Number.parseFloat(root?.style.top ?? "NaN")).toBeLessThan(Number.parseFloat(child?.style.top ?? "NaN"));
     expect(Number.parseFloat(root?.style.left ?? "NaN")).toBe(Number.parseFloat(child?.style.left ?? "NaN"));
     expect(tree.shadowRoot?.querySelectorAll(".connector")).toHaveLength(3);
@@ -345,7 +377,29 @@ describe("dashboard components", () => {
       for (let right = left + 1; right < layout.nodes.length; right += 1) {
         const first = layout.nodes[left];
         const second = layout.nodes[right];
-        const separated = Math.abs(first.centerX - second.centerX) >= 190 || Math.abs(first.centerY - second.centerY) >= 72;
+        const separated = Math.abs(first.centerX - second.centerX) >= 190 || Math.abs(first.centerY - second.centerY) >= 96;
+        expect(separated, `${first.node.agent.agentId} overlaps ${second.node.agent.agentId}`).toBe(true);
+      }
+    }
+  });
+
+  it("lays out a large child set across multiple columns without overlap", () => {
+    const missing = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
+    const agents = [
+      { agentId: "main", activityCount: 1, tokens: missing },
+      ...Array.from({ length: 49 }, (_, index) => ({ agentId: `child-${index}`, parentAgentId: "main", activityCount: 1, tokens: missing })),
+    ];
+    const layout = layoutAgentTree(buildAgentTree(agents));
+    const children = layout.nodes.filter(({ depth }) => depth === 1);
+    const firstRow = new Set(children.filter(({ centerY }) => centerY === children[0].centerY).map(({ centerX }) => centerX));
+
+    expect(firstRow.size).toBe(4);
+    expect(layout.width).toBeGreaterThan(800);
+    for (let left = 0; left < layout.nodes.length; left += 1) {
+      for (let right = left + 1; right < layout.nodes.length; right += 1) {
+        const first = layout.nodes[left];
+        const second = layout.nodes[right];
+        const separated = Math.abs(first.centerX - second.centerX) >= 190 || Math.abs(first.centerY - second.centerY) >= 96;
         expect(separated, `${first.node.agent.agentId} overlaps ${second.node.agent.agentId}`).toBe(true);
       }
     }
@@ -435,8 +489,10 @@ describe("dashboard components", () => {
     expect(content).toContain("conversation-b");
     expect(content).toContain("repository-review");
     expect(content).toContain("model-b");
-    expect(content).toContain("120 observed tokens");
-    expect(content).toContain("60 observed tokens");
+    const participantTokens = [...participants.shadowRoot?.querySelectorAll("am-token-breakdown") ?? []];
+    await Promise.all(participantTokens.map((token) => (token as { updateComplete?: Promise<unknown> }).updateComplete));
+    expect(participantTokens.map((token) => token.shadowRoot?.textContent).join(" ")).toContain("120");
+    expect(participantTokens.map((token) => token.shadowRoot?.textContent).join(" ")).toContain("60");
   });
 
   it("renders spans and correlated logs in the trace waterfall", async () => {
@@ -457,10 +513,13 @@ describe("dashboard components", () => {
     expect(childSummary).toContain("repository-review → main");
     expect(childSummary).toContain("60 tokens");
     expect(childSummary).toContain("Error");
-    expect(waterfall.shadowRoot?.textContent).toContain("input 50");
-    expect(waterfall.shadowRoot?.textContent).toContain("reasoning 5");
+    const childTokenBreakdown = waterfall.shadowRoot?.querySelectorAll("am-token-breakdown")[1];
+    await (childTokenBreakdown as { updateComplete?: Promise<unknown> } | undefined)?.updateComplete;
+    expect(childTokenBreakdown?.shadowRoot?.textContent).toContain("Input");
+    expect(childTokenBreakdown?.shadowRoot?.textContent).toContain("50");
+    expect(childTokenBreakdown?.shadowRoot?.textContent).toContain("Reasoning");
     expect(waterfall.shadowRoot?.textContent).toContain("Runtime agent IDreviewer");
-    expect(waterfall.shadowRoot?.textContent).toContain("Agent definitionrepository-review");
+    expect(waterfall.shadowRoot?.textContent).toContain("Agentrepository-review");
     expect(waterfall.shadowRoot?.textContent).toContain("Agent typecustom");
     expect(waterfall.shadowRoot?.textContent).toContain("StatusError");
     expect(waterfall.shadowRoot?.textContent).toContain("Started at2026-08-11T00:00:01Z");

@@ -176,13 +176,16 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 	if total == 0 {
 		return query.ActivityPage{}, query.ErrConversationNotFound
 	}
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), filter.PageSize, offset, filter.SourceID, filter.ConversationID, true, filter.AgentID)
+	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, filter.SourceID, filter.ConversationID, true, filter.AgentID)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}
+	activities = enrichActivityRelationships(activities)
+	offset = boundedOffset(len(activities), offset)
+	pageEnd := min(len(activities), offset+filter.PageSize)
 	return query.ActivityPage{
-		Activities: activities, Total: total, Offset: offset,
-		HasEarlier: offset > 0, HasMore: int64(offset+len(activities)) < total,
+		Activities: activities[offset:pageEnd], Total: int64(len(activities)), Offset: offset,
+		HasEarlier: offset > 0, HasMore: int64(pageEnd) < int64(len(activities)),
 	}, nil
 }
 

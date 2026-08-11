@@ -21,6 +21,10 @@ export type Activity = Readonly<{
   traceId?: string;
   spanId?: string;
   parentSpanId?: string;
+  promptId?: string;
+  usageId?: string;
+  relatedTraceId?: string;
+  relatedSpanId?: string;
   kind: "unknown" | "prompt" | "response" | "tool" | "delegation" | "message" | "reasoning";
   toolName?: string;
   targetAgentId?: string;

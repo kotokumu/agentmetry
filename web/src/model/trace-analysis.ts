@@ -94,10 +94,13 @@ export const aggregateTraceAgentUsage = (trace: Trace): readonly TraceAgentUsage
 };
 
 export const conversationHref = (activity: Activity): string | undefined => {
-  if (activity.signal !== "trace" || !activity.source || !activity.runId) return undefined;
+  if (!activity.source || !activity.runId) return undefined;
+  const traceId = activity.traceId || activity.relatedTraceId;
+  const spanId = activity.spanId || activity.relatedSpanId;
+  if (activity.signal !== "trace" && !traceId) return undefined;
   const path = `/conversations/${encodeURIComponent(activity.source)}/${encodeURIComponent(activity.runId)}`;
-  if (!activity.traceId || !activity.spanId) return path;
-  const parameters = new URLSearchParams({ traceId: activity.traceId, spanId: activity.spanId });
+  if (!traceId || !spanId) return path;
+  const parameters = new URLSearchParams({ traceId, spanId });
   return `${path}?${parameters}`;
 };
 

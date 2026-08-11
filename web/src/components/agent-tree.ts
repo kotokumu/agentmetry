@@ -1,6 +1,8 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { AgentSession } from "../model/update";
+import { agentDisplayLabel } from "../model/agent-label";
+import "./token-breakdown";
 
 @customElement("am-agent-tree")
 export class AgentTree extends LitElement {
@@ -12,15 +14,15 @@ export class AgentTree extends LitElement {
     .viewport { width: 100%; max-width: 100%; min-height: 220px; max-height: min(560px, 65vh); overflow: auto; overscroll-behavior: contain; padding: 4px 3px 8px; }
     .graph { position: relative; min-width: max(440px, 100%); }
     .connector { position: absolute; z-index: 1; border-radius: 99px; background: var(--am-accent); opacity: .8; pointer-events: none; }
-    .node { position: absolute; z-index: 2; min-height: 72px; border: 1px solid var(--am-border); border-left: 3px solid var(--am-accent); border-radius: 8px; padding: 6px 9px; background: var(--am-surface-strong); box-shadow: 0 4px 12px rgba(23, 32, 52, .06); color: var(--am-text); cursor: pointer; text-align: left; }
+    .node { position: absolute; z-index: 2; height: 96px; overflow: hidden; border: 1px solid var(--am-border); border-left: 3px solid var(--am-accent); border-radius: 8px; padding: 7px 9px; background: var(--am-surface-strong); box-shadow: 0 4px 12px rgba(23, 32, 52, .06); color: var(--am-text); cursor: pointer; text-align: left; }
     .node:hover, .node:focus-visible { border-color: var(--am-accent); outline: 2px solid color-mix(in srgb, var(--am-accent) 35%, transparent); outline-offset: 2px; }
     .node[aria-selected="true"] { background: var(--am-accent-soft); border-color: var(--am-accent); }
     .node-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
     .node-title strong { overflow: hidden; color: var(--am-text); font: .76rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
     .role { color: var(--am-accent); font: 700 .58rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
     code { display: block; margin-top: 3px; color: var(--am-muted); font-size: .64rem; overflow-wrap: anywhere; }
-    .meta { margin-top: 3px; color: var(--am-muted); font-size: .68rem; overflow-wrap: anywhere; }
-    .usage { display: flex; flex-wrap: wrap; align-items: baseline; gap: 3px 8px; margin-top: 4px; color: var(--am-muted); font-size: .68rem; }
+    .meta { margin-top: 3px; overflow: hidden; color: var(--am-muted); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
+    .usage { display: grid; gap: 2px; margin-top: 4px; color: var(--am-muted); font-size: .68rem; }
     .usage p { margin: 0; overflow-wrap: anywhere; }
     .usage details { flex-basis: 100%; }
     .usage summary { width: fit-content; cursor: pointer; color: var(--am-accent); font-size: .66rem; }
@@ -55,13 +57,13 @@ export type LayoutNode = Readonly<{ node: AgentNode; parentID?: string; depth: n
 export type TreeLayout = Readonly<{ nodes: readonly LayoutNode[]; width: number; height: number }>;
 
 const NODE_WIDTH = 190;
-const NODE_HEIGHT = 72;
+const NODE_HEIGHT = 96;
 const LEVEL_GAP = 82;
 const ROW_GAP = 220;
 const SIDE_PADDING = NODE_WIDTH / 2 + 24;
-const MAX_COLUMNS = 2;
+const MAX_COLUMNS = 4;
 const ROOT_COLUMNS = 2;
-const ROOT_GROUP_WIDTH = SIDE_PADDING * 2 + ROW_GAP;
+const ROOT_GROUP_WIDTH = SIDE_PADDING * 2 + (MAX_COLUMNS - 1) * ROW_GAP;
 const ROOT_ROW_GAP = 24;
 const TOP_PADDING = 40;
 
@@ -152,30 +154,13 @@ const renderGraphNode = (layout: LayoutNode, selectedAgentId: string, select: (e
   @pointerdown=${select}
   @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(event); } }}
 >
-  <div class="node-title"><span class="role">${layout.depth === 0 ? "Root" : "Child"}</span><strong title=${layout.node.agent.agentDefinition || "N/A"}>${layout.node.agent.agentDefinition || "N/A"}</strong></div>
-  <code>Runtime ID: ${layout.node.agent.agentId || "N/A"}</code>
-  <div class="meta">${layout.node.agent.agentType || "N/A"} · ${layout.node.agent.model || "N/A"}</div>
+  <div class="node-title"><span class="role">${layout.depth === 0 ? "Root" : "Child"}</span><strong title=${agentDisplayLabel(layout.node.agent)}>${agentDisplayLabel(layout.node.agent)}</strong></div>
+  <code>Runtime ID: ${layout.node.agent.agentId || "unavailable"}</code>
+  <div class="meta">${[layout.node.agent.agentType, layout.node.agent.model].filter(Boolean).join(" · ") || "Metadata unavailable"}</div>
   <div class="usage">
-    <p>${layout.node.agent.activityCount} activities · ${agentTokenSummary(layout.node.agent.tokens)}</p>
-    ${agentTokenDetails(layout.node.agent.tokens) ? html`<details @pointerdown=${(event: PointerEvent) => event.stopPropagation()}><summary @click=${(event: MouseEvent) => event.stopPropagation()}>Token breakdown</summary><p>${agentTokenDetails(layout.node.agent.tokens)}</p></details>` : null}
+    <p>${layout.node.agent.activityCount} activities</p>
+    <am-token-breakdown .usage=${layout.node.agent.tokens} .compact=${true} @pointerdown=${(event: PointerEvent) => event.stopPropagation()}></am-token-breakdown>
   </div>
 </div>`;
-
-const agentTokenSummary = (usage: AgentSession["tokens"]) => {
-  if (usage.total !== null) return `${usage.total.toLocaleString()} observed tokens`;
-  const known = [usage.input, usage.output].filter((value): value is number => value !== null);
-  if (known.length === 0) return "N/A";
-  return `${known.reduce((total, value) => total + value, 0).toLocaleString()} observed token subtotal`;
-};
-
-const agentTokenDetails = (usage: AgentSession["tokens"]) => [
-  ["input", usage.input],
-  ["output", usage.output],
-  ["cache read", usage.cacheRead],
-  ["cache write", usage.cacheWrite],
-  ["reasoning", usage.reasoning],
-].filter((entry): entry is [string, number] => entry[1] !== null)
-  .map(([label, value]) => `${label} ${value.toLocaleString()}`)
-  .join(" · ");
 
 declare global { interface HTMLElementTagNameMap { "am-agent-tree": AgentTree } }

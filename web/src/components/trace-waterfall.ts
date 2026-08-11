@@ -2,6 +2,8 @@ import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/update";
 import { conversationHref, tokenEvidence } from "../model/trace-analysis";
+import { agentDisplayLabel } from "../model/agent-label";
+import "./token-breakdown";
 
 type TraceRow = Readonly<{
   activity: Activity;
@@ -130,7 +132,7 @@ export const traceRows = (trace: Trace): readonly TraceRow[] => {
 
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
 const agentLabel = (activity: Activity) => {
-  const source = activity.agentDefinition || activity.agentId || "N/A";
+  const source = agentDisplayLabel(activity);
   const target = activity.targetAgentId || activity.targetAgentType;
   if (target) return `${source} → ${target}`;
   return source;
@@ -153,10 +155,6 @@ const durationLabel = (activity: Activity) => {
   const milliseconds = Math.max(0, end - start);
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 2 : 1)} s`;
 };
-const tokenBreakdown = (activity: Activity) => {
-  const { components } = tokenEvidence(activity.tokens);
-  return components.length === 0 ? "N/A" : components.map(([label, value]) => `${label} ${value.toLocaleString()}`).join(" · ");
-};
 const activityEvidence = (activity: Activity) => {
   const href = conversationHref(activity);
   const facts = [
@@ -166,7 +164,7 @@ const activityEvidence = (activity: Activity) => {
     ["Status", activity.status || "N/A"],
     ["Source", activity.source || "N/A"],
     ["Conversation", activity.runId || "N/A"],
-    ["Agent definition", activity.agentDefinition || "N/A"],
+    ["Agent", agentDisplayLabel(activity)],
     ["Runtime agent ID", activity.agentId || "N/A"],
     ["Agent type", activity.agentType || "N/A"],
     ["Parent agent", activity.parentAgentId || "Root"],
@@ -175,15 +173,15 @@ const activityEvidence = (activity: Activity) => {
     ["Started at", activity.startedAt || "N/A"],
     ["Ended at", activity.endedAt || "N/A"],
     ["Trace ID", activity.traceId || "N/A"],
+    ["Linked trace", activity.relatedTraceId || "N/A"],
     ["Span ID", activity.spanId || "N/A"],
     ["Parent span", activity.parentSpanId || "Root"],
     ["Target agent", activity.targetAgentId || activity.targetAgentType
       ? [activity.targetAgentId, activity.targetAgentType].filter(Boolean).join(" · ")
       : "N/A"],
-    ["Token components", tokenBreakdown(activity)],
     ["Rollup", rollupLabel(activity)],
   ];
-  return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}</dl>
+  return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>Token breakdown</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
     <pre class="message">${activity.content || "N/A"}</pre>
     ${href ? html`<a class="conversation" href=${href}>Open ${activity.spanId ? "span in" : ""} conversation</a>` : null}
   </div>`;
