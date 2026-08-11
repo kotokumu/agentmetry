@@ -45,6 +45,9 @@ cd ..
 go run ./cmd/agentmetry
 ```
 
+`web/dist` is generated build output and is not stored in Git. Build the Web UI
+before running or testing the Go runtime.
+
 After startup:
 
 - Dashboard / API / MCP: `http://127.0.0.1:17890`
@@ -52,6 +55,70 @@ After startup:
 - OTLP HTTP: `http://127.0.0.1:4318`
 - MCP Streamable HTTP: `http://127.0.0.1:17890/mcp`
 - SQLite: `data/agentmetry.db`
+
+## Desktop build and packaging
+
+The desktop application uses Tauri 2 as a cross-platform native shell and bundles
+the Go server as a sidecar. The shell chooses the platform application-data
+directory and starts the same server binary used by the headless profile. The Go
+sidecar is the only process that serves the embedded SPA; Tauri does not package
+a second copy of `web/dist`.
+
+Desktop build logic lives under `build/desktop/`. The root `package.json` exposes
+the stable build entrypoints, while `src-tauri/` contains only the native shell,
+Tauri configuration, and generated sidecar staging files.
+
+Install the JavaScript dependencies and build the macOS package:
+
+```sh
+npm ci
+npm --prefix web ci
+npm run desktop:build:macos
+```
+
+The input-preparation step can be run independently:
+
+```sh
+npm run desktop:inputs
+```
+
+It builds `web/dist` and the target-specific Go sidecar under
+`src-tauri/binaries/`. Tauri then bundles that sidecar into the native
+application. The unsigned `.app` and `.dmg` artifacts are written under
+`src-tauri/target/`. The first local milestone is intentionally unsigned;
+Developer ID signing, notarization, and the protected SQLite unlock flow are
+separate release steps.
+
+For local development:
+
+```sh
+npm run desktop:dev
+```
+
+For native release packages, use the platform-specific entrypoint:
+
+```sh
+npm run desktop:build:macos
+npm run desktop:build:windows
+npm run desktop:build:linux
+```
+
+Each entrypoint uses the same `desktop:inputs` hook before Tauri bundles the
+native installer. The CI matrix invokes these same named commands on native
+macOS, Windows, and Linux runners.
+
+Pushing a version tag such as `v0.1.0` starts the release workflow. It verifies
+that the tag matches `src-tauri/tauri.conf.json`, builds the macOS DMG, Windows
+NSIS installer, and Linux AppImage/deb packages, then publishes them to a GitHub
+Release. The current release workflow publishes unsigned artifacts; signing and
+notarization will be added when the platform credentials and protected storage
+release gates are ready.
+
+The desktop app is resident by default and starts the OTLP receivers with the
+sidecar. Closing the window hides it to the system tray while OTLP reception
+continues. The tray menu provides `Open Agentmetry`, `Hide Window`, and
+`Quit Agentmetry`; quitting is the explicit action that stops the receivers and
+the sidecar.
 
 ## Agent Configuration
 
@@ -151,8 +218,12 @@ docker run --rm -p 17890:17890 -p 4317:4317 -p 4318:4318 -v agentmetry-data:/dat
 ## Verification
 
 ```sh
+cd web
+npm ci
+npm test -- --run
+npm run build
+cd ..
 go test ./...
-cd web && npm test -- --run && npm run build
 ```
 
 `go test ./...` includes an in-process end-to-end test built with `httptest`. It sends OTLP protobuf to the production HTTP router, persists observations in a temporary SQLite database, and verifies the HTTP API, MCP tool, and embedded SPA without fixed ports or external processes.

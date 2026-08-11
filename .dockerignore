@@ -1,4 +1,9 @@
-bin
-data
-web/node_modules
 .git
+.github
+node_modules
+web/node_modules
+web/dist
+src-tauri/target
+src-tauri/binaries/*
+!src-tauri/binaries/.gitkeep
+data
