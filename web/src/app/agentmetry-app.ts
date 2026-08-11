@@ -72,7 +72,8 @@ export class AgentmetryApp extends LitElement {
     .eyebrow { margin: 0 0 4px; color: var(--am-accent); font: 700 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .14em; text-transform: uppercase; }
     h1 { margin: 0; font: 500 clamp(2rem, 4vw, 3.7rem)/.95 "Iowan Old Style", "Palatino Linotype", serif; letter-spacing: -.035em; }
     h2 { margin: 0 0 14px; font: 600 1rem/1.2 "Iowan Old Style", "Palatino Linotype", serif; }
-    .status { color: var(--am-muted); font-size: .78rem; }
+    .status { display: flex; align-items: center; gap: 7px; margin: 8px 0 0; color: var(--am-muted); font-size: .78rem; }
+    .status-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #4f8757; box-shadow: 0 0 0 3px rgba(79, 135, 87, .14); }
     .kpis { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
     .workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
     .operations-panel { margin: 0; }
@@ -302,9 +303,10 @@ export class AgentmetryApp extends LitElement {
   }
 
   private statusText() {
-    if (this.model.status === "loading") return "Refreshing local observations…";
-    if (this.model.status === "failed") return html`<span class="error">${this.model.error}</span>`;
-    return "OTLP and dashboard share one local store";
+    const receiver = html`<span class="status-dot" aria-label="Receiving OTLP"></span>Receiving OTLP locally · HTTP :4318 · gRPC :4317`;
+    if (this.model.status === "loading") return html`${receiver} · Refreshing dashboard…`;
+    if (this.model.status === "failed") return html`${receiver} · <span class="error">Dashboard refresh failed: ${this.model.error}</span>`;
+    return receiver;
   }
 }
 

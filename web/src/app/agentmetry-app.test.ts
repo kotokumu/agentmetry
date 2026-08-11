@@ -110,6 +110,7 @@ describe("Agentmetry app composition", () => {
 
     const content = app.shadowRoot?.textContent ?? "";
     expect(content).toContain("Agent conversations");
+    expect(content).toContain("Receiving OTLP locally");
     expect(content).toContain("Loading conversations");
   });
 

@@ -1,0 +1,17 @@
+{
+  "name": "agentmetry-desktop",
+  "private": true,
+  "scripts": {
+    "web:build": "npm --prefix web run build",
+    "desktop:inputs": "npm run web:build && node build/desktop/build-sidecar.mjs",
+    "desktop:test": "node --test build/desktop/targets.test.mjs",
+    "desktop:dev": "tauri dev",
+    "desktop:build": "tauri build",
+    "desktop:build:macos": "tauri build --bundles app && node build/desktop/package-macos-dmg.mjs",
+    "desktop:build:windows": "tauri build --bundles nsis",
+    "desktop:build:linux": "tauri build --bundles appimage,deb"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.8.0"
+  }
+}
