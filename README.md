@@ -1,203 +1,79 @@
-# Agentmetry PoC
+# Agentmetry
 
-This proof of concept receives AI agent OTLP telemetry locally and exposes sessions, subagents, operations, and token usage through a Web UI and MCP.
+Local observability for AI coding agents.
 
-## Architecture
+Agentmetry receives OpenTelemetry (OTLP) data from Claude Code and Codex, then
+shows sessions, subagents, activities, token usage, and costs in a local Web UI.
+It also exposes the same data through HTTP and MCP.
 
-- Single Go process: OTLP HTTP/gRPC, SQLite, Web API, MCP, and a static SPA
-- SQLite WAL: immutable OTLP journal, canonical observations, and replaceable read models
-- Embedded Atlas HCL: in-process declarative schema convergence with no migration CLI or child process
-- Lit + TypeScript + Vite: dashboard built with Web Components
-- Functional core / imperative shell: state transitions, selectors, and normalization are pure functions; Lit and I/O remain at the edges
-- Source profiles: producer-specific event attributes are interpreted only at the ingestion boundary
+> **Early development / PoC**
+>
+> APIs, storage schema, and source integrations may change. Feedback and issue
+> reports are welcome.
 
-## API Contract
+## Highlights
 
-The read API contract is protobuf-first. The schema is in
-`proto/agentmetry/v1/agentmetry.proto`; Buf owns linting, generation, and
-breaking-change checks. Generated Go and TypeScript clients are checked in so
-normal builds do not need Buf or network access.
+- One local process with OTLP HTTP/gRPC, SQLite, Web UI, HTTP API, and MCP
+- Claude Code and Codex source profiles
+- Session, subagent, model, tool, token, and cost views
+- Lossless local telemetry journal with canonical query projections
+- No external database or hosted service required after installation
+- Optional Tauri desktop packaging for macOS, Windows, and Linux
 
-```sh
-BUF_CACHE_DIR=/tmp/agentmetry-buf-cache buf lint
-BUF_CACHE_DIR=/tmp/agentmetry-buf-cache buf build
-BUF_CACHE_DIR=/tmp/agentmetry-buf-cache buf generate
-```
+## Quick start
 
-Connect serves the generated query service to the Web client. MCP tools remain
-explicit semantic adapters over the same application query service; RPCs are
-not automatically exposed as tools.
-
-The Web initial load is bounded: dashboard aggregates, one paged session-list
-page, and one activity page for the selected session. The legacy JSON routes
-under `/api/v1` remain for compatibility, but are not used by the Web client or
-the new MCP tools.
-
-## Run Locally
-
-Requires Go 1.26 and Node.js.
+Requirements: Go 1.26, Node.js 24, and npm.
 
 ```sh
-npm --prefix web ci
+git clone https://github.com/theoden9014/agentmetry.git
+cd agentmetry
 make build
 ./bin/agentmetry
 ```
 
-`make build` builds the Web UI into `web/dist/generated` and then builds the Go
-runtime. The top-level `web/dist` directory is kept only as the embed root; its
-generated contents are not stored in Git.
+Open <http://127.0.0.1:17890>.
 
-## Token accounting tests
+The server listens on:
 
-Token accounting is validated without the Web UI:
+| Service | Address |
+| --- | --- |
+| Web UI, HTTP API, MCP | `127.0.0.1:17890` |
+| OTLP gRPC | `127.0.0.1:4317` |
+| OTLP HTTP | `http://127.0.0.1:4318` |
+| SQLite database | `data/agentmetry.db` |
 
-```sh
-GOCACHE=/tmp/agentmetry-go-build go test ./...
-GOCACHE=/tmp/agentmetry-go-build go test -tags=integration ./...
-GOCACHE=/tmp/agentmetry-go-build go test -tags=providerlive ./internal/source/claude ./internal/source/codex
-```
+The Web UI is built into the Go binary. `make build` builds the frontend first,
+then builds the backend with the generated assets embedded.
 
-The first command covers the deterministic rate-card formula, provider alias
-normalization, and sanitized Claude/Codex usage fixtures. The integration tag
-covers the committed ingestion and storage path. The providerlive tag invokes
-`claude -p --output-format json` and `codex exec --json` directly, then compares
-their provider-reported usage with the canonical projection. It requires
-`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` and is intentionally separate because
-it makes paid provider requests.
-
-After startup:
-
-- Dashboard / API / MCP: `http://127.0.0.1:17890`
-- OTLP gRPC: `127.0.0.1:4317`
-- OTLP HTTP: `http://127.0.0.1:4318`
-- MCP Streamable HTTP: `http://127.0.0.1:17890/mcp`
-- SQLite: `data/agentmetry.db`
-
-## Desktop build and packaging
-
-The desktop application uses Tauri 2 as a cross-platform native shell and bundles
-the Go server as a sidecar. The shell chooses the platform application-data
-directory and starts the same server binary used by the headless profile. The Go
-sidecar is the only process that serves the embedded SPA; Tauri does not package
-a second copy of `web/dist`.
-
-Desktop build logic lives under `build/desktop/`. The root `package.json` exposes
-the stable build entrypoints, while `src-tauri/` contains only the native shell,
-Tauri configuration, and generated sidecar staging files.
-
-Install the JavaScript dependencies and build the macOS package:
-
-```sh
-npm ci
-npm --prefix web ci
-npm run desktop:build:macos
-```
-
-The input-preparation step can be run independently:
-
-```sh
-npm run desktop:inputs
-```
-
-It builds `web/dist` and the target-specific Go sidecar under
-`src-tauri/binaries/`. Tauri then bundles that sidecar into the native
-application. The unsigned `.app` and `.dmg` artifacts are written under
-`src-tauri/target/`. The first local milestone is intentionally unsigned;
-Developer ID signing, notarization, and the protected SQLite unlock flow are
-separate release steps.
-
-For local development:
-
-```sh
-npm run desktop:dev
-```
-
-For native release packages, use the platform-specific entrypoint:
-
-```sh
-npm run desktop:build:macos
-npm run desktop:build:windows
-npm run desktop:build:linux
-```
-
-Each entrypoint uses the same `desktop:inputs` hook before Tauri bundles the
-native installer. The CI matrix invokes these same named commands on native
-macOS, Windows, and Linux runners.
-
-Pushing a version tag such as `v0.1.0` starts the release workflow. It verifies
-that the tag matches `src-tauri/tauri.conf.json`, builds the macOS DMG, Windows
-NSIS installer, and Linux AppImage/deb packages, then publishes them to a GitHub
-Release. The current release workflow publishes unsigned artifacts; signing and
-notarization will be added when the platform credentials and protected storage
-release gates are ready.
-
-The desktop app is resident by default and starts the OTLP receivers with the
-sidecar. Closing the window hides it to the system tray while OTLP reception
-continues. The tray menu provides `Open Agentmetry`, `Hide Window`, and
-`Quit Agentmetry`; quitting is the explicit action that stops the receivers and
-the sidecar.
-
-## Agent Configuration
+## Connect your agents
 
 ### Claude Code
 
-Persist the OTLP settings in Claude Code instead of exporting environment
-variables for every shell. Use one of these files:
-
-- User: `~/.claude/settings.json` on macOS/Linux or
-  `%USERPROFILE%\.claude\settings.json` on Windows
-- Project: `.claude/settings.json`
-- Local project override: `.claude/settings.local.json`
+Add the following environment settings to Claude Code's settings file, for
+example `~/.claude/settings.json`:
 
 ```json
 {
-  "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "env": {
     "CLAUDE_CODE_ENABLE_TELEMETRY": "1",
     "CLAUDE_CODE_ENHANCED_TELEMETRY_BETA": "1",
-    "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_LOGS_EXPORTER": "otlp",
     "OTEL_TRACES_EXPORTER": "otlp",
+    "OTEL_METRICS_EXPORTER": "otlp",
     "OTEL_EXPORTER_OTLP_PROTOCOL": "grpc",
     "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4317",
     "OTEL_LOG_USER_PROMPTS": "1",
     "OTEL_LOG_ASSISTANT_RESPONSES": "1",
-    "OTEL_LOG_TOOL_DETAILS": "1",
-    "OTEL_LOG_TOOL_CONTENT": "1"
+    "OTEL_LOG_TOOL_DETAILS": "1"
   }
 }
 ```
 
-Restart Claude Code after changing the file. The content settings may capture
-prompts, responses, file contents, command output, and other sensitive local
-data. Agentmetry stores the accepted OTLP payload losslessly in the local
-SQLite database.
-
-Use `"OTEL_LOG_RAW_API_BODIES": "1"` only when full raw API bodies are also
-required. They may contain the complete conversation history and add
-substantial duplicate data.
-
-To add authoritative plan-limit percentages, configure the same Agentmetry
-executable as the status-line command. The command forwards the plan windows
-to the local dashboard and prints a compact status line back to Claude Code:
-
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "/absolute/path/to/agentmetry import-plan-usage --source=claude"
-  }
-}
-```
-
-This is optional enrichment. OTLP model-token observations continue to work
-without it. Agentmetry never converts observed tokens into a subscription
-percentage because the account limit and its weighting are not present in
-OTLP.
+Restart Claude Code after changing the settings.
 
 ### Codex
 
-Add only the OTLP destination to the Codex configuration. No Agentmetry-specific hook or Codex modification is required.
+Add the local OTLP destination to Codex's configuration:
 
 ```toml
 [otel]
@@ -210,67 +86,74 @@ metrics_exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }
 
 Set `log_user_prompt = false` if prompts must not be stored.
 
-The standard build also contains a parser for the account rate-limit response
-exposed by the Codex App Server. Account usage remains a separate input from
-OTLP and is stored as authoritative plan-window snapshots rather than inferred
-from token counts.
-
-## Dashboard Data Loading
-
-Session and token totals are calculated from every observation in the selected
-time range. The activity table initially renders 100 rows and automatically
-requests the next 100 when the user scrolls near its end. Long message and tool
-content stays collapsed until explicitly expanded, so raw evidence can remain
-stored without making the dashboard document unbounded.
+Agentmetry stores accepted telemetry locally. Prompts, responses, tool details,
+and command output may contain sensitive information; enable content logging
+only when it is appropriate for your environment.
 
 ## Docker
 
-The same single process provides OTLP, the Web UI, API, MCP, and SQLite inside one container.
-
 ```sh
-docker build -t agentmetry-poc .
-docker run --rm -p 17890:17890 -p 4317:4317 -p 4318:4318 -v agentmetry-data:/data agentmetry-poc
+docker build -t agentmetry .
+docker run --rm \
+  -p 17890:17890 -p 4317:4317 -p 4318:4318 \
+  -v agentmetry-data:/data agentmetry
 ```
 
-## Verification
+## Development
 
 ```sh
-npm --prefix web test -- --run
+# Backend unit and fixture tests
 go test ./...
-```
 
-`go test ./...` is independent of the Web build and covers the Go unit and
-backend tests. The Web-dependent end-to-end test is opt-in:
+# Web tests
+npm --prefix web ci
+npm --prefix web test -- --run
 
-```sh
+# Backend integration tests, including the embedded Web UI
 npm --prefix web run build
 go test -tags=integration ./...
 ```
 
-It sends OTLP protobuf to the production HTTP router, persists observations in
-a temporary SQLite database, and verifies the HTTP API, MCP tool, and embedded
-SPA without fixed ports or external processes.
+Provider contract tests make paid API requests and are opt-in:
 
-## Storage and Schema Evolution
+```sh
+ANTHROPIC_API_KEY=... OPENAI_API_KEY=... \
+  go test -tags=providerlive ./internal/source/claude ./internal/source/codex
+```
 
-Every accepted OTLP export is committed to SQLite as canonical protobuf and JSON before it is acknowledged. Agentmetry also stores one source-neutral observation per span, log record, or metric, including its complete normalized payload and original attribute layers. The current `spans`, `logs`, and `metrics` tables are read models; the OTLP journal can rebuild improved projections later.
+See [the token accounting test strategy](docs/adr/0013-token-accounting-test-strategy.md)
+for the unit, fixture, and provider-live test boundaries.
 
-The desired SQLite schema lives in an HCL file embedded in the Go executable. At startup, the Atlas Go library inspects the local database, computes the diff, and applies safe additive changes in-process. Agentmetry automatically permits new tables, indexes, and columns that are nullable or have defaults. Destructive, rename, constraint, type, and table-rebuild changes stop startup until an explicit migration is supplied.
+## Documentation
 
-## Source Plugins
+- [PoC scope and acceptance criteria](docs/poc-spec.md)
+- [Architecture overview](docs/grand-architecture.md)
+- [Trace explorer design](docs/design/trace-explorer.md)
+- [API contract](docs/design/api-proto-contract.md)
+- [CI and build validation](docs/adr/0012-ci-build-validation.md)
+- [Desktop build architecture](docs/adr/0010-desktop-build-architecture.md)
 
-Producer semantics implement the public `sourceplugin.Plugin` interface. The standard distribution statically registers its first-party source plugins, preserving one cross-platform executable. Each plugin owns source detection and semantic aliases; OTLP admission, canonical derivation, storage, UI, and MCP contain no producer-specific field names.
+## Desktop builds
 
-To add a source in a custom build:
+The Tauri desktop shell uses the same Go server and embedded Web UI. Build
+platform packages with:
 
-1. Implement `ID`, `Match`, and `Normalize` against `sourceplugin.Event`.
-2. Keep all producer event names, attribute aliases, and fixtures inside that plugin package.
-3. Add the plugin to the composition registry.
+```sh
+npm ci
+npm --prefix web ci
+npm run desktop:build:macos   # or :windows / :linux
+```
 
-Runtime shared-library loading is intentionally unsupported. A future runtime extension format can use WASM or a versioned process protocol without exposing Go ABI assumptions.
+See the [desktop build architecture](docs/adr/0010-desktop-build-architecture.md)
+for packaging details.
 
-## What OTLP Alone Reveals
+## Contributing
 
-Live ingestion has been verified with Codex 0.146.0. Agentmetry links parent and child `conversation.id` values through their shared trace ID and displays the model and token fields for each `response.completed` event. Codex exports collaboration-tool delegation messages in encrypted form, so Agentmetry shows the task name, subagent type, and outcome while explicitly marking the message body as encrypted. If Codex does not export response content or cost over OTLP, Agentmetry reports it as unavailable instead of inferring it.
+Please open an issue for bugs, source-format changes, or feature proposals.
+Small, focused pull requests are welcome. Before submitting a change, run the
+backend and Web tests relevant to the area you touched.
 
-See [docs/poc-spec.md](docs/poc-spec.md) for detailed boundaries and PoC acceptance criteria, and [docs/grand-architecture.md](docs/grand-architecture.md) for the long-term architecture.
+## License
+
+No license has been selected yet. Until a license is added, this repository is
+source-available and should not be redistributed as open-source software.
