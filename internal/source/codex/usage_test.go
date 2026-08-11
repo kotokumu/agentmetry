@@ -28,3 +28,31 @@ func TestParseExecJSONRejectsMissingCompletedUsage(t *testing.T) {
 		t.Fatal("ParseExecJSON() error = nil, want missing usage error")
 	}
 }
+
+func TestParseExecJSONRejectsInconsistentProviderBreakdowns(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "cached input exceeds input",
+			input: `{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":11,"output_tokens":2}}`,
+		},
+		{
+			name:  "reasoning output exceeds output",
+			input: `{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2,"reasoning_output_tokens":3}}`,
+		},
+		{
+			name:  "total does not match input and output",
+			input: `{"type":"turn.completed","usage":{"input_tokens":10,"output_tokens":2,"total_tokens":11}}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if _, err := codex.ParseExecJSON(strings.NewReader(tt.input)); err == nil {
+				t.Fatal("ParseExecJSON() error = nil, want inconsistent usage error")
+			}
+		})
+	}
+}

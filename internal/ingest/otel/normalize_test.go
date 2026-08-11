@@ -132,3 +132,42 @@ func TestNormalizeMetricsKeepsGaugeAndSumPoints(t *testing.T) {
 		t.Fatalf("unexpected metrics: %#v", batch.Metrics)
 	}
 }
+
+func TestNormalizeTracesRejectsInconsistentTokenBreakdowns(t *testing.T) {
+	traces := ptrace.NewTraces()
+	span := traces.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("gen_ai.model.request")
+	span.Attributes().PutInt("gen_ai.usage.input_tokens", 10)
+	span.Attributes().PutInt("gen_ai.usage.cache_read.input_tokens", 8)
+	span.Attributes().PutInt("gen_ai.usage.cache_write.input_tokens", 3)
+
+	if _, err := adapter.NewNormalizer(source.NewRegistry()).NormalizeTraces(traces); err == nil {
+		t.Fatal("NormalizeTraces() error = nil, want inconsistent token usage error")
+	}
+}
+
+func TestNormalizeLogsRejectsInconsistentReasoningBreakdown(t *testing.T) {
+	logs := plog.NewLogs()
+	record := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	record.SetEventName("gen_ai.response.completed")
+	record.Attributes().PutInt("gen_ai.usage.output_tokens", 5)
+	record.Attributes().PutInt("gen_ai.usage.reasoning_tokens", 6)
+
+	if _, err := adapter.NewNormalizer(source.NewRegistry()).NormalizeLogs(logs); err == nil {
+		t.Fatal("NormalizeLogs() error = nil, want inconsistent token usage error")
+	}
+}
+
+func TestNormalizeMetricsRejectsInconsistentTokenBreakdowns(t *testing.T) {
+	metrics := pmetric.NewMetrics()
+	metric := metrics.ResourceMetrics().AppendEmpty().ScopeMetrics().AppendEmpty().Metrics().AppendEmpty()
+	metric.SetName("gen_ai.usage.tokens")
+	point := metric.SetEmptyGauge().DataPoints().AppendEmpty()
+	point.SetIntValue(1)
+	point.Attributes().PutInt("gen_ai.usage.input_tokens", 10)
+	point.Attributes().PutInt("gen_ai.usage.cache_read.input_tokens", 11)
+
+	if _, err := adapter.NewNormalizer(source.NewRegistry()).NormalizeMetrics(metrics); err == nil {
+		t.Fatal("NormalizeMetrics() error = nil, want inconsistent token usage error")
+	}
+}

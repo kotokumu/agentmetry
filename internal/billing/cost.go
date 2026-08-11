@@ -85,16 +85,8 @@ func Calculate(usage canonical.TokenUsage, pricing Pricing) (CostBreakdown, erro
 }
 
 func validate(usage canonical.TokenUsage, pricing Pricing) error {
-	for name, value := range map[string]int64{
-		"input":       usage.Input,
-		"output":      usage.Output,
-		"cache read":  usage.CacheRead,
-		"cache write": usage.CacheWrite,
-		"reasoning":   usage.Reasoning,
-	} {
-		if value < 0 {
-			return fmt.Errorf("%s tokens must be non-negative: %d", name, value)
-		}
+	if err := usage.Validate(); err != nil {
+		return err
 	}
 	for name, value := range map[string]int64{
 		"input":       pricing.InputMicroUSDPerMillion,
@@ -105,9 +97,6 @@ func validate(usage canonical.TokenUsage, pricing Pricing) error {
 		if value < 0 {
 			return fmt.Errorf("%s price must be non-negative: %d", name, value)
 		}
-	}
-	if usage.CacheRead+usage.CacheWrite < usage.CacheRead || usage.CacheRead+usage.CacheWrite > usage.Input {
-		return fmt.Errorf("cache tokens exceed input tokens: input=%d cacheRead=%d cacheWrite=%d", usage.Input, usage.CacheRead, usage.CacheWrite)
 	}
 	return nil
 }

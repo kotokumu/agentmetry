@@ -27,6 +27,17 @@ source adapter, canonical model, and storage projection.
 - `Reasoning` is an output breakdown and is never added to `Output`.
 - `Total()` is `Input + Output`.
 
+Every reported canonical usage observation must also satisfy these invariants:
+
+- `cacheRead + cacheWrite <= Input` when the input and cache breakdown are
+  present.
+- `Reasoning <= Output` when both values are present.
+- `Input + Output` must fit in `int64`.
+
+Partial observations are accepted when a primary counter or breakdown is
+missing; negative values and inconsistent complete observations are rejected
+before they enter a canonical batch.
+
 Claude Code's request fields are normalized as:
 
 ```text
@@ -54,4 +65,8 @@ catalog change from silently changing the meaning of observed provider usage.
 Missing or malformed provider usage is a test failure, not zero usage. Live
 tests are excluded from ordinary PR CI because they require credentials and
 make paid requests; the explicit `providerlive` command and workflow are the
-automation gate for real provider contracts.
+automation gate for real provider contracts. Codex JSONL parsing additionally
+checks that cached input is a subset of input, reasoning output is a subset of
+output, and an optional provider total matches input plus output. Claude JSON
+parsing checks that its uncached and cache input components can be summed
+without overflow.

@@ -40,3 +40,9 @@ func TestParseCLIResultRejectsMissingUsage(t *testing.T) {
 		t.Fatal("ParseCLIResult() error = nil, want malformed usage error")
 	}
 }
+
+func TestParseCLIResultRejectsInputOverflow(t *testing.T) {
+	if _, err := claude.ParseCLIResult([]byte(`{"usage":{"input_tokens":9223372036854775807,"output_tokens":1,"cache_read_input_tokens":1}}`)); err == nil {
+		t.Fatal("ParseCLIResult() error = nil, want input overflow error")
+	}
+}

@@ -1,6 +1,7 @@
 package otel
 
 import (
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
@@ -32,6 +33,10 @@ func (normalizer Normalizer) NormalizeTraces(traces ptrace.Traces) (canonical.Ba
 				profiled := normalizer.profiles.Profile(source.Event{Name: span.Name(), Attributes: mergeAttributes(resourceAttributes, span.Attributes())})
 				attributes := profiled.Attributes
 				kind, toolName, targetAgentID, content := canonical.DeriveActivity(profiled.Name, attributes)
+				agent, err := validatedAgentContext(attributes)
+				if err != nil {
+					return canonical.Batch{}, fmt.Errorf("normalize trace %q: %w", profiled.Name, err)
+				}
 				batch.Spans = append(batch.Spans, canonical.Span{
 					Source:          profiled.Source,
 					TraceID:         span.TraceID().String(),
@@ -48,7 +53,7 @@ func (normalizer Normalizer) NormalizeTraces(traces ptrace.Traces) (canonical.Ba
 					Content:         content,
 					CostUSD:         canonical.DeriveCostUSD(attributes),
 					Attributes:      attributes,
-					Agent:           canonical.DeriveAgentContext(attributes),
+					Agent:           agent,
 				})
 			}
 		}
@@ -77,6 +82,10 @@ func (normalizer Normalizer) NormalizeLogs(logs plog.Logs) (canonical.Batch, err
 				if content != "" {
 					body = content
 				}
+				agent, err := validatedAgentContext(attributes)
+				if err != nil {
+					return canonical.Batch{}, fmt.Errorf("normalize log %q: %w", name, err)
+				}
 				observedAt := record.Timestamp().AsTime()
 				if record.Timestamp() == 0 {
 					observedAt = record.ObservedTimestamp().AsTime()
@@ -95,7 +104,7 @@ func (normalizer Normalizer) NormalizeLogs(logs plog.Logs) (canonical.Batch, err
 					TargetAgentType: canonical.DeriveTargetAgentType(attributes),
 					CostUSD:         canonical.DeriveCostUSD(attributes),
 					Attributes:      attributes,
-					Agent:           canonical.DeriveAgentContext(attributes),
+					Agent:           agent,
 				})
 			}
 		}
@@ -114,9 +123,13 @@ func (normalizer Normalizer) NormalizeMetrics(metrics pmetric.Metrics) (canonica
 				metric := metricSlice.At(metricIndex)
 				switch metric.Type() {
 				case pmetric.MetricTypeGauge:
-					normalizer.appendNumberPoints(&batch, resourceAttributes, metric.Name(), metric.Type().String(), metric.Gauge().DataPoints())
+					if err := normalizer.appendNumberPoints(&batch, resourceAttributes, metric.Name(), metric.Type().String(), metric.Gauge().DataPoints()); err != nil {
+						return canonical.Batch{}, err
+					}
 				case pmetric.MetricTypeSum:
-					normalizer.appendNumberPoints(&batch, resourceAttributes, metric.Name(), metric.Type().String(), metric.Sum().DataPoints())
+					if err := normalizer.appendNumberPoints(&batch, resourceAttributes, metric.Name(), metric.Type().String(), metric.Sum().DataPoints()); err != nil {
+						return canonical.Batch{}, err
+					}
 				case pmetric.MetricTypeHistogram:
 					points := metric.Histogram().DataPoints()
 					for pointIndex := 0; pointIndex < points.Len(); pointIndex++ {
@@ -125,7 +138,9 @@ func (normalizer Normalizer) NormalizeMetrics(metrics pmetric.Metrics) (canonica
 						if point.HasSum() {
 							value = point.Sum()
 						}
-						normalizer.appendMetricPoint(&batch, resourceAttributes, point.Attributes(), metric.Name(), metric.Type().String(), point.Timestamp().AsTime(), value)
+						if err := normalizer.appendMetricPoint(&batch, resourceAttributes, point.Attributes(), metric.Name(), metric.Type().String(), point.Timestamp().AsTime(), value); err != nil {
+							return canonical.Batch{}, err
+						}
 					}
 				default:
 					continue
@@ -136,7 +151,7 @@ func (normalizer Normalizer) NormalizeMetrics(metrics pmetric.Metrics) (canonica
 	return batch, nil
 }
 
-func (normalizer Normalizer) appendNumberPoints(batch *canonical.Batch, resourceAttributes map[string]any, name, kind string, points pmetric.NumberDataPointSlice) {
+func (normalizer Normalizer) appendNumberPoints(batch *canonical.Batch, resourceAttributes map[string]any, name, kind string, points pmetric.NumberDataPointSlice) error {
 	for pointIndex := 0; pointIndex < points.Len(); pointIndex++ {
 		point := points.At(pointIndex)
 		var value float64
@@ -148,13 +163,20 @@ func (normalizer Normalizer) appendNumberPoints(batch *canonical.Batch, resource
 		default:
 			continue
 		}
-		normalizer.appendMetricPoint(batch, resourceAttributes, point.Attributes(), name, kind, point.Timestamp().AsTime(), value)
+		if err := normalizer.appendMetricPoint(batch, resourceAttributes, point.Attributes(), name, kind, point.Timestamp().AsTime(), value); err != nil {
+			return err
+		}
 	}
+	return nil
 }
 
-func (normalizer Normalizer) appendMetricPoint(batch *canonical.Batch, resourceAttributes map[string]any, pointAttributes pcommon.Map, name, kind string, observedAt time.Time, value float64) {
+func (normalizer Normalizer) appendMetricPoint(batch *canonical.Batch, resourceAttributes map[string]any, pointAttributes pcommon.Map, name, kind string, observedAt time.Time, value float64) error {
 	attributes := mergeAttributes(resourceAttributes, pointAttributes)
 	profiled := normalizer.profiles.Profile(source.Event{Name: name, Attributes: attributes})
+	agent, err := validatedAgentContext(profiled.Attributes)
+	if err != nil {
+		return fmt.Errorf("normalize metric %q: %w", profiled.Name, err)
+	}
 	batch.Metrics = append(batch.Metrics, canonical.MetricPoint{
 		Source:     profiled.Source,
 		ObservedAt: observedAt,
@@ -163,8 +185,17 @@ func (normalizer Normalizer) appendMetricPoint(batch *canonical.Batch, resourceA
 		Value:      value,
 		CostUSD:    canonical.DeriveCostUSD(profiled.Attributes),
 		Attributes: profiled.Attributes,
-		Agent:      canonical.DeriveAgentContext(profiled.Attributes),
+		Agent:      agent,
 	})
+	return nil
+}
+
+func validatedAgentContext(attributes map[string]any) (canonical.AgentContext, error) {
+	agent := canonical.DeriveAgentContext(attributes)
+	if err := agent.Tokens.Validate(); err != nil {
+		return canonical.AgentContext{}, err
+	}
+	return agent, nil
 }
 
 func (normalizer Normalizer) profile(name string, attributes map[string]any) source.ProfiledEvent {

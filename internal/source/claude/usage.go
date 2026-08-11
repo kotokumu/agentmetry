@@ -52,5 +52,20 @@ func ParseCLIResult(payload []byte) (CLIUsage, error) {
 	if usage.TotalCostUSD != nil && *usage.TotalCostUSD < 0 {
 		return CLIUsage{}, fmt.Errorf("Claude JSON result contains negative cost")
 	}
+	if _, ok := addNonNegative(usage.InputTokens, usage.CacheReadInputTokens); !ok {
+		return CLIUsage{}, fmt.Errorf("Claude JSON result input usage overflows int64")
+	}
+	inputWithCache, _ := addNonNegative(usage.InputTokens, usage.CacheReadInputTokens)
+	if _, ok := addNonNegative(inputWithCache, usage.CacheCreationInputTokens); !ok {
+		return CLIUsage{}, fmt.Errorf("Claude JSON result input usage overflows int64")
+	}
 	return usage, nil
+}
+
+func addNonNegative(first, second int64) (int64, bool) {
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if first > maxInt64-second {
+		return 0, false
+	}
+	return first + second, true
 }
