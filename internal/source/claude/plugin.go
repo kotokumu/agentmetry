@@ -60,7 +60,7 @@ func (Plugin) Normalize(input source.Event) source.Event {
 	// the lossless OTLP journal and observation payloads.
 	if sourceName == "api_request" {
 		event.Attributes["gen_ai.usage.role"] = "authoritative_call"
-		copyAlias(event.Attributes, "gen_ai.usage.input_tokens", "input_tokens")
+		normalizeInputTokens(event.Attributes)
 		copyAlias(event.Attributes, "gen_ai.usage.output_tokens", "output_tokens")
 		copyFirstAlias(event.Attributes, "gen_ai.usage.cache_read.input_tokens", "cache_read_tokens", "cache_read_input_tokens")
 		copyFirstAlias(event.Attributes, "gen_ai.usage.cache_write.input_tokens", "cache_creation_tokens", "cache_creation_input_tokens")
@@ -147,6 +147,70 @@ func copyAlias(attributes map[string]any, destination, sourceKey string) {
 	if value, exists := attributes[sourceKey]; exists {
 		attributes[destination] = value
 	}
+}
+
+// normalizeInputTokens adapts Claude Code's raw request fields to the
+// OpenTelemetry convention. Claude reports uncached input_tokens separately
+// from cache_read_tokens and cache_creation_tokens, while gen_ai.usage.input_tokens
+// represents the complete input count. Keep an already normalized value intact
+// so repeated normalization cannot double-count cache tokens.
+func normalizeInputTokens(attributes map[string]any) {
+	if _, exists := attributes["gen_ai.usage.input_tokens"]; exists {
+		return
+	}
+	input, ok := nonNegativeTokenCount(attributes["input_tokens"])
+	if !ok {
+		return
+	}
+	cacheRead, cacheReadOK := firstNonNegativeTokenCount(attributes, "cache_read_tokens", "cache_read_input_tokens")
+	cacheWrite, cacheWriteOK := firstNonNegativeTokenCount(attributes, "cache_creation_tokens", "cache_creation_input_tokens")
+	if !cacheReadOK {
+		cacheRead = 0
+	}
+	if !cacheWriteOK {
+		cacheWrite = 0
+	}
+	if input > int64(^uint64(0)>>1)-cacheRead || input+cacheRead > int64(^uint64(0)>>1)-cacheWrite {
+		return
+	}
+	attributes["gen_ai.usage.input_tokens"] = input + cacheRead + cacheWrite
+}
+
+func firstNonNegativeTokenCount(attributes map[string]any, keys ...string) (int64, bool) {
+	for _, key := range keys {
+		if value, ok := nonNegativeTokenCount(attributes[key]); ok {
+			return value, true
+		}
+	}
+	return 0, false
+}
+
+func nonNegativeTokenCount(value any) (int64, bool) {
+	var parsed int64
+	switch value := value.(type) {
+	case int:
+		parsed = int64(value)
+	case int32:
+		parsed = int64(value)
+	case int64:
+		parsed = value
+	case float64:
+		text := strconv.FormatFloat(value, 'f', -1, 64)
+		var err error
+		parsed, err = strconv.ParseInt(text, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+	case string:
+		var err error
+		parsed, err = strconv.ParseInt(value, 10, 64)
+		if err != nil {
+			return 0, false
+		}
+	default:
+		return 0, false
+	}
+	return parsed, parsed >= 0
 }
 
 func text(value any) string {

@@ -47,6 +47,24 @@ make build
 runtime. The top-level `web/dist` directory is kept only as the embed root; its
 generated contents are not stored in Git.
 
+## Token accounting tests
+
+Token accounting is validated without the Web UI:
+
+```sh
+GOCACHE=/tmp/agentmetry-go-build go test ./...
+GOCACHE=/tmp/agentmetry-go-build go test -tags=integration ./...
+GOCACHE=/tmp/agentmetry-go-build go test -tags=providerlive ./internal/source/claude ./internal/source/codex
+```
+
+The first command covers the deterministic rate-card formula, provider alias
+normalization, and sanitized Claude/Codex usage fixtures. The integration tag
+covers the committed ingestion and storage path. The providerlive tag invokes
+`claude -p --output-format json` and `codex exec --json` directly, then compares
+their provider-reported usage with the canonical projection. It requires
+`ANTHROPIC_API_KEY` and `OPENAI_API_KEY` and is intentionally separate because
+it makes paid provider requests.
+
 After startup:
 
 - Dashboard / API / MCP: `http://127.0.0.1:17890`

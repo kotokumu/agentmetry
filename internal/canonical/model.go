@@ -24,7 +24,11 @@ const (
 )
 
 type TokenUsage struct {
-	Input            int64         `json:"-"`
+	// Input is the complete input count. Provider adapters must include cache
+	// reads and writes here; the cache fields below are breakdowns of Input.
+	Input int64 `json:"-"`
+	// Output is the provider-reported output total. Reasoning is a breakdown
+	// of Output and must not be added to it.
 	Output           int64         `json:"-"`
 	CacheRead        int64         `json:"-"`
 	CacheWrite       int64         `json:"-"`

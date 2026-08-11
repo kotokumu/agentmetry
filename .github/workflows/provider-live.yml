@@ -1,0 +1,51 @@
+name: provider-live
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_claude:
+        description: Run the Claude Code provider contract test
+        required: true
+        default: false
+        type: boolean
+      run_codex:
+        description: Run the Codex provider contract test
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  claude:
+    if: ${{ inputs.run_claude }}
+    runs-on: ubuntu-latest
+    env:
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global @anthropic-ai/claude-code
+      - run: go test -tags=providerlive ./internal/source/claude
+
+  codex:
+    if: ${{ inputs.run_codex }}
+    runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm install --global @openai/codex
+      - run: go test -tags=providerlive ./internal/source/codex
