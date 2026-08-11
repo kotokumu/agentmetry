@@ -46,12 +46,11 @@ func (Plugin) Normalize(input source.Event) source.Event {
 	}
 	copyAlias(normalized, "gen_ai.conversation.id", "conversation.id")
 	copyAlias(normalized, "gen_ai.request.model", "model")
-	copyAlias(normalized, "gen_ai.usage.input_tokens", "input_token_count")
-	copyAlias(normalized, "gen_ai.usage.output_tokens", "output_token_count")
-	copyAlias(normalized, "gen_ai.usage.cache_read.input_tokens", "cached_token_count")
-	copyAlias(normalized, "gen_ai.usage.cache_write.input_tokens", "cache_write_token_count")
-	copyAlias(normalized, "gen_ai.usage.reasoning_tokens", "reasoning_token_count")
-	copyAlias(normalized, "gen_ai.usage.reasoning_tokens", "codex.usage.reasoning_output_tokens")
+	copyFirstAlias(normalized, "gen_ai.usage.input_tokens", "input_token_count", "input_tokens")
+	copyFirstAlias(normalized, "gen_ai.usage.output_tokens", "output_token_count", "output_tokens")
+	copyFirstAlias(normalized, "gen_ai.usage.cache_read.input_tokens", "cached_token_count", "cached_input_tokens")
+	copyFirstAlias(normalized, "gen_ai.usage.cache_write.input_tokens", "cache_write_token_count", "cache_write_tokens")
+	copyFirstAlias(normalized, "gen_ai.usage.reasoning_tokens", "reasoning_token_count", "codex.usage.reasoning_output_tokens", "reasoning_output_tokens")
 	copyAlias(normalized, "gen_ai.agent.id", "sender_thread_id")
 	copyAlias(normalized, "gen_ai.agent.target.id", "receiver_thread_id")
 	if hasUsage(normalized) {
@@ -136,6 +135,18 @@ func copyAlias(attributes map[string]any, destination, sourceKey string) {
 	}
 	if value, exists := attributes[sourceKey]; exists {
 		attributes[destination] = value
+	}
+}
+
+func copyFirstAlias(attributes map[string]any, destination string, sourceKeys ...string) {
+	if _, exists := attributes[destination]; exists {
+		return
+	}
+	for _, sourceKey := range sourceKeys {
+		if value, exists := attributes[sourceKey]; exists {
+			attributes[destination] = value
+			return
+		}
 	}
 }
 

@@ -57,6 +57,25 @@ func TestPluginProfilesClaudeCodeRequestUsage(t *testing.T) {
 	}
 }
 
+func TestPluginProfilesClaudePromptCacheInputAliases(t *testing.T) {
+	event := claude.New().Normalize(source.Event{
+		Name: "claude_code.api_request",
+		Attributes: map[string]any{
+			"service.name":                "claude-code",
+			"session.id":                  "session-1",
+			"input_tokens":                int64(100),
+			"output_tokens":               int64(20),
+			"cache_read_input_tokens":     int64(70),
+			"cache_creation_input_tokens": int64(4),
+		},
+	})
+
+	usage := canonical.DeriveAgentContext(event.Attributes).Tokens
+	if usage.Input != 100 || usage.Output != 20 || usage.CacheRead != 70 || usage.CacheWrite != 4 {
+		t.Fatalf("Claude prompt-cache usage was not normalized: %#v", usage)
+	}
+}
+
 func TestPluginUsesClaudeEventNameAttribute(t *testing.T) {
 	plugin := claude.New()
 	event := source.Event{

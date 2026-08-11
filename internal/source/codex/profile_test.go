@@ -69,6 +69,25 @@ func TestNormalizeUsageAndAgentCommunicationAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeNativeResponseUsageAliases(t *testing.T) {
+	event := codex.New().Normalize(source.Event{Name: "codex.sse_event", Attributes: map[string]any{
+		"event.kind":              "response.completed",
+		"conversation.id":         "thread-1",
+		"input_tokens":            int64(32161),
+		"cached_input_tokens":     int64(1920),
+		"output_tokens":           int64(47),
+		"reasoning_output_tokens": int64(41),
+	}})
+
+	context := canonical.DeriveAgentContext(event.Attributes)
+	if context.Tokens.Input != 32161 || context.Tokens.Output != 47 || context.Tokens.CacheRead != 1920 || context.Tokens.Reasoning != 41 {
+		t.Fatalf("native Codex usage was not normalized: %#v", context.Tokens)
+	}
+	if context.Tokens.Total() != 32208 || !context.Tokens.TotalReported() {
+		t.Fatalf("native Codex total was not derived from input + output: %#v", context.Tokens)
+	}
+}
+
 func TestNormalizeCorroboratingUsageRetainsAStableRequestIdentity(t *testing.T) {
 	event := codex.New().Normalize(source.Event{Name: "codex.handle_responses", Attributes: map[string]any{
 		"request_id":        "request-1",
