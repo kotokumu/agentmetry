@@ -1,0 +1,233 @@
+syntax = "proto3";
+
+package agentmetry.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/theoden9014/agentmetry/gen/agentmetry/v1;agentmetryv1";
+
+// AgentmetryQuery is the read contract shared by the dashboard, Web UI, and
+// future generated clients. MCP tools are separate semantic adapters over the
+// same application query service; not every RPC is automatically exposed as a
+// tool.
+service AgentmetryQueryService {
+  // Returns bounded dashboard aggregates and recent evidence. It never returns
+  // session operation lists.
+  rpc GetDashboard(GetDashboardRequest) returns (GetDashboardResponse);
+
+  // Returns bounded session summaries. Operation evidence is loaded separately.
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+
+  // Returns one session summary and its agent topology, without operations.
+  rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
+
+  // Returns one bounded, cursor-addressed activity page for a session.
+  rpc ListSessionActivities(ListSessionActivitiesRequest) returns (ListSessionActivitiesResponse);
+
+  // Returns the bounded trace evidence for one trace ID.
+  rpc GetTrace(GetTraceRequest) returns (GetTraceResponse);
+}
+
+enum TimeRange {
+  TIME_RANGE_UNSPECIFIED = 0;
+  TIME_RANGE_ONE_HOUR = 1;
+  TIME_RANGE_ONE_DAY = 2;
+  TIME_RANGE_SEVEN_DAYS = 3;
+}
+
+enum PageDirection {
+  PAGE_DIRECTION_UNSPECIFIED = 0;
+  PAGE_DIRECTION_OLDER = 1;
+  PAGE_DIRECTION_NEWER = 2;
+}
+
+message TimeFilter {
+  TimeRange range = 1;
+  string source_id = 2;
+  string search = 3;
+}
+
+message PageRequest {
+  // Servers may clamp this value. The Agentmetry server caps it at 100.
+  int32 page_size = 1;
+  // Opaque cursor returned by the server. Clients must not parse it.
+  string page_token = 2;
+}
+
+message PageInfo {
+  string next_page_token = 1;
+  bool has_more = 2;
+  string previous_page_token = 3;
+  int64 start_offset = 4;
+}
+
+message TelemetrySource {
+  string id = 1;
+  string label = 2;
+}
+
+message SignalCounts {
+  int64 traces = 1;
+  int64 logs = 2;
+  int64 metrics = 3;
+}
+
+message TokenUsage {
+  optional int64 input = 1;
+  optional int64 output = 2;
+  optional int64 cache_read = 3;
+  optional int64 cache_write = 4;
+  optional int64 reasoning = 5;
+  optional int64 total = 6;
+}
+
+message Activity {
+  string source = 1;
+  string signal = 2;
+  string trace_id = 3;
+  string span_id = 4;
+  string parent_span_id = 5;
+  string name = 6;
+  string kind = 7;
+  string tool_name = 8;
+  string target_agent_id = 9;
+  string target_agent_type = 10;
+  string content = 11;
+  string agent_id = 12;
+  string agent_definition = 13;
+  string agent_type = 14;
+  string parent_agent_id = 15;
+  string run_id = 16;
+  string model = 17;
+  google.protobuf.Timestamp started_at = 18;
+  google.protobuf.Timestamp ended_at = 19;
+  google.protobuf.Timestamp observed_at = 20;
+  string status = 21;
+  TokenUsage tokens = 22;
+  optional double cost_usd = 23;
+  bool contributes_to_total = 24;
+}
+
+message AgentSummary {
+  string agent_id = 1;
+  string agent_definition = 2;
+  string agent_type = 3;
+  string parent_agent_id = 4;
+  string model = 5;
+  int64 activity_count = 6;
+  TokenUsage tokens = 7;
+}
+
+message SessionSummary {
+  string id = 1;
+  string source_id = 2;
+  repeated TelemetrySource sources = 3;
+  google.protobuf.Timestamp started_at = 4;
+  google.protobuf.Timestamp ended_at = 5;
+  int64 activity_count = 6;
+  TokenUsage tokens = 7;
+  optional double cost_usd = 8;
+  repeated AgentSummary agents = 9;
+  // ListSessions may return this count without loading agent metadata.
+  int64 agent_count = 10;
+}
+
+message Dashboard {
+  repeated TelemetrySource sources = 1;
+  SignalCounts signal_counts = 2;
+  int64 run_count = 3;
+  int64 agent_count = 4;
+  TokenUsage tokens = 5;
+  repeated Activity recent_activity = 6;
+  repeated PlanUsageSnapshot plan_usage = 7;
+}
+
+message PlanUsageSnapshot {
+  string source = 1;
+  string account_id = 2;
+  string plan = 3;
+  string window_id = 4;
+  int32 window_duration_minutes = 5;
+  double used_percent = 6;
+  optional google.protobuf.Timestamp resets_at = 7;
+  google.protobuf.Timestamp captured_at = 8;
+  string authority = 9;
+}
+
+message ActivityAnchor {
+  string trace_id = 1;
+  string span_id = 2;
+}
+
+message GetDashboardRequest {
+  TimeFilter filter = 1;
+}
+
+message GetDashboardResponse {
+  Dashboard dashboard = 1;
+}
+
+message ListSessionsRequest {
+  TimeFilter filter = 1;
+  PageRequest page = 2;
+}
+
+message ListSessionsResponse {
+  repeated SessionSummary sessions = 1;
+  PageInfo page = 2;
+}
+
+message GetSessionRequest {
+  string source_id = 1;
+  string session_id = 2;
+}
+
+message GetSessionResponse {
+  SessionSummary session = 1;
+  repeated string trace_ids = 2;
+}
+
+message ListSessionActivitiesRequest {
+  string source_id = 1;
+  string session_id = 2;
+  PageRequest page = 3;
+  PageDirection direction = 4;
+  ActivityAnchor anchor = 5;
+}
+
+message ListSessionActivitiesResponse {
+  repeated Activity activities = 1;
+  PageInfo page = 2;
+  int64 total = 3;
+}
+
+message GetTraceRequest {
+  string trace_id = 1;
+}
+
+message GetTraceResponse {
+  string trace_id = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp ended_at = 3;
+  string status = 4;
+  int64 root_span_count = 5;
+  int64 missing_parent_count = 6;
+  repeated ConversationRef conversations = 7;
+  repeated TraceAgent agents = 8;
+  repeated Activity activities = 9;
+}
+
+message ConversationRef {
+  string source_id = 1;
+  string id = 2;
+}
+
+message TraceAgent {
+  string source_id = 1;
+  string conversation_id = 2;
+  string agent_id = 3;
+  string agent_definition = 4;
+  string agent_type = 5;
+  string parent_agent_id = 6;
+  string model = 7;
+}
