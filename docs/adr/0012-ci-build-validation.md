@@ -20,7 +20,7 @@ test gate.
 1. Web dependencies install, Web tests pass, and `web/dist` builds.
 2. Go tests run only after `web/dist` has been generated.
 3. Desktop target metadata tests pass and the Linux sidecar input builds.
-4. Tauri Rust dependencies compile with `cargo check`.
+4. Tauri Rust dependencies resolve from crates.io and compile with `cargo check`.
 
 `web/dist` is intentionally ignored by Git. The generated directory is a build
 input for Go's `embed`, so every path that compiles or tests the Go runtime must

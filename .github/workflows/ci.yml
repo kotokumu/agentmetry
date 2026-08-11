@@ -61,4 +61,4 @@ jobs:
       - run: npm --prefix web ci
       - run: npm run desktop:inputs
       - run: npm run desktop:test
-      - run: cargo check --manifest-path src-tauri/Cargo.toml --offline
+      - run: cargo check --manifest-path src-tauri/Cargo.toml
