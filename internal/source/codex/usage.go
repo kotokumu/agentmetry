@@ -33,6 +33,7 @@ func ParseExecJSON(input io.Reader) (JSONUsage, error) {
 				CachedInputTokens     *int64 `json:"cached_input_tokens"`
 				OutputTokens          *int64 `json:"output_tokens"`
 				ReasoningOutputTokens *int64 `json:"reasoning_output_tokens"`
+				TotalTokens           *int64 `json:"total_tokens"`
 			} `json:"usage"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &event); err != nil {
@@ -49,6 +50,21 @@ func ParseExecJSON(input io.Reader) (JSONUsage, error) {
 		}
 		if usage.InputTokens < 0 || usage.OutputTokens < 0 || usage.CachedInputTokens < 0 || usage.ReasoningOutputTokens < 0 {
 			return JSONUsage{}, fmt.Errorf("Codex JSONL event contains negative usage")
+		}
+		if usage.CachedInputTokens > usage.InputTokens {
+			return JSONUsage{}, fmt.Errorf("Codex JSONL event cached input exceeds input")
+		}
+		if usage.ReasoningOutputTokens > usage.OutputTokens {
+			return JSONUsage{}, fmt.Errorf("Codex JSONL event reasoning output exceeds output")
+		}
+		if event.Usage.TotalTokens != nil {
+			if *event.Usage.TotalTokens < 0 {
+				return JSONUsage{}, fmt.Errorf("Codex JSONL event contains negative total")
+			}
+			computedTotal, ok := addNonNegative(usage.InputTokens, usage.OutputTokens)
+			if !ok || *event.Usage.TotalTokens != computedTotal {
+				return JSONUsage{}, fmt.Errorf("Codex JSONL event total does not match input and output")
+			}
 		}
 		if total.InputTokens > maxInt64-usage.InputTokens || total.CachedInputTokens > maxInt64-usage.CachedInputTokens || total.OutputTokens > maxInt64-usage.OutputTokens || total.ReasoningOutputTokens > maxInt64-usage.ReasoningOutputTokens {
 			return JSONUsage{}, fmt.Errorf("Codex JSONL usage overflows int64")
@@ -75,4 +91,11 @@ func valueOrZero(value *int64) int64 {
 		return 0
 	}
 	return *value
+}
+
+func addNonNegative(first, second int64) (int64, bool) {
+	if first > maxInt64-second {
+		return 0, false
+	}
+	return first + second, true
 }

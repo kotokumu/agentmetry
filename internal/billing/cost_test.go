@@ -95,6 +95,12 @@ func TestCalculate(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name:    "reasoning breakdown cannot exceed output",
+			usage:   canonical.TokenUsage{Output: 5, Reasoning: 6},
+			pricing: billing.Pricing{OutputMicroUSDPerMillion: 1_000_000},
+			wantErr: true,
+		},
 	}
 
 	for _, test := range tests {
