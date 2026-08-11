@@ -78,7 +78,7 @@ func TestGetTraceReturnsCompleteTraceAndPreservesTypedUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.traceFilter.TraceID != traceID {
+	if reader.traceFilter.TraceID != traceID || reader.traceFilter.Limit != 100 {
 		t.Fatalf("unexpected trace filter: %#v", reader.traceFilter)
 	}
 	if output.Trace.TraceID != traceID || output.Trace.Activities[0].Tokens.Input == nil || *output.Trace.Activities[0].Tokens.Input != 12 {

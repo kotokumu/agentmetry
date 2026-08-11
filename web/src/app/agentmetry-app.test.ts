@@ -66,8 +66,8 @@ const sessionsResponse = (overview: TestOverview) => ({
   page: { hasMore: false },
 });
 
-const activitiesResponse = (session: TestSession) => ({
-  activities: session.activities,
+const activitiesResponse = (session: TestSession, agentId = "") => ({
+  activities: agentId ? session.activities.filter((activity) => (activity as { agentId?: string }).agentId === agentId) : session.activities,
   page: { hasMore: false },
   total: session.activityCount,
 });
@@ -75,12 +75,13 @@ const activitiesResponse = (session: TestSession) => ({
 const connectPath = (url: string) => new URL(url, "http://localhost").pathname;
 const connectBody = (call: readonly unknown[]) => JSON.parse(new TextDecoder().decode((call[1] as { body: Uint8Array }).body));
 
-const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(async (url: string) => {
+const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+  const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { agentId?: string } : {};
   switch (connectPath(url).split("/").at(-1)) {
     case "GetDashboard": return connectResponse(dashboardResponse(overview));
     case "ListSessions": return connectResponse(sessionsResponse(overview));
     case "GetSession": return connectResponse(overview.sessions[0] ? { session: sessionSummary(overview.sessions[0]), traceIds: overview.sessions[0].traceIds ?? [] } : {});
-    case "ListSessionActivities": return connectResponse(overview.sessions[0] ? activitiesResponse(overview.sessions[0]) : { activities: [], page: { hasMore: false }, total: 0 });
+    case "ListSessionActivities": return connectResponse(overview.sessions[0] ? activitiesResponse(overview.sessions[0], body.agentId) : { activities: [], page: { hasMore: false }, total: 0 });
     default: return connectResponse({});
   }
 });
@@ -164,6 +165,47 @@ describe("Agentmetry app composition", () => {
     const detail = app.shadowRoot?.querySelector(".workspace .detail");
     const children = Array.from(detail?.children ?? []);
     expect(children.findIndex((child) => child.classList.contains("split"))).toBeLessThan(children.findIndex((child) => child.classList.contains("operations-panel")));
+  });
+
+  it("filters operations when an agent graph node is selected", async () => {
+    const tokenUsage = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
+    const activities = [
+      { source: "codex", signal: "trace" as const, traceId: "trace-main", spanId: "span-main", name: "main operation", kind: "tool" as const, agentId: "main", runId: "session-1", model: "model-a", observedAt: "2026-08-11T00:00:01Z", tokens: tokenUsage, contributesToTotal: false },
+      { source: "codex", signal: "trace" as const, traceId: "trace-reviewer", spanId: "span-reviewer", name: "review operation", kind: "tool" as const, agentId: "reviewer", runId: "session-1", model: "model-b", observedAt: "2026-08-11T00:00:02Z", tokens: tokenUsage, contributesToTotal: false },
+    ];
+    const overview = {
+      ...emptyOverview,
+      agentCount: 2,
+      sessions: [{
+        id: "session-1", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }], traceIds: [],
+        startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z", activityCount: 2, tokens: emptyOverview.tokens,
+        agents: [
+          { agentId: "main", agentDefinition: "orchestrator", agentType: "root", activityCount: 1, tokens: tokenUsage },
+          { agentId: "reviewer", agentDefinition: "repository-review", parentAgentId: "main", agentType: "custom", activityCount: 1, tokens: tokenUsage },
+        ],
+        activities,
+      }],
+    } as TestOverview;
+    vi.stubGlobal("fetch", overviewFetch(overview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-agent-tree")).toBeTruthy());
+    const tree = app.shadowRoot?.querySelector("am-agent-tree");
+    await tree?.updateComplete;
+    tree?.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='reviewer']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    await app.updateComplete;
+
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(1));
+    const table = app.shadowRoot?.querySelector<ActivityTable>("am-activity-table");
+    expect(table?.activities).toHaveLength(1);
+    expect(table?.activities[0]?.agentId).toBe("reviewer");
+    expect(app.shadowRoot?.textContent).toContain("Filtered by");
+
+    app.shadowRoot?.querySelector<HTMLButtonElement>(".agent-filter button")?.click();
+    await app.updateComplete;
+    expect(app.shadowRoot?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(2);
+    expect(app.shadowRoot?.textContent).not.toContain("Filtered by");
   });
 
   it("restores a source-qualified conversation and highlighted span from its URL", async () => {

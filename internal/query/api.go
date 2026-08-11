@@ -12,12 +12,12 @@ type DashboardFilter struct {
 }
 
 type SessionListFilter struct {
-	Since    time.Time
-	SourceID string
-	Search   string
+	Since     time.Time
+	SourceID  string
+	Search    string
 	SessionID string
-	PageSize int
-	Offset   int
+	PageSize  int
+	Offset    int
 }
 
 type SessionPage struct {
@@ -29,6 +29,7 @@ type SessionPage struct {
 type ActivityPageFilter struct {
 	SourceID       string
 	ConversationID string
+	AgentID        string
 	PageSize       int
 	Offset         int
 	Direction      string

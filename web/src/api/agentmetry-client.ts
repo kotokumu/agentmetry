@@ -62,13 +62,14 @@ export const agentmetryClient = {
     return { ...session, activities: page.activities, activityOffset: page.offset, hasEarlier: page.hasEarlier, hasMore: page.hasMore, nextPageToken: page.nextPageToken, previousPageToken: page.previousPageToken };
   },
 
-  async listSessionActivities(sourceId: string, sessionId: string, direction: ActivityDirection, offset: number, limit: number, pageToken = "", traceId?: string, spanId?: string): Promise<ActivityPage> {
+  async listSessionActivities(sourceId: string, sessionId: string, direction: ActivityDirection, offset: number, limit: number, pageToken = "", traceId?: string, spanId?: string, agentId?: string): Promise<ActivityPage> {
     const response = await client.listSessionActivities({
       sourceId,
       sessionId,
       page: { pageSize: limit, pageToken },
       direction: direction === "newer" ? PageDirection.NEWER : PageDirection.OLDER,
       anchor: traceId && spanId ? { traceId, spanId } : undefined,
+      agentId: agentId || "",
     });
     const page = response.page;
     const actualOffset = Number(page?.startOffset ?? offset);
@@ -83,8 +84,10 @@ export const agentmetryClient = {
     };
   },
 
-  async getTrace(traceId: string): Promise<Trace> {
-    const response = await client.getTrace({ traceId });
+  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = ""): Promise<Trace> {
+    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken } });
+    const page = response.page;
+    const actualOffset = Number(page?.startOffset ?? offset);
     return {
       traceId: response.traceId,
       startedAt: timeValue(response.startedAt),
@@ -103,6 +106,11 @@ export const agentmetryClient = {
         model: value.model || undefined,
       })),
       activities: response.activities.map(mapActivity),
+      activityOffset: actualOffset,
+      activityCount: Number(response.totalActivities),
+      hasMore: page?.hasMore ?? false,
+      nextPageToken: page?.nextPageToken || undefined,
+      previousPageToken: page?.previousPageToken || undefined,
     };
   },
 };

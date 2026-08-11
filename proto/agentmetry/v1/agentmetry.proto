@@ -193,6 +193,7 @@ message ListSessionActivitiesRequest {
   PageRequest page = 3;
   PageDirection direction = 4;
   ActivityAnchor anchor = 5;
+  string agent_id = 6;
 }
 
 message ListSessionActivitiesResponse {
@@ -203,6 +204,7 @@ message ListSessionActivitiesResponse {
 
 message GetTraceRequest {
   string trace_id = 1;
+  PageRequest page = 2;
 }
 
 message GetTraceResponse {
@@ -215,6 +217,8 @@ message GetTraceResponse {
   repeated ConversationRef conversations = 7;
   repeated TraceAgent agents = 8;
   repeated Activity activities = 9;
+  PageInfo page = 10;
+  int64 total_activities = 11;
 }
 
 message ConversationRef {

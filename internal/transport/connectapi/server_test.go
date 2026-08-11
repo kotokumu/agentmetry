@@ -21,6 +21,7 @@ type readerStub struct {
 	lastDashboard  query.DashboardFilter
 	lastSessions   query.SessionListFilter
 	lastActivities query.ActivityPageFilter
+	lastTrace      query.TraceFilter
 }
 
 func (reader *readerStub) GetDashboard(_ context.Context, filter query.DashboardFilter) (query.Overview, error) {
@@ -42,7 +43,8 @@ func (reader *readerStub) ListSessionActivities(_ context.Context, filter query.
 	return reader.activities, nil
 }
 
-func (reader *readerStub) GetTrace(_ context.Context, _ query.TraceFilter) (query.Trace, error) {
+func (reader *readerStub) GetTrace(_ context.Context, filter query.TraceFilter) (query.Trace, error) {
+	reader.lastTrace = filter
 	return reader.trace, nil
 }
 
@@ -103,5 +105,45 @@ func TestConnectServerRejectsUnboundedActivityPages(t *testing.T) {
 	}))
 	if err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("error = %v, want invalid argument", err)
+	}
+}
+
+func TestConnectServerPassesAgentActivityFilter(t *testing.T) {
+	reader := &readerStub{activities: query.ActivityPage{Total: 2}}
+	_, handler := New(reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+
+	_, err := client.ListSessionActivities(context.Background(), connect.NewRequest(&v1.ListSessionActivitiesRequest{
+		SourceId: "claude", SessionId: "session-1", AgentId: "reviewer", Page: &v1.PageRequest{PageSize: 25},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastActivities.AgentID != "reviewer" {
+		t.Fatalf("agent filter = %q, want reviewer", reader.lastActivities.AgentID)
+	}
+}
+
+func TestConnectServerBoundsTracePages(t *testing.T) {
+	const traceID = "11111111111111111111111111111111"
+	reader := &readerStub{trace: query.Trace{TraceID: traceID, ActivityOffset: 50, ActivityCount: 101, HasMore: true}}
+	_, handler := New(reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+
+	response, err := client.GetTrace(context.Background(), connect.NewRequest(&v1.GetTraceRequest{
+		TraceId: traceID, Page: &v1.PageRequest{PageSize: 50, PageToken: encodePageToken(50)},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastTrace.Offset != 50 || reader.lastTrace.Limit != 50 {
+		t.Fatalf("unexpected trace filter: %#v", reader.lastTrace)
+	}
+	if response.Msg.GetTotalActivities() != 101 || !response.Msg.GetPage().GetHasMore() || response.Msg.GetPage().GetPreviousPageToken() != encodePageToken(0) {
+		t.Fatalf("unexpected trace page: %#v", response.Msg.GetPage())
 	}
 }

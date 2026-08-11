@@ -9,12 +9,10 @@ export class AgentTree extends LitElement {
 
   static styles = css`
     :host { display: block; max-width: 100%; }
-    .viewport { max-width: 100%; max-height: 280px; overflow: auto; overscroll-behavior: contain; padding: 4px 3px 8px; }
-    .graph { position: relative; min-width: 440px; }
-    svg { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
-    path { fill: none; stroke: var(--am-accent); stroke-width: 1.5; opacity: .55; }
-    circle { fill: var(--am-accent); opacity: .8; }
-    .node { position: absolute; min-height: 72px; border: 1px solid var(--am-border); border-left: 3px solid var(--am-accent); border-radius: 8px; padding: 6px 9px; background: var(--am-surface-strong); box-shadow: 0 4px 12px rgba(23, 32, 52, .06); color: var(--am-text); cursor: pointer; text-align: left; }
+    .viewport { width: 100%; max-width: 100%; min-height: 220px; max-height: min(560px, 65vh); overflow: auto; overscroll-behavior: contain; padding: 4px 3px 8px; }
+    .graph { position: relative; min-width: max(440px, 100%); }
+    .connector { position: absolute; z-index: 1; border-radius: 99px; background: var(--am-accent); opacity: .8; pointer-events: none; }
+    .node { position: absolute; z-index: 2; min-height: 72px; border: 1px solid var(--am-border); border-left: 3px solid var(--am-accent); border-radius: 8px; padding: 6px 9px; background: var(--am-surface-strong); box-shadow: 0 4px 12px rgba(23, 32, 52, .06); color: var(--am-text); cursor: pointer; text-align: left; }
     .node:hover, .node:focus-visible { border-color: var(--am-accent); outline: 2px solid color-mix(in srgb, var(--am-accent) 35%, transparent); outline-offset: 2px; }
     .node[aria-selected="true"] { background: var(--am-accent-soft); border-color: var(--am-accent); }
     .node-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
@@ -35,16 +33,11 @@ export class AgentTree extends LitElement {
     if (layout.nodes.length === 0) return html`<p class="empty">N/A</p>`;
     const nodesByID = new Map(layout.nodes.map((node) => [node.node.agent.agentId, node]));
     return html`<div class="viewport" role="tree" aria-label="Agent delegation topology"><div class="graph" style=${`width:${layout.width}px;height:${layout.height}px`}>
-      <svg width=${layout.width} height=${layout.height} aria-hidden="true">
-        ${layout.nodes.filter((node) => node.parentID).map((node) => {
-          const parent = nodesByID.get(node.parentID!);
-          if (!parent) return null;
-          const parentX = parent.depth * (NODE_WIDTH + LEVEL_GAP) + NODE_WIDTH;
-          const childX = node.depth * (NODE_WIDTH + LEVEL_GAP);
-          const control = Math.max(18, (childX - parentX) / 2);
-          return html`<path d=${`M ${parentX} ${parent.centerY} C ${parentX + control} ${parent.centerY}, ${childX - control} ${node.centerY}, ${childX} ${node.centerY}`}></path><circle cx=${childX} cy=${node.centerY} r="3"></circle>`;
-        })}
-      </svg>
+      ${layout.nodes.filter((node) => node.parentID).map((node) => {
+        const parent = nodesByID.get(node.parentID!);
+        if (!parent) return null;
+        return renderConnector(parent, node);
+      })}
       ${layout.nodes.map((node) => renderGraphNode(node, this.selectedAgentId, (event: Event) => this.selectAgent(event, node.node.agent.agentId)))}
     </div></div>`;
   }
@@ -57,13 +50,19 @@ export class AgentTree extends LitElement {
   }
 }
 
-type AgentNode = Readonly<{ agent: AgentSession; children: readonly AgentNode[] }>;
-type LayoutNode = Readonly<{ node: AgentNode; parentID?: string; depth: number; centerY: number }>;
-type TreeLayout = Readonly<{ nodes: readonly LayoutNode[]; width: number; height: number }>;
+export type AgentNode = Readonly<{ agent: AgentSession; children: readonly AgentNode[] }>;
+export type LayoutNode = Readonly<{ node: AgentNode; parentID?: string; depth: number; centerX: number; centerY: number }>;
+export type TreeLayout = Readonly<{ nodes: readonly LayoutNode[]; width: number; height: number }>;
 
 const NODE_WIDTH = 190;
-const LEVEL_GAP = 52;
-const ROW_GAP = 94;
+const NODE_HEIGHT = 72;
+const LEVEL_GAP = 82;
+const ROW_GAP = 220;
+const SIDE_PADDING = NODE_WIDTH / 2 + 24;
+const MAX_COLUMNS = 2;
+const ROOT_COLUMNS = 2;
+const ROOT_GROUP_WIDTH = SIDE_PADDING * 2 + ROW_GAP;
+const ROOT_ROW_GAP = 24;
 const TOP_PADDING = 40;
 
 export const buildAgentTree = (agents: readonly AgentSession[]): readonly AgentNode[] => {
@@ -77,24 +76,68 @@ export const buildAgentTree = (agents: readonly AgentSession[]): readonly AgentN
   return roots;
 };
 
-const layoutAgentTree = (roots: readonly AgentNode[]): TreeLayout => {
+const renderConnector = (parent: LayoutNode, child: LayoutNode): unknown => {
+  const parentBottom = parent.centerY + NODE_HEIGHT / 2;
+  const childTop = child.centerY - NODE_HEIGHT / 2;
+  const midY = parentBottom + (childTop - parentBottom) / 2;
+  const left = Math.min(parent.centerX, child.centerX);
+  return html`
+    <span class="connector" aria-hidden="true" style=${`left:${parent.centerX - 1.5}px;top:${parentBottom}px;width:3px;height:${Math.max(3, midY - parentBottom)}px`}></span>
+    <span class="connector" aria-hidden="true" style=${`left:${left}px;top:${midY - 1.5}px;width:${Math.max(3, Math.abs(child.centerX - parent.centerX))}px;height:3px`}></span>
+    <span class="connector" aria-hidden="true" style=${`left:${child.centerX - 1.5}px;top:${midY}px;width:3px;height:${Math.max(3, childTop - midY)}px`}></span>
+  `;
+};
+
+export const layoutAgentTree = (roots: readonly AgentNode[]): TreeLayout => {
+  const groups = [...roots]
+    .sort((left, right) => Number(right.children.length > 0) - Number(left.children.length > 0))
+    .map((root) => {
+      const levels: Array<Array<{ node: AgentNode; parentID?: string; depth: number }>> = [];
+      const visit = (node: AgentNode, depth: number, parentID?: string) => {
+        (levels[depth] ??= []).push({ node, parentID, depth });
+        node.children.forEach((child) => visit(child, depth + 1, node.agent.agentId));
+      };
+      visit(root, 0);
+      const rowHeight = NODE_HEIGHT + LEVEL_GAP;
+      const height = levels.reduce((total, level) => total + Math.ceil(level.length / MAX_COLUMNS) * rowHeight, 0) - LEVEL_GAP + 24;
+      return { levels, height };
+    });
+
+  const rootColumns = Math.min(ROOT_COLUMNS, Math.max(1, groups.length));
+  const rootRows = Math.ceil(groups.length / rootColumns);
+  const rowHeights = Array.from({ length: rootRows }, (_, row) => Math.max(...groups.slice(row * rootColumns, (row + 1) * rootColumns).map((group) => group.height)));
+  const rowTops: number[] = [];
+  rowHeights.reduce((top, height, index) => {
+    rowTops[index] = top;
+    return top + height + ROOT_ROW_GAP;
+  }, TOP_PADDING);
+
   const nodes: LayoutNode[] = [];
-  let leafIndex = 0;
-  let maxDepth = 0;
-  const visit = (node: AgentNode, depth: number, parentID?: string): number => {
-    maxDepth = Math.max(maxDepth, depth);
-    const childCenters = node.children.map((child) => visit(child, depth + 1, node.agent.agentId));
-    const centerY = childCenters.length > 0
-      ? (childCenters[0] + childCenters[childCenters.length - 1]) / 2
-      : TOP_PADDING + leafIndex++ * ROW_GAP;
-    nodes.push({ node, parentID, depth, centerY });
-    return centerY;
-  };
-  roots.forEach((root) => visit(root, 0));
+  groups.forEach((group, groupIndex) => {
+    const groupStartX = (groupIndex % rootColumns) * ROOT_GROUP_WIDTH;
+    let top = rowTops[Math.floor(groupIndex / rootColumns)];
+    for (const level of group.levels) {
+      const columns = Math.min(MAX_COLUMNS, Math.max(1, level.length));
+      const firstCenterX = groupStartX + (ROOT_GROUP_WIDTH - (columns - 1) * ROW_GAP) / 2;
+      const rowHeight = NODE_HEIGHT + LEVEL_GAP;
+      level.forEach((entry, index) => {
+        const row = Math.floor(index / MAX_COLUMNS);
+        const column = index % MAX_COLUMNS;
+        nodes.push({
+          ...entry,
+          centerX: firstCenterX + column * ROW_GAP,
+          centerY: top + row * rowHeight + NODE_HEIGHT / 2,
+        });
+      });
+      top += Math.ceil(level.length / MAX_COLUMNS) * rowHeight;
+    }
+  });
+
+  const height = rowTops.length === 0 ? 160 : rowTops[rowTops.length - 1] + rowHeights[rowHeights.length - 1];
   return {
     nodes,
-    width: Math.max(440, (maxDepth + 1) * (NODE_WIDTH + LEVEL_GAP) + 12),
-    height: Math.max(100, Math.max(1, leafIndex) * ROW_GAP),
+    width: Math.max(440, rootColumns * ROOT_GROUP_WIDTH),
+    height: Math.max(160, height),
   };
 };
 
@@ -105,8 +148,8 @@ const renderGraphNode = (layout: LayoutNode, selectedAgentId: string, select: (e
   aria-selected=${String(selectedAgentId === layout.node.agent.agentId)}
   data-agent-id=${layout.node.agent.agentId}
   tabindex="0"
-  style=${`left:${layout.depth * (NODE_WIDTH + LEVEL_GAP)}px;top:${layout.centerY - 36}px;width:${NODE_WIDTH}px`}
-  @click=${select}
+  style=${`left:${layout.centerX - NODE_WIDTH / 2}px;top:${layout.centerY - NODE_HEIGHT / 2}px;width:${NODE_WIDTH}px`}
+  @pointerdown=${select}
   @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(event); } }}
 >
   <div class="node-title"><span class="role">${layout.depth === 0 ? "Root" : "Child"}</span><strong title=${layout.node.agent.agentDefinition || "N/A"}>${layout.node.agent.agentDefinition || "N/A"}</strong></div>
@@ -114,7 +157,7 @@ const renderGraphNode = (layout: LayoutNode, selectedAgentId: string, select: (e
   <div class="meta">${layout.node.agent.agentType || "N/A"} · ${layout.node.agent.model || "N/A"}</div>
   <div class="usage">
     <p>${layout.node.agent.activityCount} activities · ${agentTokenSummary(layout.node.agent.tokens)}</p>
-    ${agentTokenDetails(layout.node.agent.tokens) ? html`<details><summary @click=${(event: MouseEvent) => event.stopPropagation()}>Token breakdown</summary><p>${agentTokenDetails(layout.node.agent.tokens)}</p></details>` : null}
+    ${agentTokenDetails(layout.node.agent.tokens) ? html`<details @pointerdown=${(event: PointerEvent) => event.stopPropagation()}><summary @click=${(event: MouseEvent) => event.stopPropagation()}>Token breakdown</summary><p>${agentTokenDetails(layout.node.agent.tokens)}</p></details>` : null}
   </div>
 </div>`;
 

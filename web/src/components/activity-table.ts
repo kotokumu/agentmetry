@@ -15,11 +15,13 @@ export class ActivityTable extends LitElement {
   @property() pagingContext = "";
 
   private readonly pagingLatched: Record<ActivityDirection, boolean> = { newer: false, older: false };
+  private pagingObserver?: IntersectionObserver;
   private lastScrollTop = 0;
   private revealedTarget = "";
 
   static styles = css`
-    :host { display: block; max-width: 100%; max-height: 70vh; overflow: auto; overscroll-behavior: contain; }
+    :host { display: block; max-width: 100%; overflow: visible; }
+    .table-scroll { max-width: 100%; overflow-x: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 1160px; }
     thead { position: sticky; top: 0; z-index: 1; background: var(--am-surface); }
     th { color: var(--am-muted); font: 0.68rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
@@ -56,6 +58,7 @@ export class ActivityTable extends LitElement {
 
   disconnectedCallback() {
     this.removeEventListener("scroll", this.onScroll);
+    this.pagingObserver?.disconnect();
     super.disconnectedCallback();
   }
 
@@ -68,7 +71,7 @@ export class ActivityTable extends LitElement {
   }
 
   render() {
-    return html`${this.continuation("newer")}<table>
+    return html`${this.continuation("newer")}<div class="table-scroll"><table>
       <thead><tr><th>Time</th><th>Agent</th><th>Type</th><th>Operation / message</th><th>Source</th><th>Model</th><th>Tokens</th><th>Trace</th></tr></thead>
       <tbody>${this.activities.map((activity) => {
         const highlighted = Boolean(this.highlightedTraceId && this.highlightedSpanId)
@@ -85,10 +88,11 @@ export class ActivityTable extends LitElement {
         <td class="tokens">${tokenView(activity)}</td>
         <td>${this.traceView(activity.traceId)}</td>
       </tr>`;})}</tbody>
-    </table>${this.continuation("older")}`;
+    </table></div>${this.continuation("older")}`;
   }
 
   protected updated(changed: PropertyValues<this>) {
+    if (changed.has("activities") || changed.has("hasMore") || changed.has("hasEarlier") || changed.has("loading") || changed.has("pageDirection")) this.observePagingSentinel();
     if (!changed.has("highlightedTraceId") && !changed.has("highlightedSpanId") && !changed.has("activities")) return;
     const targetIdentity = this.highlightedTraceId && this.highlightedSpanId
       ? `${this.highlightedTraceId}:${this.highlightedSpanId}`
@@ -102,6 +106,18 @@ export class ActivityTable extends LitElement {
     if (!target) return;
     target.scrollIntoView?.({ block: "center", inline: "nearest" });
     this.revealedTarget = targetIdentity;
+  }
+
+  private observePagingSentinel() {
+    this.pagingObserver?.disconnect();
+    if (this.loading || typeof IntersectionObserver === "undefined") return;
+    const direction: ActivityDirection = this.hasMore ? "older" : this.hasEarlier ? "newer" : "older";
+    const sentinel = this.shadowRoot?.querySelector<HTMLElement>(`[data-paging="${direction}"]`);
+    if (!sentinel) return;
+    this.pagingObserver = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) this.requestMore(direction);
+    }, { rootMargin: "0px 0px 600px" });
+    this.pagingObserver.observe(sentinel);
   }
 
   private readonly onScroll = () => {
@@ -130,8 +146,9 @@ export class ActivityTable extends LitElement {
     const available = direction === "newer" ? this.hasEarlier : this.hasMore;
     const current = this.pageDirection === direction;
     if (!available && !(current && (this.loading || this.loadError))) return null;
-    if (current && this.loading) return html`<div class="loading" role="status">Loading ${direction} observations…</div>`;
-    return html`<div class="continuation">${current && this.loadError ? html`<span role="alert">${this.loadError}</span>` : null}<button type="button" data-direction=${direction} ?disabled=${this.loading} @click=${() => this.requestMore(direction)}>${current && this.loadError ? "Retry loading" : `Load ${direction}`}</button></div>`;
+    if (current && this.loading) return html`<div class="loading" data-paging=${direction} role="status">Loading ${direction} observations…</div>`;
+    if (current && this.loadError) return html`<div class="continuation" data-paging=${direction}><span role="alert">${this.loadError}</span><button type="button" data-direction=${direction} @click=${() => this.requestMore(direction)}>Retry loading</button></div>`;
+    return html`<div class="continuation" data-paging=${direction} aria-hidden="true"></div>`;
   }
 
   private traceView(traceId?: string) {

@@ -208,7 +208,7 @@ func TestGetTraceCorrelatesConversationsAndReportsIncompleteParents(t *testing.T
 	if trace.TraceID != traceID || trace.RootSpanCount != 1 || trace.MissingParentCount != 1 || trace.Status != query.TraceStatusError {
 		t.Fatalf("unexpected trace summary: %#v", trace)
 	}
-	if len(trace.Conversations) != 2 || len(trace.Agents) != 2 || len(trace.Activities) != 3 {
+	if trace.ActivityCount != 3 || len(trace.Conversations) != 2 || len(trace.Agents) != 2 || len(trace.Activities) != 3 {
 		t.Fatalf("unexpected trace participants: %#v", trace)
 	}
 	if trace.Activities[0].SpanID != "root" || trace.Activities[1].Signal != canonical.SignalTrace || trace.Activities[2].Signal != canonical.SignalLog {
@@ -219,6 +219,14 @@ func TestGetTraceCorrelatesConversationsAndReportsIncompleteParents(t *testing.T
 	}
 	if !trace.Activities[2].ContributesToTotal {
 		t.Fatalf("authoritative usage was not marked as a contribution: %#v", trace.Activities[2])
+	}
+
+	page, err := database.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Offset: 1, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.ActivityOffset != 1 || page.ActivityCount != 3 || len(page.Activities) != 1 || !page.HasMore || page.Activities[0].SpanID != "child" {
+		t.Fatalf("unexpected trace page: %#v", page)
 	}
 }
 
@@ -287,6 +295,29 @@ func TestOverviewTotalsAreIndependentOfActivityDisplayLimit(t *testing.T) {
 	}
 	if next.Tokens.Total() != overview.Tokens.Total() {
 		t.Fatalf("pagination changed aggregate tokens: first=%d next=%d", overview.Tokens.Total(), next.Tokens.Total())
+	}
+}
+
+func TestListSessionActivitiesFiltersByAgent(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{Source: "example", ObservedAt: now, Name: "main activity", Body: "main", Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "run-1", AgentID: "main"}},
+		{Source: "example", ObservedAt: now.Add(time.Second), Name: "review activity", Body: "review", Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "run-1", AgentID: "reviewer"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{SourceID: "example", ConversationID: "run-1", AgentID: "reviewer", PageSize: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if page.Total != 1 || len(page.Activities) != 1 || page.Activities[0].AgentID != "reviewer" {
+		t.Fatalf("agent-filtered activities = %#v, want one reviewer activity", page)
 	}
 }
 
@@ -429,6 +460,35 @@ func TestOverviewCombinesComplementaryAgentMetadataForTheSameModelCall(t *testin
 			t.Fatalf("activity was not enriched from correlated evidence: %#v", activity)
 		}
 	}
+}
+
+func TestSessionSummaryInfersAgentParentFromSpanParentage(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	spans := []canonical.Span{
+		{Source: "example", TraceID: "trace-topology", SpanID: "root", Name: "delegation", StartedAt: now, EndedAt: now.Add(time.Second), Kind: canonical.ActivityDelegation, Agent: canonical.AgentContext{RunID: "run-topology"}},
+		{Source: "example", TraceID: "trace-topology", SpanID: "child", ParentSpanID: "root", Name: "child work", StartedAt: now.Add(time.Second), EndedAt: now.Add(2 * time.Second), Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "run-topology", AgentID: "reviewer"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalTrace, Spans: spans}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := database.GetSessionSummary(context.Background(), "example", "run-topology")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, agent := range session.Agents {
+		if agent.AgentID == "reviewer" {
+			if agent.ParentAgentID != "main" {
+				t.Fatalf("inferred parent = %q, want main", agent.ParentAgentID)
+			}
+			return
+		}
+	}
+	t.Fatalf("reviewer agent missing from session summary: %#v", session.Agents)
 }
 
 func TestOverviewFiltersSessionsBySourceAndSearchesUnpagedActivity(t *testing.T) {
