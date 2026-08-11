@@ -216,8 +216,9 @@ runtime code is added to the Go domain or storage packages.
   the sidecar HTTP contract, not Go packages.
 - **OCP:** adding a supported target extends the metadata table and CI matrix;
   it does not change runtime code.
-- **Risk:** `web/dist` remains a generated embed input. A clean checkout must
-  run `desktop:inputs` before any desktop or server build that imports it.
+- **Risk:** `web/dist` is a generated embed input and is ignored by Git. A clean
+  checkout must run the Web build before any desktop or server build that
+  imports it.
 - **Risk:** fixed loopback ports can collide with another Agentmetry process;
   authenticated dynamic-port/IPC startup remains a later security milestone.
 

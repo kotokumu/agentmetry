@@ -45,6 +45,9 @@ cd ..
 go run ./cmd/agentmetry
 ```
 
+`web/dist` is generated build output and is not stored in Git. Build the Web UI
+before running or testing the Go runtime.
+
 After startup:
 
 - Dashboard / API / MCP: `http://127.0.0.1:17890`
@@ -215,8 +218,12 @@ docker run --rm -p 17890:17890 -p 4317:4317 -p 4318:4318 -v agentmetry-data:/dat
 ## Verification
 
 ```sh
+cd web
+npm ci
+npm test -- --run
+npm run build
+cd ..
 go test ./...
-cd web && npm test -- --run && npm run build
 ```
 
 `go test ./...` includes an in-process end-to-end test built with `httptest`. It sends OTLP protobuf to the production HTTP router, persists observations in a temporary SQLite database, and verifies the HTTP API, MCP tool, and embedded SPA without fixed ports or external processes.
