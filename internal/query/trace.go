@@ -69,6 +69,8 @@ type TraceAgent struct {
 
 type TraceFilter struct {
 	TraceID string
+	Offset  int
+	Limit   int
 }
 
 type Trace struct {
@@ -81,6 +83,9 @@ type Trace struct {
 	Conversations      []ConversationRef `json:"conversations"`
 	Agents             []TraceAgent      `json:"agents"`
 	Activities         []Activity        `json:"activities"`
+	ActivityOffset     int               `json:"activityOffset"`
+	ActivityCount      int64             `json:"activityCount"`
+	HasMore            bool              `json:"hasMore"`
 }
 
 type TraceReader interface {

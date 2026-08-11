@@ -113,6 +113,7 @@ func (server *Server) ListSessionActivities(ctx context.Context, request *connec
 	}
 	page, err := server.reader.ListSessionActivities(ctx, query.ActivityPageFilter{
 		SourceID: sourceID, ConversationID: sessionID, PageSize: pageSize, Offset: offset,
+		AgentID:   strings.TrimSpace(request.Msg.GetAgentId()),
 		Direction: strings.ToLower(request.Msg.GetDirection().String()),
 		TraceID:   request.Msg.GetAnchor().GetTraceId(), SpanID: request.Msg.GetAnchor().GetSpanId(),
 	})
@@ -134,7 +135,15 @@ func (server *Server) GetTrace(ctx context.Context, request *connect.Request[v1.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID})
+	pageSize, err := boundedPageSize(request.Msg.GetPage())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	offset, err := parsePageToken(request.Msg.GetPage().GetPageToken())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Offset: offset, Limit: pageSize})
 	if errors.Is(err, query.ErrTraceNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
@@ -145,6 +154,8 @@ func (server *Server) GetTrace(ctx context.Context, request *connect.Request[v1.
 		TraceId: trace.TraceID, StartedAt: timestamp(trace.StartedAt), EndedAt: timestamp(trace.EndedAt),
 		Status: string(trace.Status), RootSpanCount: trace.RootSpanCount, MissingParentCount: trace.MissingParentCount,
 		Conversations: mapConversationRefs(trace.Conversations), Agents: mapTraceAgents(trace.Agents), Activities: mapActivities(trace.Activities),
+		Page:            pageInfo(trace.HasMore, trace.ActivityOffset+len(trace.Activities), trace.ActivityOffset > 0, max(0, trace.ActivityOffset-pageSize), trace.ActivityOffset),
+		TotalActivities: trace.ActivityCount,
 	}), nil
 }
 

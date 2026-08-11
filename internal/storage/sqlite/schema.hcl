@@ -78,6 +78,9 @@ table "spans" {
   index "spans_source_run_ended_at_idx" {
     columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.ended_at]
   }
+  index "spans_trace_started_at_idx" {
+    columns = [table.spans.column.trace_id, table.spans.column.started_at, table.spans.column.ended_at]
+  }
 }
 
 table "session_rollups" {
@@ -209,6 +212,9 @@ table "logs" {
   }
   index "logs_source_run_observed_at_idx" {
     columns = [table.logs.column.source, table.logs.column.run_id, table.logs.column.observed_at]
+  }
+  index "logs_trace_observed_at_idx" {
+    columns = [table.logs.column.trace_id, table.logs.column.observed_at]
   }
 }
 

@@ -13,6 +13,7 @@ import type { ActivityTable } from "./activity-table";
 import type { KpiCard } from "./kpi-card";
 import type { TimeRangeFilter } from "./time-range-filter";
 import type { PlanUsage } from "./plan-usage";
+import { buildAgentTree, layoutAgentTree } from "./agent-tree";
 import type { AgentTree } from "./agent-tree";
 import type { SessionFilter } from "./session-filter";
 import type { SessionList } from "./session-list";
@@ -58,6 +59,9 @@ const traceFixture: Trace = {
       tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null },
     },
   ],
+  activityOffset: 0,
+  activityCount: 3,
+  hasMore: false,
 };
 
 describe("dashboard components", () => {
@@ -146,10 +150,9 @@ describe("dashboard components", () => {
     document.body.append(table);
     await table.updateComplete;
 
-    const newer = table.shadowRoot?.querySelector<HTMLButtonElement>("button[data-direction='newer']");
-    newer?.click();
+    const newer = table.shadowRoot?.querySelector("[data-paging='newer']");
 
-    expect(newer?.disabled).toBe(true);
+    expect(newer?.querySelector("button")).toBeNull();
     expect(listener).not.toHaveBeenCalled();
   });
 
@@ -299,19 +302,69 @@ describe("dashboard components", () => {
 
     await tree.updateComplete;
 
-    const items = tree.shadowRoot?.querySelectorAll("[role='treeitem']");
-    expect(items?.[0].textContent).toContain("main");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("child");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("repository-review");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("example-large");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("Definition");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("Runtime ID:");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("120 observed tokens");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("input 100");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("cache read 60");
-    expect(items?.[0].querySelector("[role='group']")?.textContent).toContain("reasoning 8");
-    expect(items?.[0].querySelector<HTMLDetailsElement>("[role='group'] details")?.open).toBe(false);
-    expect(items?.[0].textContent).toContain("N/A");
+    const root = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']");
+    const child = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='child']");
+    expect(root?.textContent).toContain("main");
+    expect(child?.textContent).toContain("child");
+    expect(child?.textContent).toContain("repository-review");
+    expect(child?.textContent).toContain("example-large");
+    expect(child?.textContent).toContain("Runtime ID:");
+    expect(child?.textContent).toContain("120 observed tokens");
+    expect(child?.textContent).toContain("input 100");
+    expect(child?.textContent).toContain("cache read 60");
+    expect(child?.textContent).toContain("reasoning 8");
+    expect(child?.querySelector<HTMLDetailsElement>("details")?.open).toBe(false);
+    expect(root?.textContent).toContain("N/A");
+    expect(Number.parseFloat(root?.style.top ?? "NaN")).toBeLessThan(Number.parseFloat(child?.style.top ?? "NaN"));
+    expect(Number.parseFloat(root?.style.left ?? "NaN")).toBe(Number.parseFloat(child?.style.left ?? "NaN"));
+    expect(tree.shadowRoot?.querySelectorAll(".connector")).toHaveLength(3);
+  });
+
+  it("keeps vertical parent-child relationships in separate root lanes", () => {
+    const missing = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
+    const agents = [
+      { agentId: "root-a", activityCount: 1, tokens: missing },
+      { agentId: "child-a1", parentAgentId: "root-a", activityCount: 1, tokens: missing },
+      { agentId: "child-a2", parentAgentId: "root-a", activityCount: 1, tokens: missing },
+      { agentId: "root-b", activityCount: 1, tokens: missing },
+      { agentId: "child-b1", parentAgentId: "root-b", activityCount: 1, tokens: missing },
+    ];
+    const layout = layoutAgentTree(buildAgentTree(agents));
+    const byID = new Map(layout.nodes.map((entry) => [entry.node.agent.agentId, entry]));
+    const rootA = byID.get("root-a")!;
+    const rootB = byID.get("root-b")!;
+    const rootANodes = ["root-a", "child-a1", "child-a2"].map((id) => byID.get(id)!);
+    const rootBNodes = ["root-b", "child-b1"].map((id) => byID.get(id)!);
+
+    expect(rootA.centerY).toBeLessThan(byID.get("child-a1")!.centerY);
+    expect(rootA.centerY).toBeLessThan(byID.get("child-a2")!.centerY);
+    expect(rootB.centerY).toBeLessThan(byID.get("child-b1")!.centerY);
+    expect(Math.max(...rootANodes.map((entry) => entry.centerX))).toBeLessThan(Math.min(...rootBNodes.map((entry) => entry.centerX)));
+
+    for (let left = 0; left < layout.nodes.length; left += 1) {
+      for (let right = left + 1; right < layout.nodes.length; right += 1) {
+        const first = layout.nodes[left];
+        const second = layout.nodes[right];
+        const separated = Math.abs(first.centerX - second.centerX) >= 190 || Math.abs(first.centerY - second.centerY) >= 72;
+        expect(separated, `${first.node.agent.agentId} overlaps ${second.node.agent.agentId}`).toBe(true);
+      }
+    }
+  });
+
+  it("emits and toggles graph-node selection", async () => {
+    const tree = document.createElement("am-agent-tree") as AgentTree;
+    tree.agents = [{ agentId: "main", agentDefinition: "orchestrator", activityCount: 1, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } }];
+    const listener = vi.fn();
+    tree.addEventListener("agent-selected", listener);
+    document.body.append(tree);
+    await tree.updateComplete;
+
+    tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(listener.mock.calls[0][0].detail).toEqual({ agentId: "main" });
+    tree.selectedAgentId = "main";
+    await tree.updateComplete;
+    tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(listener.mock.calls[1][0].detail).toEqual({ agentId: "" });
   });
 
   it("emits source and submitted full-text filter intents", async () => {

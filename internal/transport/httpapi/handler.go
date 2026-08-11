@@ -124,7 +124,17 @@ func (api *API) trace(response http.ResponseWriter, request *http.Request) {
 		writeJSONError(response, http.StatusBadRequest, err)
 		return
 	}
-	trace, err := api.reader.GetTrace(request.Context(), query.TraceFilter{TraceID: traceID})
+	offset, err := pageInteger(request, "offset", 0)
+	if err != nil || offset < 0 {
+		writeJSONError(response, http.StatusBadRequest, errors.New("offset must be a non-negative integer"))
+		return
+	}
+	limit, err := pageInteger(request, "limit", 100)
+	if err != nil || limit < 1 || limit > 100 {
+		writeJSONError(response, http.StatusBadRequest, errors.New("limit must be between 1 and 100"))
+		return
+	}
+	trace, err := api.reader.GetTrace(request.Context(), query.TraceFilter{TraceID: traceID, Offset: offset, Limit: limit})
 	if errors.Is(err, query.ErrTraceNotFound) {
 		writeJSONError(response, http.StatusNotFound, err)
 		return

@@ -1493,6 +1493,7 @@ type ListSessionActivitiesRequest struct {
 	Page          *PageRequest           `protobuf:"bytes,3,opt,name=page,proto3" json:"page,omitempty"`
 	Direction     PageDirection          `protobuf:"varint,4,opt,name=direction,proto3,enum=agentmetry.v1.PageDirection" json:"direction,omitempty"`
 	Anchor        *ActivityAnchor        `protobuf:"bytes,5,opt,name=anchor,proto3" json:"anchor,omitempty"`
+	AgentId       string                 `protobuf:"bytes,6,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1562,6 +1563,13 @@ func (x *ListSessionActivitiesRequest) GetAnchor() *ActivityAnchor {
 	return nil
 }
 
+func (x *ListSessionActivitiesRequest) GetAgentId() string {
+	if x != nil {
+		return x.AgentId
+	}
+	return ""
+}
+
 type ListSessionActivitiesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Activities    []*Activity            `protobuf:"bytes,1,rep,name=activities,proto3" json:"activities,omitempty"`
@@ -1625,6 +1633,7 @@ func (x *ListSessionActivitiesResponse) GetTotal() int64 {
 type GetTraceRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TraceId       string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
+	Page          *PageRequest           `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1666,6 +1675,13 @@ func (x *GetTraceRequest) GetTraceId() string {
 	return ""
 }
 
+func (x *GetTraceRequest) GetPage() *PageRequest {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
 type GetTraceResponse struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	TraceId            string                 `protobuf:"bytes,1,opt,name=trace_id,json=traceId,proto3" json:"trace_id,omitempty"`
@@ -1677,6 +1693,8 @@ type GetTraceResponse struct {
 	Conversations      []*ConversationRef     `protobuf:"bytes,7,rep,name=conversations,proto3" json:"conversations,omitempty"`
 	Agents             []*TraceAgent          `protobuf:"bytes,8,rep,name=agents,proto3" json:"agents,omitempty"`
 	Activities         []*Activity            `protobuf:"bytes,9,rep,name=activities,proto3" json:"activities,omitempty"`
+	Page               *PageInfo              `protobuf:"bytes,10,opt,name=page,proto3" json:"page,omitempty"`
+	TotalActivities    int64                  `protobuf:"varint,11,opt,name=total_activities,json=totalActivities,proto3" json:"total_activities,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1772,6 +1790,20 @@ func (x *GetTraceResponse) GetActivities() []*Activity {
 		return x.Activities
 	}
 	return nil
+}
+
+func (x *GetTraceResponse) GetPage() *PageInfo {
+	if x != nil {
+		return x.Page
+	}
+	return nil
+}
+
+func (x *GetTraceResponse) GetTotalActivities() int64 {
+	if x != nil {
+		return x.TotalActivities
+	}
+	return 0
 }
 
 type ConversationRef struct {
@@ -2058,22 +2090,24 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\"j\n" +
 	"\x12GetSessionResponse\x127\n" +
 	"\asession\x18\x01 \x01(\v2\x1d.agentmetry.v1.SessionSummaryR\asession\x12\x1b\n" +
-	"\ttrace_ids\x18\x02 \x03(\tR\btraceIds\"\xfd\x01\n" +
+	"\ttrace_ids\x18\x02 \x03(\tR\btraceIds\"\x98\x02\n" +
 	"\x1cListSessionActivitiesRequest\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\x12.\n" +
 	"\x04page\x18\x03 \x01(\v2\x1a.agentmetry.v1.PageRequestR\x04page\x12:\n" +
 	"\tdirection\x18\x04 \x01(\x0e2\x1c.agentmetry.v1.PageDirectionR\tdirection\x125\n" +
-	"\x06anchor\x18\x05 \x01(\v2\x1d.agentmetry.v1.ActivityAnchorR\x06anchor\"\x9b\x01\n" +
+	"\x06anchor\x18\x05 \x01(\v2\x1d.agentmetry.v1.ActivityAnchorR\x06anchor\x12\x19\n" +
+	"\bagent_id\x18\x06 \x01(\tR\aagentId\"\x9b\x01\n" +
 	"\x1dListSessionActivitiesResponse\x127\n" +
 	"\n" +
 	"activities\x18\x01 \x03(\v2\x17.agentmetry.v1.ActivityR\n" +
 	"activities\x12+\n" +
 	"\x04page\x18\x02 \x01(\v2\x17.agentmetry.v1.PageInfoR\x04page\x12\x14\n" +
-	"\x05total\x18\x03 \x01(\x03R\x05total\",\n" +
+	"\x05total\x18\x03 \x01(\x03R\x05total\"\\\n" +
 	"\x0fGetTraceRequest\x12\x19\n" +
-	"\btrace_id\x18\x01 \x01(\tR\atraceId\"\xc3\x03\n" +
+	"\btrace_id\x18\x01 \x01(\tR\atraceId\x12.\n" +
+	"\x04page\x18\x02 \x01(\v2\x1a.agentmetry.v1.PageRequestR\x04page\"\x9b\x04\n" +
 	"\x10GetTraceResponse\x12\x19\n" +
 	"\btrace_id\x18\x01 \x01(\tR\atraceId\x129\n" +
 	"\n" +
@@ -2086,7 +2120,10 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"\x06agents\x18\b \x03(\v2\x19.agentmetry.v1.TraceAgentR\x06agents\x127\n" +
 	"\n" +
 	"activities\x18\t \x03(\v2\x17.agentmetry.v1.ActivityR\n" +
-	"activities\">\n" +
+	"activities\x12+\n" +
+	"\x04page\x18\n" +
+	" \x01(\v2\x17.agentmetry.v1.PageInfoR\x04page\x12)\n" +
+	"\x10total_activities\x18\v \x01(\x03R\x0ftotalActivities\">\n" +
 	"\x0fConversationRef\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x0e\n" +
 	"\x02id\x18\x02 \x01(\tR\x02id\"\xf5\x01\n" +
@@ -2192,26 +2229,28 @@ var file_agentmetry_v1_agentmetry_proto_depIdxs = []int32{
 	13, // 27: agentmetry.v1.ListSessionActivitiesRequest.anchor:type_name -> agentmetry.v1.ActivityAnchor
 	8,  // 28: agentmetry.v1.ListSessionActivitiesResponse.activities:type_name -> agentmetry.v1.Activity
 	4,  // 29: agentmetry.v1.ListSessionActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
-	26, // 30: agentmetry.v1.GetTraceResponse.started_at:type_name -> google.protobuf.Timestamp
-	26, // 31: agentmetry.v1.GetTraceResponse.ended_at:type_name -> google.protobuf.Timestamp
-	24, // 32: agentmetry.v1.GetTraceResponse.conversations:type_name -> agentmetry.v1.ConversationRef
-	25, // 33: agentmetry.v1.GetTraceResponse.agents:type_name -> agentmetry.v1.TraceAgent
-	8,  // 34: agentmetry.v1.GetTraceResponse.activities:type_name -> agentmetry.v1.Activity
-	14, // 35: agentmetry.v1.AgentmetryQueryService.GetDashboard:input_type -> agentmetry.v1.GetDashboardRequest
-	16, // 36: agentmetry.v1.AgentmetryQueryService.ListSessions:input_type -> agentmetry.v1.ListSessionsRequest
-	18, // 37: agentmetry.v1.AgentmetryQueryService.GetSession:input_type -> agentmetry.v1.GetSessionRequest
-	20, // 38: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:input_type -> agentmetry.v1.ListSessionActivitiesRequest
-	22, // 39: agentmetry.v1.AgentmetryQueryService.GetTrace:input_type -> agentmetry.v1.GetTraceRequest
-	15, // 40: agentmetry.v1.AgentmetryQueryService.GetDashboard:output_type -> agentmetry.v1.GetDashboardResponse
-	17, // 41: agentmetry.v1.AgentmetryQueryService.ListSessions:output_type -> agentmetry.v1.ListSessionsResponse
-	19, // 42: agentmetry.v1.AgentmetryQueryService.GetSession:output_type -> agentmetry.v1.GetSessionResponse
-	21, // 43: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:output_type -> agentmetry.v1.ListSessionActivitiesResponse
-	23, // 44: agentmetry.v1.AgentmetryQueryService.GetTrace:output_type -> agentmetry.v1.GetTraceResponse
-	40, // [40:45] is the sub-list for method output_type
-	35, // [35:40] is the sub-list for method input_type
-	35, // [35:35] is the sub-list for extension type_name
-	35, // [35:35] is the sub-list for extension extendee
-	0,  // [0:35] is the sub-list for field type_name
+	3,  // 30: agentmetry.v1.GetTraceRequest.page:type_name -> agentmetry.v1.PageRequest
+	26, // 31: agentmetry.v1.GetTraceResponse.started_at:type_name -> google.protobuf.Timestamp
+	26, // 32: agentmetry.v1.GetTraceResponse.ended_at:type_name -> google.protobuf.Timestamp
+	24, // 33: agentmetry.v1.GetTraceResponse.conversations:type_name -> agentmetry.v1.ConversationRef
+	25, // 34: agentmetry.v1.GetTraceResponse.agents:type_name -> agentmetry.v1.TraceAgent
+	8,  // 35: agentmetry.v1.GetTraceResponse.activities:type_name -> agentmetry.v1.Activity
+	4,  // 36: agentmetry.v1.GetTraceResponse.page:type_name -> agentmetry.v1.PageInfo
+	14, // 37: agentmetry.v1.AgentmetryQueryService.GetDashboard:input_type -> agentmetry.v1.GetDashboardRequest
+	16, // 38: agentmetry.v1.AgentmetryQueryService.ListSessions:input_type -> agentmetry.v1.ListSessionsRequest
+	18, // 39: agentmetry.v1.AgentmetryQueryService.GetSession:input_type -> agentmetry.v1.GetSessionRequest
+	20, // 40: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:input_type -> agentmetry.v1.ListSessionActivitiesRequest
+	22, // 41: agentmetry.v1.AgentmetryQueryService.GetTrace:input_type -> agentmetry.v1.GetTraceRequest
+	15, // 42: agentmetry.v1.AgentmetryQueryService.GetDashboard:output_type -> agentmetry.v1.GetDashboardResponse
+	17, // 43: agentmetry.v1.AgentmetryQueryService.ListSessions:output_type -> agentmetry.v1.ListSessionsResponse
+	19, // 44: agentmetry.v1.AgentmetryQueryService.GetSession:output_type -> agentmetry.v1.GetSessionResponse
+	21, // 45: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:output_type -> agentmetry.v1.ListSessionActivitiesResponse
+	23, // 46: agentmetry.v1.AgentmetryQueryService.GetTrace:output_type -> agentmetry.v1.GetTraceResponse
+	42, // [42:47] is the sub-list for method output_type
+	37, // [37:42] is the sub-list for method input_type
+	37, // [37:37] is the sub-list for extension type_name
+	37, // [37:37] is the sub-list for extension extendee
+	0,  // [0:37] is the sub-list for field type_name
 }
 
 func init() { file_agentmetry_v1_agentmetry_proto_init() }

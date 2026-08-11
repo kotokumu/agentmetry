@@ -21,6 +21,7 @@ export class TraceSummary extends LitElement {
   render() {
     const trace = this.trace;
     if (!trace) return null;
+    const activityCount = trace.activityCount || trace.activities.length;
     return html`<div class="identity">
       <div><p>OTLP Trace ID</p><code>${trace.traceId}</code></div>
       <span class=${`fact status ${trace.status.toLowerCase()}`}>${title(trace.status)}</span>
@@ -31,6 +32,7 @@ export class TraceSummary extends LitElement {
       <span class="fact">${plural(trace.agents.length, "agent")}</span>
       <span class="fact">${plural(trace.rootSpanCount, "root span")}</span>
       <span class="fact">${plural(trace.missingParentCount, "missing parent")}</span>
+      <span class="fact">Showing ${trace.activities.length.toLocaleString()} of ${activityCount.toLocaleString()} activities</span>
     </div>`;
   }
 }

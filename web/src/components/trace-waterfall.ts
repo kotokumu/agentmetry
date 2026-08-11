@@ -14,6 +14,10 @@ type TraceRow = Readonly<{
 @customElement("am-trace-waterfall")
 export class TraceWaterfall extends LitElement {
   @property({ attribute: false }) trace?: Trace;
+  @property({ type: Boolean }) hasMore = false;
+  @property({ type: Boolean }) loading = false;
+  @property({ attribute: false }) onLoadMore?: () => void;
+  private loadMoreObserver?: IntersectionObserver;
 
   static styles = css`
     :host { display: block; overflow: auto; }
@@ -42,6 +46,7 @@ export class TraceWaterfall extends LitElement {
     dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: .78rem; }
     .message { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--am-text); font: inherit; }
     .conversation { display: inline-block; margin-top: 12px; color: var(--am-accent); font-weight: 700; }
+    .load-status { min-height: 24px; padding: 12px 0 4px; color: var(--am-muted); text-align: center; font-size: .76rem; }
   `;
 
   render() {
@@ -63,7 +68,37 @@ export class TraceWaterfall extends LitElement {
         </summary>
         ${activityEvidence(activity)}
       </details>`;})}
-    </div>`;
+    </div>${this.hasMore ? html`<div class="load-status" role="status" aria-live="polite">${this.loading ? "Loading more trace data…" : ""}</div>` : null}`;
+  }
+
+  protected updated(changed: Map<string, unknown>) {
+    if (changed.has("trace") || changed.has("hasMore") || changed.has("loading")) this.observeLoadMoreSentinel();
+  }
+
+  disconnectedCallback() {
+    this.loadMoreObserver?.disconnect();
+    super.disconnectedCallback();
+  }
+
+  private observeLoadMoreSentinel() {
+    this.loadMoreObserver?.disconnect();
+    if (!this.hasMore || this.loading) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const sentinel = this.renderRoot.querySelector(".load-status");
+    if (!sentinel) return;
+    this.loadMoreObserver = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) this.requestMore();
+    }, { rootMargin: "0px 0px 600px" });
+    this.loadMoreObserver.observe(sentinel);
+  }
+
+  private requestMore() {
+    if (this.loading) return;
+    if (this.onLoadMore) {
+      this.onLoadMore();
+      return;
+    }
+    this.dispatchEvent(new CustomEvent("trace-activities-needed", { bubbles: true, composed: true }));
   }
 }
 

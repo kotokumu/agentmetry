@@ -162,18 +162,21 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 			return query.ActivityPage{}, err
 		}
 	}
+	spanWhere, spanArgs := activityWhere("ended_at", formatTime(time.Unix(0, 0)), filter.SourceID, filter.ConversationID, filter.AgentID)
+	logWhere, logArgs := activityWhere("observed_at", formatTime(time.Unix(0, 0)), filter.SourceID, filter.ConversationID, filter.AgentID)
+	spanWhere += " AND activity_kind <> 'unknown'"
+	logWhere += " AND activity_kind <> 'unknown'"
 	var total int64
-	if err := store.db.QueryRowContext(ctx, `SELECT
-  (SELECT COUNT(*) FROM spans WHERE ended_at >= ? AND run_id = ? AND source = ? AND activity_kind <> 'unknown') +
-  (SELECT COUNT(*) FROM logs WHERE observed_at >= ? AND run_id = ? AND source = ? AND activity_kind <> 'unknown')`,
-		formatTime(time.Unix(0, 0)), filter.ConversationID, filter.SourceID,
-		formatTime(time.Unix(0, 0)), filter.ConversationID, filter.SourceID).Scan(&total); err != nil {
+	countArgs := append(spanArgs, logArgs...)
+	if err := store.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT
+	  (SELECT COUNT(*) FROM spans WHERE %s) +
+	  (SELECT COUNT(*) FROM logs WHERE %s)`, spanWhere, logWhere), countArgs...).Scan(&total); err != nil {
 		return query.ActivityPage{}, fmt.Errorf("count session activities: %w", err)
 	}
 	if total == 0 {
 		return query.ActivityPage{}, query.ErrConversationNotFound
 	}
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), filter.PageSize, offset, filter.SourceID, filter.ConversationID, true)
+	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), filter.PageSize, offset, filter.SourceID, filter.ConversationID, true, filter.AgentID)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}

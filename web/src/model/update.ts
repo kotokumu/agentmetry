@@ -105,6 +105,11 @@ export type Trace = Readonly<{
   conversations: readonly ConversationRef[];
   agents: readonly TraceAgent[];
   activities: readonly Activity[];
+  activityOffset: number;
+  activityCount: number;
+  hasMore: boolean;
+  nextPageToken?: string;
+  previousPageToken?: string;
 }>;
 
 export type Overview = Readonly<{
@@ -164,6 +169,7 @@ export type Message =
   | Readonly<{ type: "activities-received"; generation: number; sessionId: string; sourceId: string; direction: ActivityDirection; exact: boolean; offset: number; activities: readonly Activity[]; total: number; hasEarlier: boolean; hasMore: boolean; nextPageToken?: string; previousPageToken?: string }>
   | Readonly<{ type: "activities-failed"; generation: number; sessionId: string; sourceId: string; direction: ActivityDirection; exact: boolean; offset: number; error: string }>
   | Readonly<{ type: "trace-selected"; traceId: string }>
+  | Readonly<{ type: "trace-activities-requested"; traceId: string; offset: number; pageToken: string }>
   | Readonly<{ type: "trace-received"; generation: number; traceId: string; trace: Trace }>
   | Readonly<{ type: "trace-failed"; generation: number; traceId: string; error: string }>
   | Readonly<{ type: "trace-closed" }>
@@ -202,6 +208,9 @@ export type Effect =
     type: "fetch-trace";
     generation: number;
     traceId: string;
+    offset: number;
+    limit: number;
+    pageToken: string;
   }>;
 
 export const initialModel = (): Model => ({
@@ -387,11 +396,24 @@ export const update = (
         traceRequestGeneration: generation,
         trace: undefined,
         traceError: undefined,
-      }, [{ type: "fetch-trace", generation, traceId: message.traceId }]];
+      }, [{ type: "fetch-trace", generation, traceId: message.traceId, offset: 0, limit: 100, pageToken: "" }]];
+    }
+    case "trace-activities-requested": {
+      if (model.selectedTraceId !== message.traceId || !model.trace || !model.trace.hasMore) return [model, []];
+      const generation = model.traceRequestGeneration + 1;
+      return [{ ...model, traceStatus: "loading", traceRequestGeneration: generation, traceError: undefined }, [
+        { type: "fetch-trace", generation, traceId: message.traceId, offset: message.offset, limit: 100, pageToken: message.pageToken },
+      ]];
     }
     case "trace-received":
       if (message.generation !== model.traceRequestGeneration || message.traceId !== model.selectedTraceId) return [model, []];
-      return [{ ...model, traceStatus: "ready", trace: message.trace, traceError: undefined }, []];
+      {
+        const current = model.trace;
+        const trace = current && current.traceId === message.trace.traceId && message.trace.activityOffset > current.activityOffset
+          ? { ...message.trace, activities: [...current.activities, ...message.trace.activities] }
+          : message.trace;
+        return [{ ...model, traceStatus: "ready", trace, traceError: undefined }, []];
+      }
     case "trace-failed":
       if (message.generation !== model.traceRequestGeneration || message.traceId !== model.selectedTraceId) return [model, []];
       return [{ ...model, traceStatus: "failed", trace: undefined, traceError: message.error }, []];

@@ -274,6 +274,9 @@ describe("dashboard update", () => {
       type: "fetch-trace",
       generation: 1,
       traceId: "trace-1",
+      offset: 0,
+      limit: 100,
+      pageToken: "",
     }]);
   });
 
@@ -288,6 +291,9 @@ describe("dashboard update", () => {
       conversations: [],
       agents: [],
       activities: [],
+      activityOffset: 0,
+      activityCount: 0,
+      hasMore: false,
     };
     const first = update(initialModel(), { type: "trace-selected", traceId: "trace-1" })[0];
     const second = update(first, { type: "trace-selected", traceId: "trace-2" })[0];
@@ -302,5 +308,23 @@ describe("dashboard update", () => {
     expect(closed.trace).toBeUndefined();
     expect(closed.traceStatus).toBe("idle");
     expect(effects).toEqual([]);
+  });
+
+  it("requests and appends the next trace activity page", () => {
+    const firstPage: Trace = {
+      traceId: "trace-1", startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:00:01Z", status: "ok",
+      rootSpanCount: 1, missingParentCount: 0, conversations: [], agents: [],
+      activities: [{ name: "first", source: "test", signal: "trace", kind: "tool", agentId: "", runId: "", model: "", observedAt: "2026-08-11T00:00:00Z", contributesToTotal: false, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } }],
+      activityOffset: 0, activityCount: 2, hasMore: true, nextPageToken: "page-1",
+    };
+    const secondPage = { ...firstPage, activities: [{ ...firstPage.activities[0], name: "second" }], activityOffset: 1, hasMore: false, nextPageToken: undefined };
+    const selected = update(initialModel(), { type: "trace-selected", traceId: "trace-1" })[0];
+    const ready = update(selected, { type: "trace-received", generation: 1, traceId: "trace-1", trace: firstPage })[0];
+    const [loading, effects] = update(ready, { type: "trace-activities-requested", traceId: "trace-1", offset: 1, pageToken: "page-1" });
+    expect(loading.traceStatus).toBe("loading");
+    expect(effects).toEqual([{ type: "fetch-trace", generation: 2, traceId: "trace-1", offset: 1, limit: 100, pageToken: "page-1" }]);
+    const [merged] = update(loading, { type: "trace-received", generation: 2, traceId: "trace-1", trace: secondPage });
+    expect(merged.trace?.activities.map(({ name }) => name)).toEqual(["first", "second"]);
+    expect(merged.trace?.hasMore).toBe(false);
   });
 });

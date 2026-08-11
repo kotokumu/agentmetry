@@ -27,12 +27,15 @@ type OverviewInput struct {
 }
 
 type TraceInput struct {
-	TraceID string `json:"traceId" jsonschema:"Required OTLP trace ID."`
+	TraceID   string `json:"traceId" jsonschema:"Required OTLP trace ID."`
+	PageSize  int    `json:"pageSize,omitempty" jsonschema:"Maximum number of trace activities to return. Defaults to 100; capped at 100."`
+	PageToken string `json:"pageToken,omitempty" jsonschema:"Opaque continuation token returned by the previous call."`
 }
 
 type SessionActivitiesInput struct {
 	Source    string `json:"source" jsonschema:"Required telemetry source ID."`
 	SessionID string `json:"sessionId" jsonschema:"Required session ID."`
+	AgentID   string `json:"agentId,omitempty" jsonschema:"Optional agent runtime ID returned by get_session."`
 	PageSize  int    `json:"pageSize,omitempty" jsonschema:"Maximum number of activities to return. Defaults to 100; capped at 100."`
 	PageToken string `json:"pageToken,omitempty" jsonschema:"Opaque continuation token returned by the previous call."`
 	Direction string `json:"direction,omitempty" jsonschema:"older or newer. Defaults to older."`
@@ -142,6 +145,11 @@ type TraceDataOutput struct {
 	Conversations      []query.ConversationRef `json:"conversations"`
 	Agents             []query.TraceAgent      `json:"agents"`
 	Activities         []ActivityOutput        `json:"activities"`
+	ActivityOffset     int                     `json:"activityOffset"`
+	ActivityCount      int64                   `json:"activityCount"`
+	HasMore            bool                    `json:"hasMore"`
+	NextPageToken      string                  `json:"nextPageToken,omitempty"`
+	PreviousPageToken  string                  `json:"previousPageToken,omitempty"`
 }
 
 type TraceOutput struct {
@@ -198,7 +206,18 @@ func (service *Service) getTrace(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
-	trace, err := service.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID})
+	pageSize := input.PageSize
+	if pageSize == 0 {
+		pageSize = 100
+	}
+	if pageSize < 1 || pageSize > 100 {
+		return nil, TraceOutput{}, fmt.Errorf("pageSize must be between 1 and 100")
+	}
+	offset, err := parsePageToken(input.PageToken)
+	if err != nil {
+		return nil, TraceOutput{}, err
+	}
+	trace, err := service.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Offset: offset, Limit: pageSize})
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
@@ -262,7 +281,7 @@ func (service *Service) getSessionActivities(ctx context.Context, _ *mcp.CallToo
 	if direction != "older" && direction != "newer" {
 		return nil, SessionActivitiesOutput{}, fmt.Errorf("direction must be older or newer")
 	}
-	page, err := service.reader.ListSessionActivities(ctx, query.ActivityPageFilter{SourceID: input.Source, ConversationID: input.SessionID, PageSize: pageSize, Offset: offset, Direction: direction})
+	page, err := service.reader.ListSessionActivities(ctx, query.ActivityPageFilter{SourceID: input.Source, ConversationID: input.SessionID, AgentID: input.AgentID, PageSize: pageSize, Offset: offset, Direction: direction})
 	if err != nil {
 		return nil, SessionActivitiesOutput{}, err
 	}
@@ -352,9 +371,16 @@ func mapTrace(trace query.Trace) TraceDataOutput {
 	output := TraceDataOutput{
 		TraceID: trace.TraceID, StartedAt: trace.StartedAt, EndedAt: trace.EndedAt, Status: string(trace.Status),
 		RootSpanCount: trace.RootSpanCount, MissingParentCount: trace.MissingParentCount,
-		Conversations: append([]query.ConversationRef{}, trace.Conversations...),
-		Agents:        append([]query.TraceAgent{}, trace.Agents...),
-		Activities:    make([]ActivityOutput, 0, len(trace.Activities)),
+		Conversations:  append([]query.ConversationRef{}, trace.Conversations...),
+		Agents:         append([]query.TraceAgent{}, trace.Agents...),
+		Activities:     make([]ActivityOutput, 0, len(trace.Activities)),
+		ActivityOffset: trace.ActivityOffset, ActivityCount: trace.ActivityCount, HasMore: trace.HasMore,
+	}
+	if trace.HasMore {
+		output.NextPageToken = encodePageToken(trace.ActivityOffset + len(trace.Activities))
+	}
+	if trace.ActivityOffset > 0 {
+		output.PreviousPageToken = encodePageToken(max(0, trace.ActivityOffset-len(trace.Activities)))
 	}
 	for _, activity := range trace.Activities {
 		output.Activities = append(output.Activities, mapActivity(activity))

@@ -58,13 +58,13 @@ func (store *Store) activities(ctx context.Context, since string, limit int, sou
 }
 
 func (store *Store) activitiesWindow(ctx context.Context, since string, limit, offset int, sourceID, conversationID string) ([]query.Activity, error) {
-	return store.activitiesWindowWithMeaningful(ctx, since, limit, offset, sourceID, conversationID, false)
+	return store.activitiesWindowWithMeaningful(ctx, since, limit, offset, sourceID, conversationID, false, "")
 }
 
-func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since string, limit, offset int, sourceID, conversationID string, meaningfulOnly bool) ([]query.Activity, error) {
-	spanWhere, spanArgs := activityWhere("ended_at", since, sourceID, conversationID)
-	logWhere, logArgs := activityWhere("observed_at", since, sourceID, conversationID)
-	metricWhere, metricArgs := activityWhere("observed_at", since, sourceID, conversationID)
+func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since string, limit, offset int, sourceID, conversationID string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
+	spanWhere, spanArgs := activityWhere("ended_at", since, sourceID, conversationID, agentID)
+	logWhere, logArgs := activityWhere("observed_at", since, sourceID, conversationID, agentID)
+	metricWhere, metricArgs := activityWhere("observed_at", since, sourceID, conversationID, agentID)
 	if meaningfulOnly {
 		spanWhere += " AND activity_kind <> 'unknown'"
 		logWhere += " AND activity_kind <> 'unknown'"
@@ -149,7 +149,7 @@ LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 // activityWhere only interpolates trusted SQL fragments while keeping all
 // values parameterized. Omitting optional OR predicates lets SQLite select the
 // conversation indexes for exact-route lookups.
-func activityWhere(timeColumn, since, sourceID, conversationID string) (string, []any) {
+func activityWhere(timeColumn, since, sourceID, conversationID, agentID string) (string, []any) {
 	where := timeColumn + " >= ? AND run_id <> ''"
 	args := []any{since}
 	if sourceID != "" {
@@ -159,6 +159,10 @@ func activityWhere(timeColumn, since, sourceID, conversationID string) (string, 
 	if conversationID != "" {
 		where += " AND run_id = ?"
 		args = append(args, conversationID)
+	}
+	if agentID != "" {
+		where += " AND CASE WHEN agent_id = '' THEN 'main' ELSE agent_id END = ?"
+		args = append(args, agentID)
 	}
 	return where, args
 }

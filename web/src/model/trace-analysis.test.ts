@@ -36,6 +36,9 @@ const trace = (activities: readonly Activity[]): Trace => ({
     { sourceId: "codex", conversationId: "conversation-b", agentId: "main", agentDefinition: "reviewer", agentType: "custom", model: "model-b" },
   ],
   activities,
+  activityOffset: 0,
+  activityCount: activities.length,
+  hasMore: false,
 });
 
 describe("trace analysis", () => {
