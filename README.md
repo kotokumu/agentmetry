@@ -28,6 +28,21 @@ Connect serves the generated query service to the Web client. MCP tools remain
 explicit semantic adapters over the same application query service; RPCs are
 not automatically exposed as tools.
 
+### MCP for agent self-analysis
+
+The MCP endpoint is read-only and stateless. An AI agent should call
+`get_agent_context` first to discover available data, privacy rules, and
+required identifiers. It must then provide the source-qualified `source` and
+`runId` to `get_run_context`, `get_run_summary`, `get_run_timeline`,
+`get_token_usage`, and the analysis tools. The server never assumes that the
+latest run belongs to the caller.
+
+Analysis results include observed evidence, rule version, projection
+completeness, and source coverage separately. Missing token values remain
+`null`; activity bodies are omitted unless `includeContent` is explicitly set.
+OTLP-only data does not guarantee task outcomes, git diffs, test results, or
+artifact conflicts, so those are reported as unavailable rather than inferred.
+
 The Web initial load is bounded: dashboard aggregates, one paged session-list
 page, and one activity page for the selected session. The legacy JSON routes
 under `/api/v1` remain for compatibility, but are not used by the Web client or
@@ -232,6 +247,23 @@ go test -tags=integration ./...
 It sends OTLP protobuf to the production HTTP router, persists observations in
 a temporary SQLite database, and verifies the HTTP API, MCP tool, and embedded
 SPA without fixed ports or external processes.
+
+The real-agent integration test is opt-in because it invokes local Claude and
+Codex SDKs and may consume subscription or API quota:
+
+```sh
+npm --prefix evals/agentmetry install
+npm --prefix evals/agentmetry run e2e
+```
+
+It starts an isolated Agentmetry instance, runs both SDKs through Promptfoo,
+checks that each run is observed under the expected source ID, and performs
+source-qualified MCP analysis from the runner. Local SDK authentication is
+reused; no credentials are written to the repository. The hands-on check found
+that the installed Promptfoo SDK providers did not expose the configured
+Agentmetry MCP tools to the model, so provider-side MCP calls are reported as
+observations rather than treated as required. The runner-side MCP calls and
+the deterministic fixture integration test cover the MCP contract itself.
 
 ## Storage and Schema Evolution
 

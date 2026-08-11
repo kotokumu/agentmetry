@@ -8,3 +8,5 @@
 /src-tauri/target/
 /src-tauri/binaries/*
 !/src-tauri/binaries/.gitkeep
+/evals/agentmetry/.agent-e2e-*
+/evals/agentmetry/node_modules/

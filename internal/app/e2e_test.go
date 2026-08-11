@@ -7,6 +7,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -57,6 +58,7 @@ func TestOTLPToSQLiteDashboardAndMCPEndToEnd(t *testing.T) {
 	assertOverview(t, overview)
 	assertTrace(t, dashboardServer.URL)
 	assertMCPOverview(t, dashboardServer.URL)
+	assertMCPAgentContext(t, dashboardServer.URL)
 	assertConnectQueryContract(t, dashboardServer.URL)
 	assertDashboard(t, dashboardServer.URL)
 
@@ -75,6 +77,135 @@ func TestOTLPToSQLiteDashboardAndMCPEndToEnd(t *testing.T) {
 	if exportCount != 3 || observationCount != 6 {
 		t.Fatalf("canonical storage counts = exports:%d observations:%d, want exports:3 observations:6", exportCount, observationCount)
 	}
+}
+
+func TestMCPAgentSelfAnalysisFlow(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "agentmetry.db")
+	database, err := store.Open(databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
+	services := app.NewServices(database, webassets.FS(), func() time.Time { return now })
+	otlpServer := httptest.NewServer(services.OTLPHTTPHandler)
+	t.Cleanup(otlpServer.Close)
+	mcpServer := httptest.NewServer(services.Dashboard)
+	t.Cleanup(mcpServer.Close)
+
+	postOTLP(t, otlpServer.URL+"/v1/traces", traceFixture(now))
+	postOTLP(t, otlpServer.URL+"/v1/logs", logFixture(now))
+	postOTLP(t, otlpServer.URL+"/v1/metrics", metricFixture(now))
+
+	contextResult := callMCPTool(t, mcpServer.URL, "get_agent_context", map[string]any{})
+	t.Logf("get_agent_context: %s", compactJSON(contextResult))
+	capabilitiesResult := callMCPTool(t, mcpServer.URL, "get_source_capabilities", map[string]any{})
+	t.Logf("get_source_capabilities: %s", compactJSON(capabilitiesResult))
+
+	runsResult := callMCPTool(t, mcpServer.URL, "list_runs", map[string]any{"range": "24h"})
+	t.Logf("list_runs: %s", compactJSON(runsResult))
+	runs := structuredRuns(t, runsResult)
+	if len(runs) != 2 {
+		t.Fatalf("list_runs returned %d runs, want 2", len(runs))
+	}
+
+	for _, run := range runs {
+		args := map[string]any{"source": run.Source, "runId": run.RunID}
+		for _, tool := range []string{"get_run_context", "get_run_summary", "get_token_usage", "find_bottlenecks", "find_coordination_risks"} {
+			result := callMCPTool(t, mcpServer.URL, tool, args)
+			t.Logf("%s(%s/%s): %s", tool, run.Source, run.RunID, compactJSON(result))
+		}
+		timeline := callMCPTool(t, mcpServer.URL, "get_run_timeline", map[string]any{
+			"source": run.Source, "runId": run.RunID, "pageSize": 100,
+		})
+		t.Logf("get_run_timeline(%s/%s): %s", run.Source, run.RunID, compactJSON(timeline))
+	}
+
+	compare := callMCPTool(t, mcpServer.URL, "compare_runs", map[string]any{
+		"runs": []map[string]string{{"source": runs[0].Source, "runId": runs[0].RunID}, {"source": runs[1].Source, "runId": runs[1].RunID}},
+	})
+	t.Logf("compare_runs: %s", compactJSON(compare))
+}
+
+type mcpRunReference struct {
+	Source string
+	RunID  string
+}
+
+func callMCPTool(t *testing.T, baseURL string, name string, arguments map[string]any) map[string]any {
+	t.Helper()
+	body, err := json.Marshal(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": name, "arguments": arguments},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/mcp", bytes.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var payload map[string]any
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("MCP %s returned %s: %s", name, response.Status, compactJSON(payload))
+	}
+	if _, ok := payload["error"]; ok {
+		t.Fatalf("MCP %s returned error: %s", name, compactJSON(payload))
+	}
+	result, ok := payload["result"].(map[string]any)
+	if !ok {
+		t.Fatalf("MCP %s omitted result: %s", name, compactJSON(payload))
+	}
+	structured, ok := result["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("MCP %s omitted structuredContent: %s", name, compactJSON(payload))
+	}
+	return structured
+}
+
+func structuredRuns(t *testing.T, result map[string]any) []mcpRunReference {
+	t.Helper()
+	overview, ok := result["overview"].(map[string]any)
+	if !ok {
+		t.Fatalf("list_runs omitted overview: %s", compactJSON(result))
+	}
+	sessions, ok := overview["sessions"].([]any)
+	if !ok {
+		t.Fatalf("list_runs omitted sessions: %s", compactJSON(result))
+	}
+	runs := make([]mcpRunReference, 0, len(sessions))
+	for _, raw := range sessions {
+		session, ok := raw.(map[string]any)
+		if !ok {
+			t.Fatalf("list_runs returned malformed session: %s", compactJSON(raw))
+		}
+		source, _ := session["sourceId"].(string)
+		runID, _ := session["id"].(string)
+		if source == "" || runID == "" {
+			t.Fatalf("list_runs returned incomplete source-qualified session: %s", compactJSON(session))
+		}
+		runs = append(runs, mcpRunReference{Source: source, RunID: runID})
+	}
+	return runs
+}
+
+func compactJSON(value any) string {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Sprintf("<json error: %v>", err)
+	}
+	return string(encoded)
 }
 
 func assertConnectQueryContract(t *testing.T, baseURL string) {
@@ -245,6 +376,40 @@ func assertMCPOverview(t *testing.T, baseURL string) {
 	}
 	if response.StatusCode != http.StatusOK || payload.Result.StructuredContent.Overview.RunCount != 2 || payload.Result.StructuredContent.Overview.AgentCount != 2 {
 		t.Fatalf("unexpected MCP overview: status=%s payload=%#v", response.Status, payload)
+	}
+}
+
+func assertMCPAgentContext(t *testing.T, baseURL string) {
+	t.Helper()
+	body := `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"get_agent_context","arguments":{}}}`
+	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/mcp", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Accept", "application/json, text/event-stream")
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	var payload struct {
+		Result struct {
+			StructuredContent struct {
+				CallerIdentity struct {
+					Available bool `json:"available"`
+				} `json:"callerIdentity"`
+				RunIdentity struct {
+					LatestIsImplicit bool `json:"latestIsImplicit"`
+				} `json:"runIdentity"`
+			} `json:"structuredContent"`
+		} `json:"result"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if response.StatusCode != http.StatusOK || payload.Result.StructuredContent.CallerIdentity.Available || payload.Result.StructuredContent.RunIdentity.LatestIsImplicit {
+		t.Fatalf("MCP caller context must require explicit identity: status=%s payload=%#v", response.Status, payload)
 	}
 }
 
