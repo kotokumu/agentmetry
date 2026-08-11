@@ -4,6 +4,8 @@ import { shouldReturnThroughHistory, type AgentmetryApp } from "./agentmetry-app
 import type { TimeRangeFilter } from "../components/time-range-filter";
 import type { SessionList } from "../components/session-list";
 import type { ActivityTable } from "../components/activity-table";
+import type { KpiCard } from "../components/kpi-card";
+import type { TokenUsage } from "../model/update";
 
 const emptyOverview = {
   sources: [],
@@ -23,7 +25,8 @@ type TestSession = {
   startedAt: string;
   endedAt: string;
   activityCount: number;
-  tokens: typeof emptyOverview.tokens;
+  tokens: TokenUsage;
+  costUsd?: number;
   agents: readonly object[];
   activities: readonly object[];
   traceIds?: readonly string[];
@@ -50,16 +53,20 @@ const dashboardResponse = (overview: TestOverview) => ({
   },
 });
 
-const sessionSummary = (session: TestSession) => ({
-  id: session.id,
-  sourceId: session.sourceId,
-  sources: session.sources,
-  startedAt: session.startedAt,
-  endedAt: session.endedAt,
-  activityCount: session.activityCount,
-  tokens: session.tokens,
-  agents: session.agents,
-});
+const sessionSummary = (session: TestSession) => {
+  const summary = {
+    id: session.id,
+    sourceId: session.sourceId,
+    sources: session.sources,
+    startedAt: session.startedAt,
+    endedAt: session.endedAt,
+    activityCount: session.activityCount,
+    tokens: session.tokens,
+    agents: session.agents,
+  } as { id: string; sourceId: string; sources: readonly object[]; startedAt: string; endedAt: string; activityCount: number; tokens: TokenUsage; agents: readonly object[]; costUsd?: number };
+  if (session.costUsd !== undefined) summary.costUsd = session.costUsd;
+  return summary;
+};
 
 const sessionsResponse = (overview: TestOverview) => ({
   sessions: overview.sessions.map(sessionSummary),
@@ -165,6 +172,41 @@ describe("Agentmetry app composition", () => {
     const detail = app.shadowRoot?.querySelector(".workspace .detail");
     const children = Array.from(detail?.children ?? []);
     expect(children.findIndex((child) => child.classList.contains("split"))).toBeLessThan(children.findIndex((child) => child.classList.contains("operations-panel")));
+  });
+
+  it("shows token totals and observed cost in the selected conversation details", async () => {
+    const overview = {
+      ...emptyOverview,
+      sessions: [{
+        id: "session-usage",
+        sourceId: "claude",
+        sources: [{ id: "claude", label: "Claude Code" }],
+        startedAt: "2026-08-11T00:00:00Z",
+        endedAt: "2026-08-11T00:01:00Z",
+        activityCount: 1,
+        tokens: { input: 120, output: 30, cacheRead: null, cacheWrite: null, reasoning: null, total: 150 },
+        costUsd: 0.0125,
+        agents: [],
+        activities: [],
+      }],
+    } as TestOverview;
+    vi.stubGlobal("fetch", overviewFetch(overview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector(".session-metrics")).toBeTruthy());
+
+    const metricCards = Array.from(app.shadowRoot?.querySelectorAll<KpiCard>(".session-metrics am-kpi-card") ?? []);
+    await Promise.all(metricCards.map((card) => card.updateComplete));
+    const metrics = metricCards.map((card) => card.shadowRoot?.textContent ?? "").join(" ");
+    expect(metrics).toContain("Total tokens");
+    expect(metrics).toContain("150");
+    expect(metrics).toContain("Input tokens");
+    expect(metrics).toContain("120");
+    expect(metrics).toContain("Output tokens");
+    expect(metrics).toContain("30");
+    expect(metrics).toContain("Estimated cost");
+    expect(metrics).toContain("$0.0125");
   });
 
   it("filters operations when an agent graph node is selected", async () => {

@@ -85,7 +85,7 @@ export class AgentmetryApp extends LitElement {
     h2 { margin: 0 0 14px; font: 600 1rem/1.2 "Iowan Old Style", "Palatino Linotype", serif; }
     .status { display: flex; align-items: center; gap: 7px; margin: 8px 0 0; color: var(--am-muted); font-size: .78rem; }
     .status-dot { width: 8px; height: 8px; flex: 0 0 auto; border-radius: 50%; background: #4f8757; box-shadow: 0 0 0 3px rgba(79, 135, 87, .14); }
-    .kpis { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; margin-bottom: 12px; }
     .workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); gap: 14px; align-items: start; }
     .operations-panel { margin: 0; }
     .operations-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
@@ -95,6 +95,7 @@ export class AgentmetryApp extends LitElement {
     .agent-filter button { border: 1px solid var(--am-border); border-radius: 99px; padding: 4px 8px; background: var(--am-surface); color: var(--am-text); cursor: pointer; font: inherit; }
     .agent-filter button:hover, .agent-filter button:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: none; }
     .session-head-panel { padding-top: 12px; padding-bottom: 12px; }
+    .session-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
     .trace-view { display: grid; gap: 18px; }
     .trace-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
     .trace-close { border: 1px solid var(--am-border); border-radius: 99px; background: var(--am-surface); color: var(--am-text); padding: 8px 13px; cursor: pointer; text-decoration: none; }
@@ -110,12 +111,12 @@ export class AgentmetryApp extends LitElement {
     .error { color: #9f2f23; }
 
     @media (max-width: 1200px) {
-      .kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .kpis, .session-metrics { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .workspace { grid-template-columns: 220px minmax(0, 1fr); }
     }
 
     @media (max-width: 950px) {
-      .kpis { grid-template-columns: repeat(2, 1fr); }
+      .kpis, .session-metrics { grid-template-columns: repeat(2, 1fr); }
       .workspace { grid-template-columns: 1fr; }
       header { align-items: flex-start; flex-direction: column; }
     }
@@ -129,7 +130,7 @@ export class AgentmetryApp extends LitElement {
     }
 
     @media (max-width: 480px) {
-      .kpis { grid-template-columns: 1fr; }
+      .kpis, .session-metrics { grid-template-columns: 1fr; }
       .session-head { display: block; }
     }
   `;
@@ -156,7 +157,6 @@ export class AgentmetryApp extends LitElement {
         <am-kpi-card label="Agents" .value=${overview ? String(overview.agentCount) : "N/A"}></am-kpi-card>
         <am-kpi-card label="Activities" .value=${overview ? String(observedActivityCount(overview)) : "N/A"}></am-kpi-card>
         <am-kpi-card label="Observed model traffic" .value=${formatOptionalNumber(overview?.tokens.total)} hint="Input + output reported by model calls; not a plan quota"></am-kpi-card>
-        <am-kpi-card label="Estimated cost" .value=${formatCost(selected?.costUsd)} .hint=${selected?.costUsd === undefined ? "N/A" : "Observed telemetry"}></am-kpi-card>
       </section>
 
       <section class="panel plan-panel"><h2>Plan limits</h2><am-plan-usage .snapshots=${overview?.planUsage ?? []}></am-plan-usage></section>
@@ -172,6 +172,12 @@ export class AgentmetryApp extends LitElement {
         <div class="detail">${selected ? html`
           <section class="panel session-head-panel">
             <div class="session-head"><div><p class="eyebrow">Selected conversation</p><p class="session-id">${selected.id}</p></div></div>
+            <div class="session-metrics" aria-label="Selected conversation usage">
+              <am-kpi-card label="Total tokens" .value=${formatOptionalNumber(selected.tokens.total)} hint="Input + output"></am-kpi-card>
+              <am-kpi-card label="Input tokens" .value=${formatOptionalNumber(selected.tokens.input)} hint="Reported by model calls"></am-kpi-card>
+              <am-kpi-card label="Output tokens" .value=${formatOptionalNumber(selected.tokens.output)} hint="Reported by model calls"></am-kpi-card>
+              <am-kpi-card label="Estimated cost" .value=${formatCost(selected.costUsd)} .hint=${selected.costUsd === undefined ? "Not reported" : "Observed telemetry"}></am-kpi-card>
+            </div>
           </section>
           <section class="panel traffic-panel"><h2>Observed model traffic</h2><am-token-chart .usage=${selected.tokens}></am-token-chart></section>
           <section class="panel topology-panel"><h2>Agent topology</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section>
