@@ -17,15 +17,16 @@ test gate.
 
 ## CI gates
 
-1. Web dependencies install, Web tests pass, and `web/dist` builds.
-2. Go tests run only after `web/dist` has been generated.
-3. Desktop target metadata tests pass and the Linux sidecar input builds.
-4. Tauri Rust dependencies resolve from crates.io and compile with `cargo check`.
+1. Web dependencies install, Web tests pass, and `web/dist/generated` builds.
+2. `go test ./...` runs independently of the Web build.
+3. Integration tests explicitly build the Web UI and run with `-tags=integration`.
+4. Desktop target metadata tests pass and the Linux sidecar input builds.
+5. Tauri Rust dependencies resolve from crates.io and compile with `cargo check`.
 
-`web/dist` is intentionally ignored by Git. The generated directory is a build
-input for Go's `embed`, so every path that compiles or tests the Go runtime must
-run the Web build first. The Dockerfile already uses a dedicated Web build stage
-and copies its output into the Go build stage.
+`web/dist/generated` is intentionally ignored by Git. The empty `web/dist`
+directory is retained with `.gitkeep` so the Go package can compile without a
+Web build. The Dockerfile still uses a dedicated Web build stage and copies the
+generated assets into the Go build stage.
 
 ## Release gates
 

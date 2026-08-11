@@ -62,8 +62,8 @@ func (Plugin) Normalize(input source.Event) source.Event {
 		event.Attributes["gen_ai.usage.role"] = "authoritative_call"
 		copyAlias(event.Attributes, "gen_ai.usage.input_tokens", "input_tokens")
 		copyAlias(event.Attributes, "gen_ai.usage.output_tokens", "output_tokens")
-		copyAlias(event.Attributes, "gen_ai.usage.cache_read.input_tokens", "cache_read_tokens")
-		copyAlias(event.Attributes, "gen_ai.usage.cache_write.input_tokens", "cache_creation_tokens")
+		copyFirstAlias(event.Attributes, "gen_ai.usage.cache_read.input_tokens", "cache_read_tokens", "cache_read_input_tokens")
+		copyFirstAlias(event.Attributes, "gen_ai.usage.cache_write.input_tokens", "cache_creation_tokens", "cache_creation_input_tokens")
 		copyFirstAlias(event.Attributes, "gen_ai.usage.id", "client_request_id", "request_id")
 	} else if sourceName == "llm_request" {
 		event.Attributes["gen_ai.usage.role"] = "corroborating"

@@ -38,15 +38,14 @@ the new MCP tools.
 Requires Go 1.26 and Node.js.
 
 ```sh
-cd web
-npm ci
-npm run build
-cd ..
-go run ./cmd/agentmetry
+npm --prefix web ci
+make build
+./bin/agentmetry
 ```
 
-`web/dist` is generated build output and is not stored in Git. Build the Web UI
-before running or testing the Go runtime.
+`make build` builds the Web UI into `web/dist/generated` and then builds the Go
+runtime. The top-level `web/dist` directory is kept only as the embed root; its
+generated contents are not stored in Git.
 
 After startup:
 
@@ -218,15 +217,21 @@ docker run --rm -p 17890:17890 -p 4317:4317 -p 4318:4318 -v agentmetry-data:/dat
 ## Verification
 
 ```sh
-cd web
-npm ci
-npm test -- --run
-npm run build
-cd ..
+npm --prefix web test -- --run
 go test ./...
 ```
 
-`go test ./...` includes an in-process end-to-end test built with `httptest`. It sends OTLP protobuf to the production HTTP router, persists observations in a temporary SQLite database, and verifies the HTTP API, MCP tool, and embedded SPA without fixed ports or external processes.
+`go test ./...` is independent of the Web build and covers the Go unit and
+backend tests. The Web-dependent end-to-end test is opt-in:
+
+```sh
+npm --prefix web run build
+go test -tags=integration ./...
+```
+
+It sends OTLP protobuf to the production HTTP router, persists observations in
+a temporary SQLite database, and verifies the HTTP API, MCP tool, and embedded
+SPA without fixed ports or external processes.
 
 ## Storage and Schema Evolution
 
