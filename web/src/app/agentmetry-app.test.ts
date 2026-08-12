@@ -122,6 +122,21 @@ describe("Agentmetry app composition", () => {
     expect(content).toContain("Receiving OTLP locally");
     expect(content).toContain("Loading conversations");
     expect(app.shadowRoot?.querySelector("main")?.getAttribute("data-density")).toBe("operator");
+    expect(app.shadowRoot?.querySelector<HTMLAnchorElement>("a.brand")?.getAttribute("href")).toBe("/");
+  });
+
+  it("returns from a conversation route to the dashboard through the brand", async () => {
+    history.replaceState({}, "", "/conversations/codex/conversation-1");
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await app.updateComplete;
+
+    app.shadowRoot?.querySelector<HTMLAnchorElement>("a.brand")?.click();
+    await app.updateComplete;
+
+    expect(location.pathname).toBe("/");
+    expect(app.shadowRoot?.querySelector<HTMLAnchorElement>("a.brand")?.getAttribute("aria-label")).toBe("Back to Agentmetry dashboard");
   });
 
   it("interprets a time-range intent by requesting that range", async () => {

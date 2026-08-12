@@ -92,7 +92,9 @@ export class AgentmetryApp extends LitElement {
     main { width: 100%; min-width: 0; max-width: 1800px; margin: 0 auto; padding: clamp(16px, 1.5vw, 24px); }
     header { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; padding: 0 2px 6px; }
     header::after { content: ""; position: absolute; inset: auto 0 -8px; height: 1px; background: linear-gradient(90deg, var(--am-accent), rgba(109, 244, 214, .08) 42%, transparent); }
-    .brand { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--am-text); font: 800 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .22em; }
+    .brand { display: flex; width: fit-content; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--am-text); font: 800 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .22em; text-decoration: none; }
+    .brand:hover { color: var(--am-accent); }
+    .brand:focus-visible { border-radius: 7px; outline: 2px solid var(--am-accent); outline-offset: 4px; }
     .brand-mark { position: relative; width: 24px; height: 24px; border: 1px solid var(--am-border-strong); border-radius: 7px; background: var(--am-accent-soft); box-shadow: inset 0 0 16px rgba(var(--am-accent-rgb), .08), 0 0 20px rgba(var(--am-accent-rgb), .1); }
     .brand-mark::before, .brand-mark::after { content: ""; position: absolute; background: var(--am-accent); }
     .brand-mark::before { width: 9px; height: 2px; top: 7px; left: 7px; box-shadow: 0 7px 0 var(--am-accent); }
@@ -191,7 +193,7 @@ export class AgentmetryApp extends LitElement {
       : [];
     return html`<main data-density="operator">
       <header>
-        <div><div class="brand"><span class="brand-mark" aria-hidden="true"></span><span>AGENTMETRY</span></div><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
+        <div><a class="brand" href="/" aria-label="Back to Agentmetry dashboard" @click=${this.goHome}><span class="brand-mark" aria-hidden="true"></span><span>AGENTMETRY</span></a><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
         <div class="header-controls"><am-time-range-filter .selected=${this.model.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
       </header>
 
@@ -316,6 +318,15 @@ export class AgentmetryApp extends LitElement {
 
   private readonly clearAgentSelection = () => {
     this.resetAgentSelection();
+  };
+
+  private readonly goHome = (event: MouseEvent) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.resetAgentSelection();
+    if (window.location.pathname !== "/" || window.location.search) history.pushState({}, "", "/");
+    this.dispatch({ type: "trace-closed" });
+    this.dispatch({ type: "conversation-route-cleared" });
   };
 
   private activitiesNeeded(event: CustomEvent<{ direction: import("../model/update").ActivityDirection }>) {
