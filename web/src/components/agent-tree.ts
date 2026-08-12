@@ -61,10 +61,9 @@ const NODE_HEIGHT = 96;
 const LEVEL_GAP = 82;
 const ROW_GAP = 220;
 const SIDE_PADDING = NODE_WIDTH / 2 + 24;
-const MAX_COLUMNS = 4;
 const ROOT_COLUMNS = 2;
-const ROOT_GROUP_WIDTH = SIDE_PADDING * 2 + (MAX_COLUMNS - 1) * ROW_GAP;
 const ROOT_ROW_GAP = 24;
+const ROOT_COLUMN_GAP = 96;
 const TOP_PADDING = 40;
 
 export const buildAgentTree = (agents: readonly AgentSession[]): readonly AgentNode[] => {
@@ -101,12 +100,13 @@ export const layoutAgentTree = (roots: readonly AgentNode[]): TreeLayout => {
       };
       visit(root, 0);
       const rowHeight = NODE_HEIGHT + LEVEL_GAP;
-      const height = levels.reduce((total, level) => total + Math.ceil(level.length / MAX_COLUMNS) * rowHeight, 0) - LEVEL_GAP + 24;
-      return { levels, height };
+      const maxLevelWidth = Math.max(NODE_WIDTH, ...levels.map((level) => NODE_WIDTH + Math.max(0, level.length - 1) * ROW_GAP));
+      const height = levels.length * rowHeight - LEVEL_GAP + 24;
+      return { levels, height, maxLevelWidth, width: maxLevelWidth + SIDE_PADDING * 2 };
     });
 
-  const rootColumns = Math.min(ROOT_COLUMNS, Math.max(1, groups.length));
-  const rootRows = Math.ceil(groups.length / rootColumns);
+  const rootColumns = Math.min(ROOT_COLUMNS, groups.length);
+  const rootRows = groups.length === 0 ? 0 : Math.ceil(groups.length / rootColumns);
   const rowHeights = Array.from({ length: rootRows }, (_, row) => Math.max(...groups.slice(row * rootColumns, (row + 1) * rootColumns).map((group) => group.height)));
   const rowTops: number[] = [];
   rowHeights.reduce((top, height, index) => {
@@ -114,31 +114,40 @@ export const layoutAgentTree = (roots: readonly AgentNode[]): TreeLayout => {
     return top + height + ROOT_ROW_GAP;
   }, TOP_PADDING);
 
+  const columnWidths = Array.from({ length: rootColumns }, (_, column) => Math.max(...groups.filter((_, index) => index % rootColumns === column).map((group) => group.width)));
+  const columnStarts: number[] = [];
+  let graphWidth = 0;
+  columnWidths.forEach((width, column) => {
+    columnStarts[column] = graphWidth;
+    graphWidth += width + (column === columnWidths.length - 1 ? 0 : ROOT_COLUMN_GAP);
+  });
+
   const nodes: LayoutNode[] = [];
   groups.forEach((group, groupIndex) => {
-    const groupStartX = (groupIndex % rootColumns) * ROOT_GROUP_WIDTH;
+    const groupColumn = groupIndex % rootColumns;
+    const groupStartX = columnStarts[groupColumn] + (columnWidths[groupColumn] - group.width) / 2;
     let top = rowTops[Math.floor(groupIndex / rootColumns)];
     for (const level of group.levels) {
-      const columns = Math.min(MAX_COLUMNS, Math.max(1, level.length));
-      const firstCenterX = groupStartX + (ROOT_GROUP_WIDTH - (columns - 1) * ROW_GAP) / 2;
+      const columns = Math.max(1, level.length);
+      const levelWidth = NODE_WIDTH + (columns - 1) * ROW_GAP;
+      const firstCenterX = groupStartX + SIDE_PADDING + NODE_WIDTH / 2 + (group.maxLevelWidth - levelWidth) / 2;
       const rowHeight = NODE_HEIGHT + LEVEL_GAP;
       level.forEach((entry, index) => {
-        const row = Math.floor(index / MAX_COLUMNS);
-        const column = index % MAX_COLUMNS;
+        const column = index;
         nodes.push({
           ...entry,
           centerX: firstCenterX + column * ROW_GAP,
-          centerY: top + row * rowHeight + NODE_HEIGHT / 2,
+          centerY: top + NODE_HEIGHT / 2,
         });
       });
-      top += Math.ceil(level.length / MAX_COLUMNS) * rowHeight;
+      top += rowHeight;
     }
   });
 
   const height = rowTops.length === 0 ? 160 : rowTops[rowTops.length - 1] + rowHeights[rowHeights.length - 1];
   return {
     nodes,
-    width: Math.max(440, rootColumns * ROOT_GROUP_WIDTH),
+    width: Math.max(440, graphWidth),
     height: Math.max(160, height),
   };
 };

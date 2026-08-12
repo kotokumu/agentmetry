@@ -383,18 +383,21 @@ describe("dashboard components", () => {
     }
   });
 
-  it("lays out a large child set across multiple columns without overlap", () => {
+  it("keeps each hierarchy level on one horizontal lane without overlap", () => {
     const missing = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
     const agents = [
       { agentId: "main", activityCount: 1, tokens: missing },
       ...Array.from({ length: 49 }, (_, index) => ({ agentId: `child-${index}`, parentAgentId: "main", activityCount: 1, tokens: missing })),
+      ...Array.from({ length: 5 }, (_, index) => ({ agentId: `grandchild-${index}`, parentAgentId: `child-${index}`, activityCount: 1, tokens: missing })),
     ];
     const layout = layoutAgentTree(buildAgentTree(agents));
     const children = layout.nodes.filter(({ depth }) => depth === 1);
-    const firstRow = new Set(children.filter(({ centerY }) => centerY === children[0].centerY).map(({ centerX }) => centerX));
+    const grandchildren = layout.nodes.filter(({ depth }) => depth === 2);
 
-    expect(firstRow.size).toBe(4);
-    expect(layout.width).toBeGreaterThan(800);
+    expect(new Set(children.map(({ centerY }) => centerY)).size).toBe(1);
+    expect(new Set(grandchildren.map(({ centerY }) => centerY)).size).toBe(1);
+    expect(children[0].centerY).toBeLessThan(grandchildren[0].centerY);
+    expect(layout.width).toBeGreaterThan(10_000);
     for (let left = 0; left < layout.nodes.length; left += 1) {
       for (let right = left + 1; right < layout.nodes.length; right += 1) {
         const first = layout.nodes[left];
