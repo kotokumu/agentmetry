@@ -32,5 +32,7 @@ generated assets into the Go build stage.
 
 The tag workflow remains responsible for native macOS, Windows, and Linux
 package generation and GitHub Release publication. It verifies that the tag
-version matches the Tauri application version before building. Signing and
-notarization remain future release gates.
+version matches the Tauri application version before building. Its preflight
+requires updater and Apple signing credentials. macOS Developer ID signing,
+notarization, stapling, and Gatekeeper assessment are mandatory release gates;
+the GitHub Release remains a draft until every platform succeeds.

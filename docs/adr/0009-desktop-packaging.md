@@ -162,7 +162,6 @@ platform bundling, and a common configuration for macOS/Windows/Linux. The Go
 server already embeds `web/dist`, so the production window loads the sidecar's
 loopback URL and avoids a second desktop-only frontend implementation.
 
-The first package is intentionally unsigned. A later release pipeline will add
-Apple Developer ID signing, hardened runtime, entitlements, notarization, and
-stapling; those steps must happen after the protected storage/unlock design is
-implemented and tested.
+The initial package was intentionally unsigned. The release pipeline now uses
+the configured entitlements, Developer ID signing, notarization, and stapling,
+and refuses to publish when those release gates or credentials are unavailable.

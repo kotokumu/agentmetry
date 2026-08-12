@@ -66,15 +66,19 @@ Web UI do not depend on Tauri updater types or GitHub release formats.
 
 ## Release workflow
 
-The `release` workflow runs on `v*` tags and manual dispatch. It validates the
-tag/version contract, requires the updater signing secret, builds each native
-platform with Tauri Action, uploads signed updater assets, and merges their
-metadata into `latest.json`. The existing macOS DMG adapter still publishes a
-human-installable DMG in addition to the updater archive.
+The `release` workflow runs on `v*` tags and manual dispatch. Its preflight
+validates the tag/version contract and requires the updater and Apple signing
+secrets before any native build begins. Tauri Action builds each platform,
+uploads signed updater assets to a draft Release, and merges their metadata
+into `latest.json`. On macOS the workflow imports a Developer ID Application
+certificate into an ephemeral keychain, signs and notarizes the app, then signs,
+notarizes, staples, and Gatekeeper-assesses the human-installable DMG. The draft
+is published only after every platform and the complete asset-set check pass.
 
 ## Consequences
 
-- Releases cannot be produced without the updater private key.
+- Releases cannot be produced without the updater private key or Apple signing
+  and notarization credentials.
 - Losing the private key prevents existing installations from trusting future
   updates, so maintainers must keep a secured backup outside the repository.
 - GitHub Releases is now runtime distribution infrastructure for desktop apps.

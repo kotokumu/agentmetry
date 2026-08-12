@@ -10,8 +10,30 @@ permissions:
   contents: read
 
 jobs:
+  release-preflight:
+    name: Verify release credentials
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify release configuration
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node build/desktop/verify-release.mjs "$GITHUB_REF_NAME"
+
+      - name: Verify release signing and notarization secrets
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: node build/desktop/verify-release-secrets.mjs
+
   build:
     name: Build ${{ matrix.name }}
+    needs: release-preflight
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +70,46 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Import Apple Developer ID certificate
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          certificate_path="$RUNNER_TEMP/agentmetry-developer-id.p12"
+          keychain_path="$RUNNER_TEMP/agentmetry-signing.keychain-db"
+
+          printf '%s' "$APPLE_CERTIFICATE" | openssl base64 -d -A -out "$certificate_path"
+          chmod 600 "$certificate_path"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security set-keychain-settings -lut 21600 "$keychain_path"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$keychain_path"
+          security import "$certificate_path" \
+            -k "$keychain_path" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$keychain_path"
+          security list-keychains -d user -s \
+            "$keychain_path" \
+            /Library/Keychains/System.keychain
+
+          signing_identity="$(
+            security find-identity -v -p codesigning "$keychain_path" |
+              awk -F'"' '/Developer ID Application/ { print $2; exit }'
+          )"
+          if [ -z "$signing_identity" ]; then
+            echo "Developer ID Application identity was not found in APPLE_CERTIFICATE"
+            exit 1
+          fi
+          echo "APPLE_SIGNING_IDENTITY=$signing_identity" >> "$GITHUB_ENV"
+
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -57,27 +119,17 @@ jobs:
       - run: npm ci
       - run: npm --prefix web ci
 
-      - name: Verify release configuration
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: node build/desktop/verify-release.mjs "$GITHUB_REF_NAME"
-
-      - name: Verify updater signing secret
-        shell: bash
-        env:
-          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-        run: |
-          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
-            echo "TAURI_SIGNING_PRIVATE_KEY repository secret is required"
-            exit 1
-          fi
-
       - name: Build and publish signed desktop bundles
+        id: tauri-build
         uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+          APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: Agentmetry ${{ github.ref_name }}
@@ -90,7 +142,7 @@ jobs:
 
             `.sig`、`.app.tar.gz`、`latest.json` は自動更新用です。通常のインストールには不要です。
           generateReleaseNotes: true
-          releaseDraft: false
+          releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
           releaseAssetNamePattern: ${{ matrix.release_asset_name }}
@@ -100,9 +152,44 @@ jobs:
           uploadWorkflowArtifacts: true
           workflowArtifactNamePattern: agentmetry-[platform]-[arch]-[bundle]
 
+      - name: Verify signed and notarized macOS app
+        if: runner.os == 'macOS'
+        run: |
+          app_path="src-tauri/target/release/bundle/macos/Agentmetry.app"
+          codesign --verify --deep --strict --verbose=4 "$app_path"
+          xcrun stapler validate "$app_path"
+          spctl --assess --type execute --verbose=4 "$app_path"
+
       - name: Package macOS DMG
         if: runner.os == 'macOS'
         run: node build/desktop/package-macos-dmg.mjs
+
+      - name: Sign, notarize, and verify macOS DMG
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APP_VERSION: ${{ steps.tauri-build.outputs.appVersion }}
+        run: |
+          dmg_path="src-tauri/target/release/bundle/dmg/Agentmetry-v${APP_VERSION}-macos-arm64.dmg"
+          codesign --force \
+            --sign "$APPLE_SIGNING_IDENTITY" \
+            --timestamp \
+            "$dmg_path"
+          xcrun notarytool submit "$dmg_path" \
+            --apple-id "$APPLE_ID" \
+            --password "$APPLE_PASSWORD" \
+            --team-id "$APPLE_TEAM_ID" \
+            --wait
+          xcrun stapler staple "$dmg_path"
+          xcrun stapler validate "$dmg_path"
+          spctl --assess \
+            --type open \
+            --context context:primary-signature \
+            --verbose=4 \
+            "$dmg_path"
 
       - name: Upload macOS DMG candidate
         if: runner.os == 'macOS'
@@ -118,3 +205,51 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/release/bundle/dmg/*.dmg --clobber
+
+      - name: Delete temporary Apple signing keychain
+        if: always() && runner.os == 'macOS'
+        run: |
+          security delete-keychain "$RUNNER_TEMP/agentmetry-signing.keychain-db" || true
+          rm -f "$RUNNER_TEMP/agentmetry-developer-id.p12"
+
+  publish-release:
+    name: Publish verified release
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Verify release assets and publish draft
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          assets="$(
+            gh release view "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json assets \
+              --jq '.assets[].name'
+          )"
+          expected_assets=(
+            "Agentmetry-v${version}-linux-x64.AppImage"
+            "Agentmetry-v${version}-linux-x64.AppImage.sig"
+            "Agentmetry-v${version}-linux-x64.deb"
+            "Agentmetry-v${version}-linux-x64.deb.sig"
+            "Agentmetry-v${version}-macos-arm64.app.tar.gz"
+            "Agentmetry-v${version}-macos-arm64.app.tar.gz.sig"
+            "Agentmetry-v${version}-macos-arm64.dmg"
+            "Agentmetry-v${version}-windows-x64-setup.exe"
+            "Agentmetry-v${version}-windows-x64-setup.exe.sig"
+            "latest.json"
+          )
+          for asset in "${expected_assets[@]}"; do
+            if ! grep -Fxq "$asset" <<< "$assets"; then
+              echo "required release asset is missing: $asset"
+              exit 1
+            fi
+          done
+          gh release edit "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false
