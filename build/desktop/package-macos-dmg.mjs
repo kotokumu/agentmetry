@@ -3,6 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
+import { macosDmgAssetName } from "./release-assets.mjs";
 import { hostTarget } from "./targets.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
@@ -10,11 +11,9 @@ const config = JSON.parse(readFileSync(resolve(root, "src-tauri", "tauri.conf.js
 const target = process.argv.includes("--target")
   ? process.argv[process.argv.indexOf("--target") + 1]
   : hostTarget();
-const architecture = target === "aarch64-apple-darwin" ? "aarch64" :
-  target === "x86_64-apple-darwin" ? "x64" : target;
 const app = resolve(root, "src-tauri", "target", "release", "bundle", "macos", "Agentmetry.app");
 const outputDir = resolve(root, "src-tauri", "target", "release", "bundle", "dmg");
-const output = join(outputDir, `Agentmetry_${config.version}_${architecture}.dmg`);
+const output = join(outputDir, macosDmgAssetName(config.version, target));
 
 if (!existsSync(app)) {
   throw new Error(`macOS application bundle is missing: ${app}`);

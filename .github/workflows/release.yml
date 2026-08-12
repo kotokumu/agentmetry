@@ -19,12 +19,15 @@ jobs:
           - name: macos
             os: macos-latest
             args: --bundles app
+            release_asset_name: Agentmetry-v[version]-macos-arm64[setup][ext]
           - name: windows
             os: windows-latest
             args: --bundles nsis
+            release_asset_name: Agentmetry-v[version]-windows-x64[setup][ext]
           - name: linux
             os: ubuntu-22.04
             args: --bundles appimage,deb
+            release_asset_name: Agentmetry-v[version]-linux-x64[setup][ext]
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -78,10 +81,19 @@ jobs:
         with:
           tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
           releaseName: Agentmetry ${{ github.ref_name }}
+          releaseBody: |
+            ## Downloads
+
+            - **macOS (Apple silicon / M1以降)**: `Agentmetry-${{ github.ref_name }}-macos-arm64.dmg`
+            - **Windows (64-bit)**: `Agentmetry-${{ github.ref_name }}-windows-x64-setup.exe`
+            - **Linux (64-bit)**: `Agentmetry-${{ github.ref_name }}-linux-x64.AppImage` または `.deb`
+
+            `.sig`、`.app.tar.gz`、`latest.json` は自動更新用です。通常のインストールには不要です。
           generateReleaseNotes: true
           releaseDraft: false
           prerelease: false
           args: ${{ matrix.args }}
+          releaseAssetNamePattern: ${{ matrix.release_asset_name }}
           retryAttempts: 2
           uploadUpdaterJson: true
           updaterJsonPreferNsis: true
