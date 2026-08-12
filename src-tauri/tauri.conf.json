@@ -14,6 +14,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/32x32.png",
@@ -28,6 +29,17 @@
     "macOS": {
       "entitlements": "entitlements.plist",
       "minimumSystemVersion": "10.15"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDEzMkQ5OTAzRTBDMzlEQzIKUldUQ25jUGdBNWt0RTY1OU8xc2tPSWUxWEJsRW9xWnVsZ29oRXJ0eS92T2thUnM2K3F5Z0dQeG8K",
+      "endpoints": [
+        "https://github.com/theoden9014/agentmetry/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

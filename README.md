@@ -179,6 +179,21 @@ npm run desktop:build:macos   # or :windows / :linux
 See the [desktop build architecture](docs/adr/0010-desktop-build-architecture.md)
 for packaging details.
 
+Tagged desktop releases also publish signed updater bundles. Installed desktop
+apps check the latest GitHub Release at startup, keep the local collector
+running while the update downloads and verifies, then restart to apply it.
+Maintainers must configure the repository secret `TAURI_SIGNING_PRIVATE_KEY`;
+the corresponding public key is embedded in `src-tauri/tauri.conf.json`.
+
+Create a release by updating the Tauri version and pushing the matching tag:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+The tag and `src-tauri/tauri.conf.json` version must match exactly.
+
 ## Contributing
 
 Please open an issue for bugs, source-format changes, or feature proposals.

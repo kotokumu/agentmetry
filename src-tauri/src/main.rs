@@ -17,6 +17,7 @@ use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
+use tauri_plugin_updater::UpdaterExt;
 
 const DASHBOARD_ADDRESS: &str = "127.0.0.1:17890";
 const OTLP_HTTP_ADDRESS: &str = "127.0.0.1:4318";
@@ -104,6 +105,7 @@ struct SidecarState(Mutex<SidecarController>);
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -122,6 +124,9 @@ fn main() {
             window
                 .show()
                 .map_err(|error| format!("show Agentmetry window: {error}"))?;
+            if !cfg!(debug_assertions) {
+                spawn_update_check(app.handle().clone());
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -155,6 +160,50 @@ fn main() {
             });
         }
     });
+}
+
+fn spawn_update_check(app: tauri::AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = install_available_update(app).await {
+            eprintln!("Agentmetry update check failed: {error}");
+        }
+    });
+}
+
+async fn install_available_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app
+        .updater()
+        .map_err(|error| format!("initialize updater: {error}"))?;
+    let Some(update) = updater
+        .check()
+        .await
+        .map_err(|error| format!("check for update: {error}"))?
+    else {
+        return Ok(());
+    };
+
+    eprintln!(
+        "Agentmetry update available: {} -> {}",
+        update.current_version, update.version
+    );
+    let package = update
+        .download(|_chunk_length, _content_length| {}, || {})
+        .await
+        .map_err(|error| format!("download update {}: {error}", update.version))?;
+    with_controller(&app, |controller, _| {
+        controller.shutdown();
+        Ok(())
+    })?;
+    if let Err(error) = update.install(package) {
+        if let Err(relaunch_error) =
+            with_controller(&app, |controller, handle| controller.launch(handle))
+        {
+            eprintln!("restart Agentmetry sidecar after update failure: {relaunch_error}");
+        }
+        return Err(format!("install update {}: {error}", update.version));
+    }
+
+    app.restart();
 }
 
 fn build_main_window(app: &tauri::App) -> Result<WebviewWindow, Box<dyn std::error::Error>> {

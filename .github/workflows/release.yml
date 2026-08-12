@@ -18,19 +18,16 @@ jobs:
         include:
           - name: macos
             os: macos-latest
-            command: desktop:build:macos
-            artifacts: src-tauri/target/release/bundle/dmg/*.dmg
+            args: --bundles app
           - name: windows
             os: windows-latest
-            command: desktop:build:windows
-            artifacts: src-tauri/target/release/bundle/nsis/*.exe
+            args: --bundles nsis
           - name: linux
             os: ubuntu-22.04
-            command: desktop:build:linux
-            artifacts: |
-              src-tauri/target/release/bundle/appimage/*.AppImage
-              src-tauri/target/release/bundle/deb/*.deb
+            args: --bundles appimage,deb
     runs-on: ${{ matrix.os }}
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -40,7 +37,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           cache: npm
           cache-dependency-path: |
             package-lock.json
@@ -54,44 +51,57 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
-      - name: Verify release version
-        if: startsWith(github.ref, 'refs/tags/')
-        shell: bash
-        run: |
-          tag_version="${GITHUB_REF_NAME#v}"
-          app_version="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8')).version")"
-          test "$tag_version" = "$app_version" || {
-            echo "tag version $tag_version does not match Tauri version $app_version"
-            exit 1
-          }
-
       - run: npm ci
       - run: npm --prefix web ci
-      - run: npm run ${{ matrix.command }}
 
-      - name: Upload release candidates
+      - name: Verify release configuration
+        if: startsWith(github.ref, 'refs/tags/')
+        run: node build/desktop/verify-release.mjs "$GITHUB_REF_NAME"
+
+      - name: Verify updater signing secret
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "TAURI_SIGNING_PRIVATE_KEY repository secret is required"
+            exit 1
+          fi
+
+      - name: Build and publish signed desktop bundles
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        with:
+          tagName: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
+          releaseName: Agentmetry ${{ github.ref_name }}
+          generateReleaseNotes: true
+          releaseDraft: false
+          prerelease: false
+          args: ${{ matrix.args }}
+          retryAttempts: 2
+          uploadUpdaterJson: true
+          updaterJsonPreferNsis: true
+          uploadWorkflowArtifacts: true
+          workflowArtifactNamePattern: agentmetry-[platform]-[arch]-[bundle]
+
+      - name: Package macOS DMG
+        if: runner.os == 'macOS'
+        run: node build/desktop/package-macos-dmg.mjs
+
+      - name: Upload macOS DMG candidate
+        if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
         with:
-          name: agentmetry-${{ matrix.name }}
-          path: ${{ matrix.artifacts }}
+          name: agentmetry-macos-dmg
+          path: src-tauri/target/release/bundle/dmg/*.dmg
           if-no-files-found: error
           retention-days: 14
 
-  publish:
-    name: Publish GitHub Release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: release-artifacts
-          pattern: agentmetry-*
-          merge-multiple: true
-
-      - name: Publish release assets
+      - name: Publish macOS DMG
+        if: runner.os == 'macOS' && startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release-artifacts/* --repo "$GITHUB_REPOSITORY" --generate-notes
+        run: gh release upload "$GITHUB_REF_NAME" src-tauri/target/release/bundle/dmg/*.dmg --clobber

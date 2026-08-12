@@ -78,7 +78,8 @@ into the Tauri application resources.
 ### Out of scope
 
 - Code signing and notarization
-- Auto-update publication
+- Auto-update publication (subsequently added by
+  [ADR 0014](0014-desktop-auto-update.md))
 - Universal macOS binaries
 - SQLCipher/SEE and Keychain/credential-manager integration
 
