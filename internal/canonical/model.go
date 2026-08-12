@@ -2,8 +2,14 @@ package canonical
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 )
+
+// ErrInvalidTokenUsage identifies a usage observation that violates the
+// canonical token relationships.
+var ErrInvalidTokenUsage = errors.New("invalid token usage")
 
 type Signal string
 
@@ -24,7 +30,11 @@ const (
 )
 
 type TokenUsage struct {
-	Input            int64         `json:"-"`
+	// Input is the complete input count. Provider adapters must include cache
+	// reads and writes here; the cache fields below are breakdowns of Input.
+	Input int64 `json:"-"`
+	// Output is the provider-reported output total. Reasoning is a breakdown
+	// of Output and must not be added to it.
 	Output           int64         `json:"-"`
 	CacheRead        int64         `json:"-"`
 	CacheWrite       int64         `json:"-"`
@@ -47,6 +57,48 @@ type TokenPresence struct {
 
 func (usage TokenUsage) Total() int64 {
 	return usage.Input + usage.Output
+}
+
+// Validate checks relationships that must hold for a provider-reported usage
+// observation. Missing breakdowns remain valid because a source may report a
+// partial observation, but every reported component must be non-negative and
+// consistent with the reported primary counter.
+func (usage TokenUsage) Validate() error {
+	for name, value := range map[string]int64{
+		"input": usage.Input, "output": usage.Output, "cacheRead": usage.CacheRead,
+		"cacheWrite": usage.CacheWrite, "reasoning": usage.Reasoning,
+	} {
+		if value < 0 {
+			return fmt.Errorf("%w: %s is negative", ErrInvalidTokenUsage, name)
+		}
+	}
+
+	if usage.InputReported() && (usage.CacheReadReported() || usage.CacheWriteReported()) {
+		cacheTotal, ok := addNonNegative(usage.CacheRead, usage.CacheWrite)
+		if !ok {
+			return fmt.Errorf("%w: cache breakdown overflows int64", ErrInvalidTokenUsage)
+		}
+		if cacheTotal > usage.Input {
+			return fmt.Errorf("%w: cache breakdown %d exceeds input %d", ErrInvalidTokenUsage, cacheTotal, usage.Input)
+		}
+	}
+	if usage.OutputReported() && usage.ReasoningReported() && usage.Reasoning > usage.Output {
+		return fmt.Errorf("%w: reasoning %d exceeds output %d", ErrInvalidTokenUsage, usage.Reasoning, usage.Output)
+	}
+	if usage.InputReported() && usage.OutputReported() {
+		if _, ok := addNonNegative(usage.Input, usage.Output); !ok {
+			return fmt.Errorf("%w: input and output overflow int64", ErrInvalidTokenUsage)
+		}
+	}
+	return nil
+}
+
+func addNonNegative(first, second int64) (int64, bool) {
+	const maxInt64 = int64(^uint64(0) >> 1)
+	if first > maxInt64-second {
+		return 0, false
+	}
+	return first + second, true
 }
 
 func (usage TokenUsage) InputReported() bool  { return usage.Input != 0 || usage.Presence.Input }

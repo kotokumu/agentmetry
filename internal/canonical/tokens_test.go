@@ -2,10 +2,72 @@ package canonical_test
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 )
+
+func TestTokenUsageValidate(t *testing.T) {
+	const maxInt64 = int64(^uint64(0) >> 1)
+
+	tests := []struct {
+		name    string
+		usage   canonical.TokenUsage
+		wantErr bool
+	}{
+		{
+			name: "complete usage with breakdowns",
+			usage: canonical.TokenUsage{
+				Input: 12, Output: 8, CacheRead: 5, CacheWrite: 3, Reasoning: 7,
+			},
+		},
+		{
+			name: "reported zero values are valid",
+			usage: canonical.TokenUsage{
+				Presence: canonical.TokenPresence{
+					Input: true, Output: true, CacheRead: true, CacheWrite: true, Reasoning: true,
+				},
+			},
+		},
+		{
+			name:  "partial cache breakdown remains valid",
+			usage: canonical.TokenUsage{Input: 10, CacheRead: 7},
+		},
+		{
+			name:    "negative input is rejected",
+			usage:   canonical.TokenUsage{Input: -1},
+			wantErr: true,
+		},
+		{
+			name:    "cache breakdown cannot exceed input",
+			usage:   canonical.TokenUsage{Input: 10, CacheRead: 8, CacheWrite: 3},
+			wantErr: true,
+		},
+		{
+			name:    "reasoning breakdown cannot exceed output",
+			usage:   canonical.TokenUsage{Output: 5, Reasoning: 6},
+			wantErr: true,
+		},
+		{
+			name:    "input and output total cannot overflow",
+			usage:   canonical.TokenUsage{Input: maxInt64, Output: 1},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := tt.usage.Validate()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("TokenUsage.Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if tt.wantErr && !errors.Is(err, canonical.ErrInvalidTokenUsage) {
+				t.Fatalf("TokenUsage.Validate() error = %v, want ErrInvalidTokenUsage", err)
+			}
+		})
+	}
+}
 
 func TestTokenUsageJSONDistinguishesMissingFromReportedZero(t *testing.T) {
 	missing, err := json.Marshal(canonical.TokenUsage{})
