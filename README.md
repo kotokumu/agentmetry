@@ -252,18 +252,19 @@ The real-agent integration test is opt-in because it invokes local Claude and
 Codex SDKs and may consume subscription or API quota:
 
 ```sh
-npm --prefix evals/agentmetry install
+npm --prefix evals/agentmetry ci
 npm --prefix evals/agentmetry run e2e
 ```
 
 It starts an isolated Agentmetry instance, runs both SDKs through Promptfoo,
-checks that each run is observed under the expected source ID, and performs
-source-qualified MCP analysis from the runner. Local SDK authentication is
-reused; no credentials are written to the repository. The hands-on check found
-that the installed Promptfoo SDK providers did not expose the configured
-Agentmetry MCP tools to the model, so provider-side MCP calls are reported as
-observations rather than treated as required. The runner-side MCP calls and
-the deterministic fixture integration test cover the MCP contract itself.
+requires each agent to call `get_agent_context` and
+`get_source_capabilities`, checks that each run is observed under the expected
+source ID, and performs source-qualified MCP analysis from the runner. The
+runner verifies MCP initialization and tool discovery before making calls, and
+the deterministic fixture integration test repeats the lifecycle through the
+official MCP client while asserting semantic results. Local SDK authentication
+is reused; no credentials are written to the repository or broadly inherited
+by the Codex subprocess.
 
 ## Storage and Schema Evolution
 

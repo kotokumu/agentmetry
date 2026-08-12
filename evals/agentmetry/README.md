@@ -14,7 +14,7 @@ Use Node.js `>=22.22.0`, install the eval-only dependencies, and authenticate
 the local SDKs using the normal Claude Code/Codex login or API-key flow:
 
 ```sh
-npm --prefix evals/agentmetry install
+npm --prefix evals/agentmetry ci
 ```
 
 Claude Agent SDK can reuse a local Claude Code session with
@@ -34,11 +34,11 @@ npm --prefix evals/agentmetry run e2e -- --provider=claude
 npm --prefix evals/agentmetry run e2e -- --provider=codex
 ```
 
-The agents run read-only and are instructed not to edit files. The runner
-performs the source-qualified MCP analysis explicitly after the SDK turn, so
-the test does not assume that an SDK can identify its own current session.
-During hands-on validation, neither Promptfoo SDK provider reliably exposed
-the configured Agentmetry MCP tools to the model; the result therefore records
-provider tool calls when present but does not silently claim them. The
-fixture-backed MCP integration test remains the owner of the MCP wire and
-tool-contract assertions.
+The agents run read-only and are instructed not to edit files. Each agent must
+discover and successfully call `get_agent_context` and
+`get_source_capabilities`; the run fails if either distinct call is absent or
+reported as failed in the observed timeline. The runner then performs
+source-qualified analysis after the SDK turn. It establishes the MCP lifecycle
+with `initialize`, `notifications/initialized`, and `tools/list` before calling
+tools. The fixture-backed Go integration test also exercises that lifecycle
+through the official MCP client and verifies the semantic response values.

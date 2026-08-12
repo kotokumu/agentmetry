@@ -1,9 +1,11 @@
-import { access, cp, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { access, cp, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { spawn } from 'node:child_process';
 import { createServer } from 'node:net';
 import { fileURLToPath } from 'node:url';
+
+import { assertRequiredAgentMCPTools, assertRequiredProviderMCPTools, buildPromptfooConfig } from './core.mjs';
 
 const evalRoot = dirname(fileURLToPath(import.meta.url));
 const repoRoot = resolve(evalRoot, '../..');
@@ -45,10 +47,17 @@ async function runProvider(provider) {
     agentmetry.stderr.on('data', (chunk) => process.stderr.write(`[agentmetry:${provider}] ${chunk}`));
     await waitFor(`${urls.dashboard}/api/v1/overview?range=1h`, 30_000);
 
-    const config = await buildPromptfooConfig(provider, urls, codexHome);
+    if (provider === 'codex') await prepareCodexHome(codexHome, urls);
+    const config = buildPromptfooConfig(provider, {
+      urls,
+      codexHome,
+      bridgePath: join(evalRoot, 'mcp-stdio-bridge.mjs'),
+      repoRoot,
+      nodePath: process.execPath,
+    });
     await writeFile(promptfooConfigPath, JSON.stringify(config, null, 2));
-    await runPromptfoo(promptfooConfigPath, promptfooResultPath);
-    return await verifyAgentmetry(urls, provider);
+    const providerToolCalls = await runPromptfoo(promptfooConfigPath, promptfooResultPath, provider);
+    return await verifyAgentmetry(urls, provider, providerToolCalls);
   } finally {
     if (agentmetry && !agentmetry.killed) {
       agentmetry.kill('SIGTERM');
@@ -56,72 +65,6 @@ async function runProvider(provider) {
     }
     await rm(workspace, { recursive: true, force: true });
   }
-}
-
-async function buildPromptfooConfig(provider, urls, codexHome) {
-  const bridgePath = join(evalRoot, 'mcp-stdio-bridge.mjs');
-  const providerConfig = provider === 'claude'
-    ? {
-      id: 'anthropic:claude-agent-sdk',
-      config: {
-        apiKeyRequired: false,
-        working_dir: repoRoot,
-        permission_mode: 'plan',
-        max_turns: 4,
-        custom_allowed_tools: ['Read', 'Grep', 'Glob', 'LS', 'mcp__agentmetry__*'],
-        mcp: {
-          servers: [{ name: 'agentmetry', command: process.execPath, args: [bridgePath, urls.mcp] }],
-          strict_mcp_config: true,
-        },
-        env: {
-          CLAUDE_CODE_ENABLE_TELEMETRY: '1',
-          OTEL_TRACES_EXPORTER: 'otlp',
-          OTEL_LOGS_EXPORTER: 'otlp',
-          OTEL_METRICS_EXPORTER: 'otlp',
-          OTEL_EXPORTER_OTLP_ENDPOINT: urls.otlp,
-          OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: `${urls.otlp}/v1/traces`,
-          OTEL_EXPORTER_OTLP_LOGS_ENDPOINT: `${urls.otlp}/v1/logs`,
-          OTEL_EXPORTER_OTLP_METRICS_ENDPOINT: `${urls.otlp}/v1/metrics`,
-          OTEL_EXPORTER_OTLP_PROTOCOL: 'http/protobuf',
-          OTEL_EXPORTER_OTLP_TRACES_PROTOCOL: 'http/protobuf',
-          OTEL_EXPORTER_OTLP_LOGS_PROTOCOL: 'http/json',
-          OTEL_EXPORTER_OTLP_METRICS_PROTOCOL: 'http/protobuf',
-          OTEL_RESOURCE_ATTRIBUTES: 'service.name=claude-code',
-          OTEL_LOG_USER_PROMPTS: '1',
-          OTEL_LOG_ASSISTANT_RESPONSES: '1',
-          OTEL_LOG_TOOL_DETAILS: '1',
-        },
-      },
-    }
-    : {
-      id: 'openai:codex-sdk',
-      config: {
-        working_dir: repoRoot,
-        sandbox_mode: 'read-only',
-        approval_policy: 'never',
-        enable_streaming: true,
-        deep_tracing: true,
-        inherit_process_env: true,
-        cli_env: { CODEX_HOME: codexHome },
-        cli_config: {
-          mcp_servers: { agentmetry: { command: process.execPath, args: [bridgePath, urls.mcp] } },
-        },
-      },
-    };
-  if (provider === 'codex') await prepareCodexHome(codexHome, urls);
-  return {
-    description: `Agentmetry real-${provider}-agent telemetry and MCP integration E2E`,
-    providers: [providerConfig],
-    prompts: [provider === 'claude'
-      ? 'You are running an Agentmetry telemetry integration check. Do not edit files or run shell commands. Return a compact JSON object confirming that the Claude turn completed. The runner will call Agentmetry MCP after this turn.'
-      : 'You are running an Agentmetry telemetry integration check. Do not edit files, run shell commands, or call MCP tools. Return a compact JSON object confirming that the Codex turn completed.',
-    ],
-    tests: [{
-      assert: [{ type: 'javascript', value: 'typeof output === "string" && output.length > 0' }],
-    }],
-    maxConcurrency: 1,
-    commandLineOptions: { cache: false },
-  };
 }
 
 async function prepareCodexHome(target, urls) {
@@ -145,7 +88,7 @@ async function prepareCodexHome(target, urls) {
   ].join('\n'));
 }
 
-async function runPromptfoo(configPath, resultPath) {
+async function runPromptfoo(configPath, resultPath, provider) {
   const executable = join(evalRoot, 'node_modules', '.bin', 'promptfoo');
   await access(executable);
   await new Promise((resolvePromise, reject) => {
@@ -165,47 +108,77 @@ async function runPromptfoo(configPath, resultPath) {
       else reject(new Error(`promptfoo exited with ${code ?? signal}`));
     });
   });
+  const report = JSON.parse(await readFile(resultPath, 'utf8'));
+  return assertRequiredProviderMCPTools(provider, report);
 }
 
-async function verifyAgentmetry(urls, provider) {
-  const result = await waitForRuns(urls.mcp, 30_000);
+async function verifyAgentmetry(urls, provider, providerToolCalls) {
+  const client = await MCPClient.connect(urls.mcp);
+  const tools = await client.listTools();
+  for (const required of ['get_agent_context', 'get_source_capabilities', 'list_runs']) {
+    if (!tools.some((tool) => tool.name === required)) throw new Error(`${provider}: MCP tools/list omitted ${required}`);
+  }
+  const result = await waitForRuns(client, 30_000);
   const sessions = result.overview?.sessions ?? [];
   if (sessions.length === 0) throw new Error(`${provider}: no observed runs`);
-  await mcpCall(urls.mcp, 'get_agent_context', {});
-  await mcpCall(urls.mcp, 'get_source_capabilities', { source: provider });
-  const activities = [];
+  await client.callTool('get_agent_context', {});
+  await client.callTool('get_source_capabilities', { source: provider });
   for (const session of sessions) {
     if (session.sourceId !== provider) {
       throw new Error(`${provider}: expected source ${provider}, observed ${session.sourceId}`);
     }
     const args = { source: session.sourceId, runId: session.id };
-    await mcpCall(urls.mcp, 'get_run_context', args);
-    await mcpCall(urls.mcp, 'get_run_summary', args);
-    await mcpCall(urls.mcp, 'get_token_usage', args);
-    const timeline = await mcpCall(urls.mcp, 'get_run_timeline', { ...args, pageSize: 100, includeContent: false });
-    activities.push(...(timeline.activities ?? []));
+    await client.callTool('get_run_context', args);
+    await client.callTool('get_run_summary', args);
+    await client.callTool('get_token_usage', args);
+    const timeline = await client.callTool('get_run_timeline', { ...args, pageSize: 100, includeContent: false });
+    if (!Array.isArray(timeline.activities) || timeline.activities.length === 0) {
+      throw new Error(`${provider}: run ${session.id} returned no timeline activities`);
+    }
   }
-  const agentmetryToolCalls = activities.filter((activity) =>
-    ['get_agent_context', 'get_source_capabilities'].some((tool) => activity.toolName?.endsWith(tool)),
-  );
-  const requiredAgentMCPCalls = 0;
-  if (agentmetryToolCalls.length < requiredAgentMCPCalls) {
-    throw new Error(`${provider}: expected get_agent_context and get_source_capabilities in observed timeline, observed ${JSON.stringify(agentmetryToolCalls)}`);
-  }
+  const agentmetryToolCalls = await waitForRequiredAgentMCPCalls(client, provider, sessions, 30_000);
+  const requiredAgentMCPCalls = assertRequiredAgentMCPTools(provider, agentmetryToolCalls);
   return {
     provider,
     runCount: result.overview?.runCount ?? 0,
     sessions: sessions.map(({ sourceId, id, activityCount }) => ({ sourceId, id, activityCount })),
     agentMCPCallsRequired: requiredAgentMCPCalls,
+    providerToolCalls,
     agentmetryToolCalls: agentmetryToolCalls.map(({ source, runId, toolName }) => ({ source, runId, toolName })),
   };
 }
 
-async function waitForRuns(mcpURL, timeoutMs) {
+async function waitForRequiredAgentMCPCalls(client, provider, sessions, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  let observed = [];
+  while (Date.now() < deadline) {
+    observed = [];
+    for (const session of sessions) {
+      const timeline = await client.callTool('get_run_timeline', {
+        source: session.sourceId,
+        runId: session.id,
+        pageSize: 100,
+        includeContent: false,
+      });
+      observed.push(...(timeline.activities ?? []).filter((activity) =>
+        ['get_agent_context', 'get_source_capabilities'].some((tool) => activity.toolName?.endsWith(tool)),
+      ));
+    }
+    try {
+      assertRequiredAgentMCPTools(provider, observed);
+      return observed;
+    } catch {
+      await delay(250);
+    }
+  }
+  assertRequiredAgentMCPTools(provider, observed);
+}
+
+async function waitForRuns(client, timeoutMs) {
   const deadline = Date.now() + timeoutMs;
   let last;
   while (Date.now() < deadline) {
-    last = await mcpCall(mcpURL, 'list_runs', { range: '1h', pageSize: 100 });
+    last = await client.callTool('list_runs', { range: '1h', pageSize: 100 });
     if ((last.overview?.runCount ?? 0) > 0 && (last.overview?.sessions ?? []).some((session) => session.activityCount > 0)) {
       return last;
     }
@@ -214,15 +187,57 @@ async function waitForRuns(mcpURL, timeoutMs) {
   throw new Error(`Agentmetry did not observe a run: ${JSON.stringify(last)}`);
 }
 
-async function mcpCall(url, name, argumentsValue) {
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
-    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: argumentsValue } }),
-  });
-  const payload = await response.json();
-  if (!response.ok || payload.error) throw new Error(`MCP ${name} failed: ${JSON.stringify(payload)}`);
-  return payload.result?.structuredContent ?? {};
+class MCPClient {
+  constructor(url) {
+    this.url = url;
+    this.nextID = 1;
+  }
+
+  static async connect(url) {
+    const client = new MCPClient(url);
+    await client.request('initialize', {
+      protocolVersion: '2025-11-25',
+      capabilities: {},
+      clientInfo: { name: 'agentmetry-e2e-runner', version: 'v1' },
+    });
+    await client.notify('notifications/initialized', {});
+    return client;
+  }
+
+  async listTools() {
+    const result = await this.request('tools/list', {});
+    return result.tools ?? [];
+  }
+
+  async callTool(name, argumentsValue) {
+    const result = await this.request('tools/call', { name, arguments: argumentsValue });
+    if (result.isError) throw new Error(`MCP ${name} returned a tool error: ${JSON.stringify(result)}`);
+    if (result.structuredContent === undefined) throw new Error(`MCP ${name} omitted structuredContent`);
+    return result.structuredContent;
+  }
+
+  async request(method, params) {
+    const id = this.nextID++;
+    const payload = await this.post({ jsonrpc: '2.0', id, method, params });
+    if (payload.id !== id || payload.error) throw new Error(`MCP ${method} failed: ${JSON.stringify(payload)}`);
+    return payload.result ?? {};
+  }
+
+  async notify(method, params) {
+    await this.post({ jsonrpc: '2.0', method, params }, false);
+  }
+
+  async post(message, expectBody = true) {
+    const response = await fetch(this.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
+      body: JSON.stringify(message),
+    });
+    const body = await response.text();
+    if (!response.ok) throw new Error(`MCP HTTP ${response.status}: ${body}`);
+    if (!expectBody || body.length === 0) return {};
+    return JSON.parse(body);
+  }
 }
 
 async function waitFor(url, timeoutMs) {

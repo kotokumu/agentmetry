@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
@@ -93,39 +94,138 @@ func TestMCPAgentSelfAnalysisFlow(t *testing.T) {
 	t.Cleanup(otlpServer.Close)
 	mcpServer := httptest.NewServer(services.Dashboard)
 	t.Cleanup(mcpServer.Close)
+	client := mcp.NewClient(&mcp.Implementation{Name: "agentmetry-integration-test", Version: "v1"}, nil)
+	session, err := client.Connect(context.Background(), &mcp.StreamableClientTransport{Endpoint: mcpServer.URL + "/mcp"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
 
 	postOTLP(t, otlpServer.URL+"/v1/traces", traceFixture(now))
 	postOTLP(t, otlpServer.URL+"/v1/logs", logFixture(now))
 	postOTLP(t, otlpServer.URL+"/v1/metrics", metricFixture(now))
 
-	contextResult := callMCPTool(t, mcpServer.URL, "get_agent_context", map[string]any{})
-	t.Logf("get_agent_context: %s", compactJSON(contextResult))
-	capabilitiesResult := callMCPTool(t, mcpServer.URL, "get_source_capabilities", map[string]any{})
-	t.Logf("get_source_capabilities: %s", compactJSON(capabilitiesResult))
+	tools, err := session.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	toolNames := make(map[string]bool, len(tools.Tools))
+	for _, tool := range tools.Tools {
+		toolNames[tool.Name] = true
+	}
+	for _, required := range []string{"get_agent_context", "get_source_capabilities", "list_runs", "get_run_context"} {
+		if !toolNames[required] {
+			t.Fatalf("tools/list omitted %q", required)
+		}
+	}
 
-	runsResult := callMCPTool(t, mcpServer.URL, "list_runs", map[string]any{"range": "24h"})
+	contextResult := callMCPToolWithSession(t, session, "get_agent_context", map[string]any{})
+	t.Logf("get_agent_context: %s", compactJSON(contextResult))
+	callerIdentity, _ := contextResult["callerIdentity"].(map[string]any)
+	if contextResult["contractVersion"] != "v1" || callerIdentity["available"] != false {
+		t.Fatalf("unexpected agent context contract: %s", compactJSON(contextResult))
+	}
+	capabilitiesResult := callMCPToolWithSession(t, session, "get_source_capabilities", map[string]any{})
+	t.Logf("get_source_capabilities: %s", compactJSON(capabilitiesResult))
+	capabilities, _ := capabilitiesResult["capabilities"].([]any)
+	if len(capabilities) != 7 {
+		t.Fatalf("source capabilities = %d, want 7: %s", len(capabilities), compactJSON(capabilitiesResult))
+	}
+
+	runsResult := callMCPToolWithSession(t, session, "list_runs", map[string]any{"range": "24h"})
 	t.Logf("list_runs: %s", compactJSON(runsResult))
 	runs := structuredRuns(t, runsResult)
 	if len(runs) != 2 {
 		t.Fatalf("list_runs returned %d runs, want 2", len(runs))
 	}
+	expected := map[string]struct {
+		activityCount int
+		inputTokens   int
+		outputTokens  int
+		bottlenecks   int
+	}{
+		"child-session":  {activityCount: 1, inputTokens: 5, outputTokens: 1},
+		"parent-session": {activityCount: 3, inputTokens: 10, outputTokens: 2, bottlenecks: 1},
+	}
 
 	for _, run := range runs {
-		args := map[string]any{"source": run.Source, "runId": run.RunID}
-		for _, tool := range []string{"get_run_context", "get_run_summary", "get_token_usage", "find_bottlenecks", "find_coordination_risks"} {
-			result := callMCPTool(t, mcpServer.URL, tool, args)
-			t.Logf("%s(%s/%s): %s", tool, run.Source, run.RunID, compactJSON(result))
+		want, ok := expected[run.RunID]
+		if !ok {
+			t.Fatalf("unexpected run %q", run.RunID)
 		}
-		timeline := callMCPTool(t, mcpServer.URL, "get_run_timeline", map[string]any{
+		args := map[string]any{"source": run.Source, "runId": run.RunID}
+		contextResult := callMCPToolWithSession(t, session, "get_run_context", args)
+		contextValue := requireObject(t, contextResult, "context")
+		if contextValue["sourceId"] != run.Source || contextValue["runId"] != run.RunID {
+			t.Fatalf("unexpected run context: %s", compactJSON(contextResult))
+		}
+
+		summaryResult := callMCPToolWithSession(t, session, "get_run_summary", args)
+		summaryRun := requireObject(t, summaryResult, "run")
+		if numberField(t, summaryRun, "activityCount") != want.activityCount {
+			t.Fatalf("unexpected run summary: %s", compactJSON(summaryResult))
+		}
+
+		tokensResult := callMCPToolWithSession(t, session, "get_token_usage", args)
+		total := requireObject(t, tokensResult, "total")
+		if tokensResult["sourceId"] != run.Source || tokensResult["runId"] != run.RunID || numberField(t, total, "input") != want.inputTokens || numberField(t, total, "output") != want.outputTokens {
+			t.Fatalf("unexpected token usage: %s", compactJSON(tokensResult))
+		}
+
+		bottlenecks := callMCPToolWithSession(t, session, "find_bottlenecks", args)
+		if len(requireArray(t, bottlenecks, "findings")) != want.bottlenecks {
+			t.Fatalf("unexpected bottlenecks: %s", compactJSON(bottlenecks))
+		}
+		coordination := callMCPToolWithSession(t, session, "find_coordination_risks", args)
+		if len(requireArray(t, coordination, "findings")) != 0 {
+			t.Fatalf("unexpected coordination findings: %s", compactJSON(coordination))
+		}
+		timeline := callMCPToolWithSession(t, session, "get_run_timeline", map[string]any{
 			"source": run.Source, "runId": run.RunID, "pageSize": 100,
 		})
 		t.Logf("get_run_timeline(%s/%s): %s", run.Source, run.RunID, compactJSON(timeline))
+		activities := requireArray(t, timeline, "activities")
+		if timeline["source"] != run.Source || timeline["sessionId"] != run.RunID || len(activities) != want.activityCount {
+			t.Fatalf("unexpected timeline for %s/%s: %s", run.Source, run.RunID, compactJSON(timeline))
+		}
 	}
 
-	compare := callMCPTool(t, mcpServer.URL, "compare_runs", map[string]any{
+	compare := callMCPToolWithSession(t, session, "compare_runs", map[string]any{
 		"runs": []map[string]string{{"source": runs[0].Source, "runId": runs[0].RunID}, {"source": runs[1].Source, "runId": runs[1].RunID}},
 	})
 	t.Logf("compare_runs: %s", compactJSON(compare))
+	comparedRuns := requireArray(t, compare, "runs")
+	dimensions := requireArray(t, compare, "dimensions")
+	if len(comparedRuns) != 2 || len(dimensions) != 5 {
+		t.Fatalf("unexpected comparison: %s", compactJSON(compare))
+	}
+}
+
+func requireObject(t *testing.T, value map[string]any, key string) map[string]any {
+	t.Helper()
+	object, ok := value[key].(map[string]any)
+	if !ok {
+		t.Fatalf("%q is not an object: %s", key, compactJSON(value))
+	}
+	return object
+}
+
+func requireArray(t *testing.T, value map[string]any, key string) []any {
+	t.Helper()
+	items, ok := value[key].([]any)
+	if !ok {
+		t.Fatalf("%q is not an array: %s", key, compactJSON(value))
+	}
+	return items
+}
+
+func numberField(t *testing.T, value map[string]any, key string) int {
+	t.Helper()
+	number, ok := value[key].(float64)
+	if !ok {
+		t.Fatalf("%q is not a number: %s", key, compactJSON(value))
+	}
+	return int(number)
 }
 
 type mcpRunReference struct {
@@ -133,43 +233,25 @@ type mcpRunReference struct {
 	RunID  string
 }
 
-func callMCPTool(t *testing.T, baseURL string, name string, arguments map[string]any) map[string]any {
+func callMCPToolWithSession(t *testing.T, session *mcp.ClientSession, name string, arguments map[string]any) map[string]any {
 	t.Helper()
-	body, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": name, "arguments": arguments},
-	})
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: arguments})
 	if err != nil {
 		t.Fatal(err)
 	}
-	request, err := http.NewRequestWithContext(context.Background(), http.MethodPost, baseURL+"/mcp", bytes.NewReader(body))
+	if result.IsError {
+		t.Fatalf("MCP %s returned a tool error: %s", name, compactJSON(result.Content))
+	}
+	encoded, err := json.Marshal(result.StructuredContent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json, text/event-stream")
-	response, err := http.DefaultClient.Do(request)
-	if err != nil {
+	var structured map[string]any
+	if err := json.Unmarshal(encoded, &structured); err != nil {
 		t.Fatal(err)
 	}
-	defer response.Body.Close()
-	var payload map[string]any
-	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
-		t.Fatal(err)
-	}
-	if response.StatusCode != http.StatusOK {
-		t.Fatalf("MCP %s returned %s: %s", name, response.Status, compactJSON(payload))
-	}
-	if _, ok := payload["error"]; ok {
-		t.Fatalf("MCP %s returned error: %s", name, compactJSON(payload))
-	}
-	result, ok := payload["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("MCP %s omitted result: %s", name, compactJSON(payload))
-	}
-	structured, ok := result["structuredContent"].(map[string]any)
-	if !ok {
-		t.Fatalf("MCP %s omitted structuredContent: %s", name, compactJSON(payload))
+	if structured == nil {
+		t.Fatalf("MCP %s omitted structured content", name)
 	}
 	return structured
 }

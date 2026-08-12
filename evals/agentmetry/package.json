@@ -6,7 +6,8 @@
     "node": ">=22.22.0"
   },
   "scripts": {
-    "e2e": "node run.mjs"
+    "e2e": "node run.mjs",
+    "test": "node --test"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.220",

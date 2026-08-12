@@ -12,7 +12,11 @@ for await (const line of input) {
     headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream' },
     body: JSON.stringify(request),
   });
-  if (!request.id) continue;
   const payload = await response.text();
+  if (!response.ok) {
+    throw new Error(`MCP HTTP ${response.status}: ${payload}`);
+  }
+  if (request.id === undefined) continue;
+  if (!payload) throw new Error(`MCP request ${request.method} returned an empty response`);
   process.stdout.write(`${payload}\n`);
 }

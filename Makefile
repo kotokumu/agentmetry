@@ -23,5 +23,6 @@ $(GO_BINARY): $(WEB_BUILD) $(GO_SOURCES)
 	CGO_ENABLED=0 $(GO) build -trimpath -o $@ ./cmd/agentmetry
 
 agent-e2e:
-	npm --prefix evals/agentmetry install
+	npm --prefix evals/agentmetry ci
+	npm --prefix evals/agentmetry test
 	npm --prefix evals/agentmetry run e2e
