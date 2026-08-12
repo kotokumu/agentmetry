@@ -125,12 +125,11 @@ export const layoutAgentTree = (roots: readonly AgentNode[]): TreeLayout => {
   const nodes: LayoutNode[] = [];
   groups.forEach((group, groupIndex) => {
     const groupColumn = groupIndex % rootColumns;
-    const groupStartX = columnStarts[groupColumn] + (columnWidths[groupColumn] - group.width) / 2;
+    const groupStartX = columnStarts[groupColumn];
     let top = rowTops[Math.floor(groupIndex / rootColumns)];
     for (const level of group.levels) {
       const columns = Math.max(1, level.length);
-      const levelWidth = NODE_WIDTH + (columns - 1) * ROW_GAP;
-      const firstCenterX = groupStartX + SIDE_PADDING + NODE_WIDTH / 2 + (group.maxLevelWidth - levelWidth) / 2;
+      const firstCenterX = groupStartX + SIDE_PADDING + NODE_WIDTH / 2;
       const rowHeight = NODE_HEIGHT + LEVEL_GAP;
       level.forEach((entry, index) => {
         const column = index;

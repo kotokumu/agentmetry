@@ -391,9 +391,12 @@ describe("dashboard components", () => {
       ...Array.from({ length: 5 }, (_, index) => ({ agentId: `grandchild-${index}`, parentAgentId: `child-${index}`, activityCount: 1, tokens: missing })),
     ];
     const layout = layoutAgentTree(buildAgentTree(agents));
+    const root = layout.nodes.find(({ depth }) => depth === 0)!;
     const children = layout.nodes.filter(({ depth }) => depth === 1);
     const grandchildren = layout.nodes.filter(({ depth }) => depth === 2);
 
+    expect(root.centerX).toBe(children[0].centerX);
+    expect(root.centerX).toBeLessThan(250);
     expect(new Set(children.map(({ centerY }) => centerY)).size).toBe(1);
     expect(new Set(grandchildren.map(({ centerY }) => centerY)).size).toBe(1);
     expect(children[0].centerY).toBeLessThan(grandchildren[0].centerY);
