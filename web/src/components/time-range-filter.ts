@@ -11,26 +11,31 @@ export class TimeRangeFilter extends LitElement {
   static styles = css`
     :host {
       display: inline-flex;
-      padding: 3px;
+      padding: 4px;
       border: 1px solid var(--am-border, #25314a);
-      border-radius: 10px;
-      background: var(--am-surface, #121a2b);
+      border-radius: 9px;
+      background: rgba(7, 10, 15, .72);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
     }
 
     button {
       border: 0;
-      border-radius: 7px;
-      padding: 7px 11px;
+      border-radius: 6px;
+      padding: 8px 13px;
       color: var(--am-muted, #91a0b8);
       background: transparent;
       cursor: pointer;
-      font: inherit;
+      font: 700 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace;
+      transition: color .18s ease, background .18s ease, box-shadow .18s ease;
     }
 
     button[aria-pressed="true"] {
-      color: var(--am-text, #f3f7ff);
-      background: var(--am-accent-soft, #243552);
+      color: #07110f;
+      background: var(--am-accent, #6df4d6);
+      box-shadow: 0 0 18px rgba(var(--am-accent-rgb, 109, 244, 214), .18);
     }
+
+    button:hover:not([aria-pressed="true"]), button:focus-visible:not([aria-pressed="true"]) { color: var(--am-text); background: var(--am-surface-strong); outline: none; }
   `;
 
   render() {
@@ -64,4 +69,3 @@ declare global {
     "am-time-range-filter": TimeRangeFilter;
   }
 }
-

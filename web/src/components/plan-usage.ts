@@ -1,6 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { PlanUsageSnapshot } from "../model/update";
+import { NOT_CONNECTED, NOT_REPORTED } from "../presentation/missing-data";
 
 @customElement("am-plan-usage")
 export class PlanUsage extends LitElement {
@@ -9,18 +10,18 @@ export class PlanUsage extends LitElement {
   static styles = css`
     :host { display: block; }
     .empty { margin: 0; color: var(--am-muted); font-size: .82rem; }
-    .windows { display: grid; gap: 12px; }
+    .windows { display: grid; gap: 8px; }
     article { display: grid; gap: 6px; }
     header { display: flex; justify-content: space-between; gap: 12px; font-size: .76rem; }
     strong { font-family: "SFMono-Regular", "Cascadia Code", monospace; }
-    .track { height: 8px; overflow: hidden; border-radius: 99px; background: var(--am-track); }
-    .bar { height: 100%; border-radius: inherit; background: var(--am-accent); }
+    .track { height: 6px; overflow: hidden; border-radius: 99px; background: var(--am-track); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .3); }
+    .bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--am-accent), var(--am-secondary)); box-shadow: 0 0 12px rgba(var(--am-accent-rgb), .35); }
     small { color: var(--am-muted); }
   `;
 
   render() {
     if (this.snapshots.length === 0) {
-      return html`<p class="empty">Unavailable. Connect an account usage adapter to display plan limits; model tokens cannot determine them.</p>`;
+      return html`<p class="empty"><strong>${NOT_CONNECTED}.</strong> Connect an account usage adapter to display plan limits; model tokens cannot determine them.</p>`;
     }
     return html`<div class="windows">${this.snapshots.map((snapshot) => html`<article>
       <header>
@@ -44,7 +45,7 @@ const windowLabel = (snapshot: PlanUsageSnapshot) => {
 };
 const resetLabel = (snapshot: PlanUsageSnapshot) => snapshot.resetsAt
   ? `resets ${formatLocalTime(snapshot.resetsAt)}`
-  : "N/A";
+  : NOT_REPORTED;
 const metadataLabel = (snapshot: PlanUsageSnapshot) => [
   `Source ${snapshot.source}`,
   snapshot.accountId ? `account ${snapshot.accountId}` : undefined,

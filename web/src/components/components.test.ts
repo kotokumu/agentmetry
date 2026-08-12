@@ -87,7 +87,8 @@ describe("dashboard components", () => {
     expect(table.shadowRoot?.textContent).toContain("Model call usage");
     expect(table.shadowRoot?.textContent).not.toContain("vendor.response.completed");
     expect(table.shadowRoot?.textContent).toContain("Agent");
-    expect(table.shadowRoot?.textContent).toContain("N/A");
+    expect(table.shadowRoot?.textContent).toContain("—");
+    expect(table.shadowRoot?.textContent).not.toContain("N/A");
     expect(table.shadowRoot?.textContent).toContain("Runtime ID: main");
     expect(table.shadowRoot?.querySelector("a.trace")).toBeNull();
   });
@@ -308,6 +309,16 @@ describe("dashboard components", () => {
     expect(limits.shadowRoot?.textContent).not.toContain("tokens");
   });
 
+  it("distinguishes an unconnected plan source from unavailable data", async () => {
+    const limits = document.createElement("am-plan-usage") as PlanUsage;
+    document.body.append(limits);
+    await limits.updateComplete;
+
+    expect(limits.shadowRoot?.textContent).toContain("Not connected");
+    expect(limits.shadowRoot?.textContent).not.toContain("N/A");
+    expect(limits.shadowRoot?.textContent).not.toContain("Unavailable");
+  });
+
   it("groups token totals and modifiers instead of concatenating them", async () => {
     const chart = document.createElement("am-token-chart");
     (chart as { usage: object }).usage = { input: 100, output: 20, cacheRead: 60, cacheWrite: 4, reasoning: 8, total: 120 };
@@ -319,6 +330,20 @@ describe("dashboard components", () => {
     expect(content).toContain("Primary usage");
     expect(content).toContain("Modifiers and additional evidence");
     expect(content).toContain("Cache read");
+  });
+
+  it("labels missing token evidence as not reported", async () => {
+    const chart = document.createElement("am-token-chart");
+    const breakdown = document.createElement("am-token-breakdown");
+    document.body.append(chart, breakdown);
+    await Promise.all([
+      (chart as { updateComplete: Promise<unknown> }).updateComplete,
+      (breakdown as { updateComplete: Promise<unknown> }).updateComplete,
+    ]);
+
+    expect(chart.shadowRoot?.textContent).toContain("Not reported");
+    expect(breakdown.shadowRoot?.textContent).toContain("Not reported");
+    expect(`${chart.shadowRoot?.textContent}${breakdown.shadowRoot?.textContent}`).not.toContain("N/A");
   });
 
   it("renders agent relationships as a root-first tree", async () => {
@@ -350,6 +375,15 @@ describe("dashboard components", () => {
     expect(Number.parseFloat(root?.style.top ?? "NaN")).toBeLessThan(Number.parseFloat(child?.style.top ?? "NaN"));
     expect(Number.parseFloat(root?.style.left ?? "NaN")).toBe(Number.parseFloat(child?.style.left ?? "NaN"));
     expect(tree.shadowRoot?.querySelectorAll(".connector")).toHaveLength(3);
+  });
+
+  it("explains when no agent relationships were reported", async () => {
+    const tree = document.createElement("am-agent-tree") as AgentTree;
+    document.body.append(tree);
+    await tree.updateComplete;
+
+    expect(tree.shadowRoot?.textContent).toContain("No agent relationships reported");
+    expect(tree.shadowRoot?.textContent).not.toContain("N/A");
   });
 
   it("keeps vertical parent-child relationships in separate root lanes", () => {
@@ -469,6 +503,27 @@ describe("dashboard components", () => {
     expect(list.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/conversations/claude/session-claude"]')).not.toBeNull();
   });
 
+  it("distinguishes an empty history from an empty filtered result", async () => {
+    const list = document.createElement("am-session-list") as SessionList;
+    document.body.append(list);
+    await list.updateComplete;
+    expect(list.shadowRoot?.textContent).toContain("No conversations yet");
+
+    list.filterActive = true;
+    await list.updateComplete;
+    expect(list.shadowRoot?.textContent).toContain("No matching conversations");
+  });
+
+  it("distinguishes an unavailable conversation list from an empty history", async () => {
+    const list = document.createElement("am-session-list") as SessionList;
+    list.unavailable = true;
+    document.body.append(list);
+    await list.updateComplete;
+
+    expect(list.shadowRoot?.textContent).toContain("Conversations unavailable");
+    expect(list.shadowRoot?.textContent).not.toContain("No conversations yet");
+  });
+
   it("summarizes cross-conversation trace status and completeness", async () => {
     const summary = document.createElement("am-trace-summary") as TraceSummary;
     summary.trace = traceFixture;
@@ -532,9 +587,9 @@ describe("dashboard components", () => {
     expect(waterfall.shadowRoot?.textContent).toContain("Ended at2026-08-11T00:00:02Z");
     const logEvidence = waterfall.shadowRoot?.querySelectorAll("details")[2]?.textContent ?? "";
     const logSummary = waterfall.shadowRoot?.querySelectorAll("summary")[2]?.textContent ?? "";
-    expect(logSummary).toContain("N/A");
-    expect(logSummary).not.toContain("Tokens not reported");
-    expect(logEvidence).toContain("RollupN/A");
+    expect(logSummary).toContain("Not reported");
+    expect(logEvidence).toContain("Rollup—");
+    expect(logEvidence).not.toContain("N/A");
     expect(logEvidence).not.toContain("corroborating");
     expect(waterfall.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/conversations/codex/conversation-b?traceId=trace-123456789&spanId=child"]')).not.toBeNull();
   });

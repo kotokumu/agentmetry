@@ -2,6 +2,7 @@ import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, ActivityDirection } from "../model/update";
 import { agentDisplayLabel } from "../model/agent-label";
+import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";
 
 @customElement("am-activity-table")
@@ -23,12 +24,14 @@ export class ActivityTable extends LitElement {
 
   static styles = css`
     :host { display: block; max-width: 100%; overflow: visible; }
-    .table-scroll { max-width: 100%; overflow-x: auto; }
+    .table-scroll { max-width: 100%; overflow-x: auto; scrollbar-color: var(--am-border-strong) var(--am-track); }
     table { width: 100%; border-collapse: collapse; min-width: 1160px; }
-    thead { position: sticky; top: 0; z-index: 1; background: var(--am-surface); }
+    thead { position: sticky; top: 0; z-index: 1; background: rgba(9, 14, 20, .96); backdrop-filter: blur(12px); }
     th { color: var(--am-muted); font: 0.68rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
-    th, td { padding: 11px 9px; border-bottom: 1px solid var(--am-border); vertical-align: top; }
-    tr[data-highlighted="true"] td { background: var(--am-accent-soft); }
+    th, td { padding: 9px 8px; border-bottom: 1px solid var(--am-border); vertical-align: top; }
+    tbody tr { transition: background .16s ease; }
+    tbody tr:hover td { background: rgba(255, 255, 255, .018); }
+    tr[data-highlighted="true"] td { background: var(--am-accent-soft); box-shadow: inset 0 1px 0 rgba(var(--am-accent-rgb), .08), inset 0 -1px 0 rgba(var(--am-accent-rgb), .08); }
     th:nth-child(1) { width: 90px; }
     th:nth-child(2) { width: 180px; }
     th:nth-child(3) { width: 90px; }
@@ -37,22 +40,23 @@ export class ActivityTable extends LitElement {
     th:nth-child(6) { width: 150px; }
     th:nth-child(7) { width: 190px; }
     th:nth-child(8) { width: 120px; }
-    td { color: var(--am-text); font-size: .84rem; }
-    code { color: var(--am-accent); font-size: .72rem; }
+    td { color: var(--am-text); font-size: .78rem; }
+    code { color: var(--am-accent); font: .7rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; }
     .content { max-width: 380px; color: var(--am-muted); overflow-wrap: anywhere; }
     .content summary { cursor: pointer; white-space: pre-wrap; }
     .content pre { max-height: 18rem; overflow: auto; white-space: pre-wrap; font: inherit; }
-    .kind { display: inline-block; border: 1px solid var(--am-border); border-radius: 99px; padding: 3px 7px; font-size: .68rem; text-transform: uppercase; }
+    .kind { display: inline-block; border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; background: var(--am-accent-soft); color: var(--am-accent); font: 700 .58rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .04em; text-transform: uppercase; }
     .tokens { white-space: nowrap; }
     .tokens small { display: block; color: var(--am-muted); white-space: normal; }
     .correlation { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-    .correlation small { border: 1px solid var(--am-border); border-radius: 99px; padding: 2px 6px; color: var(--am-muted); font: .64rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
+    .correlation small { border: 1px solid var(--am-border); border-radius: 4px; padding: 2px 6px; background: var(--am-surface-strong); color: var(--am-muted); font: .64rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
     .rollup { margin-top: 5px; color: var(--am-muted); font-size: .64rem; white-space: normal; }
     .trace { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--am-accent); cursor: pointer; padding: 0; font: .72rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
     .trace:hover, .trace:focus-visible { color: var(--am-text); }
     .loading { padding: 16px; color: var(--am-muted); text-align: center; font-size: .78rem; }
-    .continuation { position: sticky; left: 0; display: flex; justify-content: center; align-items: center; gap: 10px; padding: 14px; color: var(--am-muted); }
-    .continuation button { border: 1px solid var(--am-border); border-radius: 99px; background: var(--am-surface); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
+    .continuation { position: sticky; left: 0; display: flex; justify-content: center; align-items: center; gap: 8px; padding: 10px; color: var(--am-muted); }
+    .continuation button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
+    .continuation button:hover, .continuation button:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     .continuation button:disabled { cursor: wait; opacity: .55; }
   `;
 
@@ -85,11 +89,11 @@ export class ActivityTable extends LitElement {
           && activity.spanId === this.highlightedSpanId;
         return html`<tr data-highlighted=${String(highlighted)} aria-current=${highlighted ? "location" : "false"}>
         <td>${formatTime(activity.observedAt)}</td>
-        <td><small>Agent</small><br><strong>${agentDisplayLabel(activity)}</strong><br><small>Runtime ID: <code>${activity.agentId || "main"}</code></small><br><small>Type: ${activity.agentType || "unavailable"}</small></td>
+        <td><small>Agent</small><br><strong>${agentDisplayLabel(activity)}</strong><br><small>Runtime ID: <code>${activity.agentId || "main"}</code></small><br><small>Type: ${activity.agentType || NOT_REPORTED}</small></td>
         <td><span class="kind">${activity.kind}</span></td>
         <td><strong>${operationLabel(activity)}</strong>${contentView(activity)}${activity.targetAgentId || activity.targetAgentType ? html`<small>→ ${activity.targetAgentId || "subagent"}${activity.targetAgentType ? ` · ${activity.targetAgentType}` : ""}</small>` : null}${correlationView(activity)}</td>
-        <td>${activity.source || "unknown"}</td>
-        <td>${activity.model || "N/A"}</td>
+        <td>${activity.source || NOT_REPORTED}</td>
+        <td>${activity.model || NOT_APPLICABLE}</td>
         <td class="tokens">${tokenView(activity)}</td>
         <td>${this.traceView(activity)}</td>
       </tr>`;})}</tbody>
@@ -160,12 +164,12 @@ export class ActivityTable extends LitElement {
     const traceId = activity.traceId || activity.relatedTraceId;
     return traceId
       ? html`<a class="trace" href=${`/traces/${encodeURIComponent(traceId)}`} aria-label=${`Open trace ${traceId}`}>${activity.traceId ? shortId(traceId) : html`Linked ${shortId(traceId)}`}</a>`
-      : html`N/A`;
+      : html`${NOT_APPLICABLE}`;
   }
 }
 
 const formatTime = (value: string) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
-const shortId = (value?: string) => value ? `${value.slice(0, 8)}…` : "N/A";
+const shortId = (value?: string) => value ? `${value.slice(0, 8)}…` : NOT_APPLICABLE;
 const shortValue = (value: string) => value.length > 18 ? `${value.slice(0, 14)}…` : value;
 export const operationLabel = (activity: Activity) => {
   if (activity.toolName) return activity.toolName;
@@ -179,9 +183,7 @@ export const operationLabel = (activity: Activity) => {
     default: return "Telemetry event";
   }
 };
-const contentFallback = (activity: Activity) => activity.kind === "response"
-  ? "N/A"
-  : "N/A";
+const contentFallback = (_activity: Activity) => NOT_APPLICABLE;
 const contentView = (activity: Activity) => {
   const content = activity.content || contentFallback(activity);
   if (content.length <= 180) return html`<div class="content">${content}</div>`;

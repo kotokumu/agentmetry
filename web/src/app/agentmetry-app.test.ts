@@ -117,9 +117,11 @@ describe("Agentmetry app composition", () => {
     await app.updateComplete;
 
     const content = app.shadowRoot?.textContent ?? "";
+    expect(content).toContain("AGENTMETRY");
     expect(content).toContain("Agent conversations");
     expect(content).toContain("Receiving OTLP locally");
     expect(content).toContain("Loading conversations");
+    expect(app.shadowRoot?.querySelector("main")?.getAttribute("data-density")).toBe("operator");
   });
 
   it("interprets a time-range intent by requesting that range", async () => {

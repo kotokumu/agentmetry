@@ -8,22 +8,27 @@ export class SessionList extends LitElement {
   @property() selected = "";
   @property() selectedSource = "";
   @property({ type: Boolean }) loading = false;
+  @property({ type: Boolean }) filterActive = false;
+  @property({ type: Boolean }) unavailable = false;
 
   static styles = css`
     :host { display: block; }
-    nav { display: grid; gap: 8px; }
-    a { display: block; width: 100%; border: 1px solid transparent; border-radius: 10px; background: transparent; color: var(--am-text); padding: 11px; text-align: left; cursor: pointer; text-decoration: none; }
-    a:hover, a[aria-current="page"] { border-color: var(--am-border); background: var(--am-surface-strong); }
+    nav { display: grid; gap: 5px; }
+    a { position: relative; display: block; width: 100%; overflow: hidden; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--am-text); padding: 9px 10px; text-align: left; cursor: pointer; text-decoration: none; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+    a:hover { border-color: var(--am-border); background: rgba(255, 255, 255, .02); transform: translateX(2px); }
+    a[aria-current="page"] { border-color: var(--am-border-strong); background: linear-gradient(90deg, var(--am-accent-soft), rgba(109, 244, 214, .02)); box-shadow: inset 2px 0 0 var(--am-accent); }
+    a:focus-visible { border-color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     strong { display: block; overflow: hidden; text-overflow: ellipsis; font: 0.76rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
-    small { color: var(--am-muted); }
+    small { color: var(--am-muted); font-size: .68rem; }
     .sources { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
-    .source { border: 1px solid var(--am-border); border-radius: 99px; padding: 2px 6px; color: var(--am-accent); font: 700 .62rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
+    .source { border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 .58rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .04em; }
     .empty { color: var(--am-muted); padding: 18px 0; }
   `;
 
   render() {
     if (this.loading) return html`<p class="empty" role="status">Loading conversations…</p>`;
-    if (this.sessions.length === 0) return html`<p class="empty">No agent conversations observed yet.</p>`;
+    if (this.unavailable) return html`<p class="empty" role="alert">Conversations unavailable.</p>`;
+    if (this.sessions.length === 0) return html`<p class="empty">${this.filterActive ? "No matching conversations." : "No conversations yet."}</p>`;
     return html`<nav aria-label="Agent conversations">${this.sessions.map((session) => html`
       <a
         href=${conversationPath(session.sourceId, session.id)}

@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { Trace } from "../model/update";
 import { aggregateTraceAgentUsage } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
+import { NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";
 
 @customElement("am-trace-participants")
@@ -11,9 +12,9 @@ export class TraceParticipants extends LitElement {
 
   static styles = css`
     :host { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
-    h3 { margin: 0 0 10px; font: 600 .86rem/1.2 "Iowan Old Style", "Palatino Linotype", serif; }
+    h3 { margin: 0 0 10px; font: 650 .78rem/1.2 Inter, ui-sans-serif, sans-serif; letter-spacing: .02em; }
     ul { display: grid; gap: 7px; list-style: none; margin: 0; padding: 0; }
-    li { min-width: 0; border-left: 2px solid var(--am-accent); padding: 6px 9px; background: var(--am-surface-strong); }
+    li { min-width: 0; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 0 8px 8px 0; padding: 9px 11px; background: linear-gradient(90deg, var(--am-accent-soft), var(--am-surface-strong) 38%); }
     strong, code, small { display: block; overflow-wrap: anywhere; }
     code { font: .72rem/1.45 "SFMono-Regular", "Cascadia Code", monospace; }
     small { color: var(--am-muted); font-size: .7rem; }
@@ -25,10 +26,10 @@ export class TraceParticipants extends LitElement {
     if (!trace) return null;
     const agents = aggregateTraceAgentUsage(trace);
     return html`<section><h3>Conversations</h3><ul>${trace.conversations.map((conversation) => html`
-      <li><small>${conversation.sourceId || "unknown source"}</small><code>${conversation.id}</code></li>`)}
+      <li><small>${conversation.sourceId || NOT_REPORTED}</small><code>${conversation.id}</code></li>`)}
     </ul></section>
     <section><h3>Agents</h3><ul>${agents.map((agent) => html`
-      <li><small>${agent.sourceId} · ${agent.conversationId}</small><strong>${agentDisplayLabel(agent)}</strong><code>${agent.agentId || "unavailable"}</code><small>${[agent.agentType, agent.model].filter(Boolean).join(" · ") || "Metadata unavailable"}</small><small>${agent.activityCount.toLocaleString()} activities</small><am-token-breakdown .usage=${agent.tokens} .compact=${true}></am-token-breakdown></li>`)}
+      <li><small>${agent.sourceId} · ${agent.conversationId}</small><strong>${agentDisplayLabel(agent)}</strong><code>${agent.agentId || NOT_REPORTED}</code><small>${[agent.agentType, agent.model].filter(Boolean).join(" · ") || NOT_REPORTED}</small><small>${agent.activityCount.toLocaleString()} activities</small><am-token-breakdown .usage=${agent.tokens} .compact=${true}></am-token-breakdown></li>`)}
     </ul></section>`;
   }
 }

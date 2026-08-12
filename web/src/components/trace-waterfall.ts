@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/update";
 import { conversationHref, tokenEvidence } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
+import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";
 
 type TraceRow = Readonly<{
@@ -23,9 +24,10 @@ export class TraceWaterfall extends LitElement {
 
   static styles = css`
     :host { display: block; overflow: auto; }
-    .rows { min-width: 900px; display: grid; gap: 3px; }
-    .row { border-bottom: 1px solid var(--am-border); }
-    summary { position: relative; display: grid; grid-template-columns: minmax(280px, 36%) minmax(120px, 15%) minmax(360px, 1fr); gap: 12px; align-items: center; min-height: 64px; padding-left: 14px; cursor: pointer; list-style: none; }
+    .rows { min-width: 900px; display: grid; gap: 1px; }
+    .row { border-bottom: 1px solid var(--am-border); transition: background .18s ease; }
+    .row:hover { background: rgba(255, 255, 255, .015); }
+    summary { position: relative; display: grid; grid-template-columns: minmax(280px, 36%) minmax(120px, 15%) minmax(360px, 1fr); gap: 10px; align-items: center; min-height: 54px; padding-left: 14px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
     summary::before { content: "›"; position: absolute; color: var(--am-accent); transform: translateX(-12px); }
     details[open] summary::before { transform: translateX(-12px) rotate(90deg); }
@@ -33,17 +35,17 @@ export class TraceWaterfall extends LitElement {
     .label strong, .label small { display: block; overflow-wrap: anywhere; }
     .label small { color: var(--am-muted); font-size: .68rem; }
     .agent { color: var(--am-text) !important; font-weight: 700; }
-    .missing { color: #9f2f23 !important; }
+    .missing { color: var(--am-danger) !important; }
     .usage strong, .usage small { display: block; }
     .usage strong { font-size: .84rem; }
     .usage small { color: var(--am-muted); font-size: .68rem; text-transform: capitalize; }
-    .track { position: relative; height: 28px; border-radius: 5px; background: color-mix(in srgb, var(--am-track) 58%, transparent); }
-    .bar { position: absolute; top: 6px; height: 16px; min-width: 4px; border-radius: 3px; background: var(--am-accent); }
-    .bar.error { background: #9f2f23; }
-    .event { position: absolute; top: 7px; width: 14px; height: 14px; transform: translateX(-50%) rotate(45deg); border: 2px solid var(--am-accent); background: var(--am-surface); }
+    .track { position: relative; height: 24px; border: 1px solid rgba(155, 190, 213, .06); border-radius: 4px; background: color-mix(in srgb, var(--am-track) 72%, transparent); }
+    .bar { position: absolute; top: 5px; height: 12px; min-width: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--am-accent), var(--am-secondary)); box-shadow: 0 0 10px rgba(var(--am-accent-rgb), .2); }
+    .bar.error { background: var(--am-danger); box-shadow: 0 0 10px color-mix(in srgb, var(--am-danger) 35%, transparent); }
+    .event { position: absolute; top: 6px; width: 11px; height: 11px; transform: translateX(-50%) rotate(45deg); border: 2px solid var(--am-accent); background: var(--am-surface); }
     .content { margin-top: 3px; color: var(--am-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .evidence { margin: 0 0 12px calc(var(--depth) * 14px); padding: 14px; border-left: 2px solid var(--am-accent); background: var(--am-surface-strong); }
-    dl { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px 16px; margin: 0; }
+    .evidence { margin: 0 0 10px calc(var(--depth) * 14px); padding: 11px 12px; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 0 7px 7px 0; background: linear-gradient(90deg, var(--am-accent-soft), var(--am-surface-strong) 30%); }
+    dl { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 8px 14px; margin: 0; }
     dt { color: var(--am-muted); font: .65rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; }
     dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: .78rem; }
     .message { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--am-text); font: inherit; }
@@ -143,10 +145,10 @@ const tokenTotal = (activity: Activity) => {
     ? `${evidence.total?.toLocaleString()} tokens`
     : evidence.kind === "partial"
       ? `Partial · ${evidence.components.map(([name, value]) => `${name} ${value.toLocaleString()}`).join(" · ")}`
-      : "N/A";
+      : NOT_REPORTED;
   if (evidence.kind !== "none" && !activity.contributesToTotal) return `Corroborating · ${label}`;
   if (evidence.kind !== "none") return label;
-  return "N/A";
+  return NOT_REPORTED;
 };
 const durationLabel = (activity: Activity) => {
   if (activity.signal !== "trace") return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(activity.observedAt));
@@ -159,30 +161,30 @@ const activityEvidence = (activity: Activity) => {
   const href = conversationHref(activity);
   const facts = [
     ["Kind", activity.kind],
-    ["Tool name", activity.toolName || "N/A"],
+    ["Tool name", activity.toolName || NOT_APPLICABLE],
     ["Telemetry name", activity.name],
-    ["Status", activity.status || "N/A"],
-    ["Source", activity.source || "N/A"],
-    ["Conversation", activity.runId || "N/A"],
+    ["Status", activity.status || NOT_REPORTED],
+    ["Source", activity.source || NOT_REPORTED],
+    ["Conversation", activity.runId || NOT_APPLICABLE],
     ["Agent", agentDisplayLabel(activity)],
-    ["Runtime agent ID", activity.agentId || "N/A"],
-    ["Agent type", activity.agentType || "N/A"],
+    ["Runtime agent ID", activity.agentId || NOT_REPORTED],
+    ["Agent type", activity.agentType || NOT_REPORTED],
     ["Parent agent", activity.parentAgentId || "Root"],
-    ["Model", activity.model || "N/A"],
+    ["Model", activity.model || NOT_REPORTED],
     ["Observed at", activity.observedAt],
-    ["Started at", activity.startedAt || "N/A"],
-    ["Ended at", activity.endedAt || "N/A"],
-    ["Trace ID", activity.traceId || "N/A"],
-    ["Linked trace", activity.relatedTraceId || "N/A"],
-    ["Span ID", activity.spanId || "N/A"],
+    ["Started at", activity.startedAt || NOT_APPLICABLE],
+    ["Ended at", activity.endedAt || NOT_APPLICABLE],
+    ["Trace ID", activity.traceId || NOT_APPLICABLE],
+    ["Linked trace", activity.relatedTraceId || NOT_APPLICABLE],
+    ["Span ID", activity.spanId || NOT_APPLICABLE],
     ["Parent span", activity.parentSpanId || "Root"],
     ["Target agent", activity.targetAgentId || activity.targetAgentType
       ? [activity.targetAgentId, activity.targetAgentType].filter(Boolean).join(" · ")
-      : "N/A"],
+      : NOT_APPLICABLE],
     ["Rollup", rollupLabel(activity)],
   ];
   return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>Token breakdown</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
-    <pre class="message">${activity.content || "N/A"}</pre>
+    <pre class="message">${activity.content || NOT_APPLICABLE}</pre>
     ${href ? html`<a class="conversation" href=${href}>Open ${activity.spanId ? "span in" : ""} conversation</a>` : null}
   </div>`;
 };
@@ -191,7 +193,7 @@ const operationName = (activity: Activity) => activity.toolName || activity.name
 
 const rollupLabel = (activity: Activity) => {
   const hasUsageEvidence = tokenEvidence(activity.tokens).kind !== "none" || activity.costUsd !== undefined;
-  if (!hasUsageEvidence) return "N/A";
+  if (!hasUsageEvidence) return NOT_APPLICABLE;
   return activity.contributesToTotal
     ? "Included in observed total"
     : "Excluded from rollup as corroborating usage evidence";

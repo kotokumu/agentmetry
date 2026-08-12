@@ -11,10 +11,10 @@ export class TraceSummary extends LitElement {
     .identity { display: flex; justify-content: space-between; gap: 18px; align-items: flex-start; }
     code { display: block; color: var(--am-accent); font: .76rem/1.5 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
     .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
-    .fact { border: 1px solid var(--am-border); border-radius: 99px; padding: 6px 10px; color: var(--am-muted); font-size: .75rem; }
+    .fact { border: 1px solid var(--am-border); border-radius: 6px; padding: 6px 9px; background: var(--am-surface-strong); color: var(--am-muted); font: .7rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
     .status { font-weight: 700; text-transform: capitalize; }
-    .status.error { border-color: #c66a59; color: #9f2f23; background: #f9e6df; }
-    .status.ok { border-color: #7d9d83; color: #356442; background: #e6f0e5; }
+    .status.error { border-color: color-mix(in srgb, var(--am-danger) 55%, transparent); color: var(--am-danger); background: color-mix(in srgb, var(--am-danger) 10%, transparent); }
+    .status.ok { border-color: color-mix(in srgb, var(--am-success) 48%, transparent); color: var(--am-success); background: color-mix(in srgb, var(--am-success) 9%, transparent); }
     p { margin: 0; color: var(--am-muted); font-size: .76rem; }
   `;
 
