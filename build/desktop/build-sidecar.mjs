@@ -38,8 +38,6 @@ export function buildSidecar(target) {
   return output;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
-  const targetArgument = process.argv.indexOf("--target");
-  const target = targetArgument >= 0 ? process.argv[targetArgument + 1] : undefined;
-  buildSidecar(target);
-}
+const targetArgument = process.argv.indexOf("--target");
+const target = targetArgument >= 0 ? process.argv[targetArgument + 1] : undefined;
+buildSidecar(target);
