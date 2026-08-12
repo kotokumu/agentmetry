@@ -1,6 +1,6 @@
 [package]
 name = "agentmetry-desktop"
-version = "0.1.0"
+version = "1.0.0"
 description = "Agentmetry desktop shell"
 authors = ["Agentmetry"]
 edition = "2021"
