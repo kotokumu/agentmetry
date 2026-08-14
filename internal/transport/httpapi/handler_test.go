@@ -162,7 +162,19 @@ func TestConversationAPILoadsAnExactSourceQualifiedConversation(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
 	}
-	if reader.conversationFilter != (query.ConversationFilter{SourceID: "example source", ConversationID: "conversation/1", TraceID: traceID, SpanID: spanID, ActivityOffset: 25, ActivityLimit: 50, UseActivityOffset: true}) {
+	identity, err := query.NewConversationIdentity("example source", "conversation/1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor, err := query.NewActivityAnchor(traceID, spanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := query.NewPage(25, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.conversationFilter != (query.ConversationFilter{Identity: identity, Anchor: anchor, Page: page, PageMode: query.ConversationPageFromOffset}) {
 		t.Fatalf("unexpected conversation filter: %#v", reader.conversationFilter)
 	}
 	if !strings.Contains(response.Body.String(), `"spanId":"`+spanID+`"`) {
@@ -206,7 +218,7 @@ func TestTraceAPIReturnsCompleteVersionedTrace(t *testing.T) {
 	if response.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", response.Code, response.Body.String())
 	}
-	if reader.traceFilter.TraceID != traceID {
+	if reader.traceFilter.TraceID.String() != traceID {
 		t.Fatalf("unexpected trace filter: %#v", reader.traceFilter)
 	}
 	var payload struct {

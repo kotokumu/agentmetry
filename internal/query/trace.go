@@ -2,18 +2,11 @@ package query
 
 import (
 	"context"
-	"encoding/hex"
 	"errors"
-	"fmt"
-	"strings"
 	"time"
 )
 
-var (
-	ErrInvalidTraceID = errors.New("invalid OTLP trace ID")
-	ErrInvalidSpanID  = errors.New("invalid OTLP span ID")
-	ErrTraceNotFound  = errors.New("trace not found")
-)
+var ErrTraceNotFound = errors.New("trace not found")
 
 type TraceStatus string
 
@@ -22,35 +15,6 @@ const (
 	TraceStatusOK      TraceStatus = "ok"
 	TraceStatusError   TraceStatus = "error"
 )
-
-func ParseTraceID(value string) (string, error) {
-	return parseOTLPID(value, 32, ErrInvalidTraceID)
-}
-
-func ParseSpanID(value string) (string, error) {
-	return parseOTLPID(value, 16, ErrInvalidSpanID)
-}
-
-func parseOTLPID(value string, length int, kind error) (string, error) {
-	if len(value) != length || strings.TrimSpace(value) != value {
-		return "", fmt.Errorf("%w: expected %d hexadecimal characters", kind, length)
-	}
-	decoded, err := hex.DecodeString(value)
-	if err != nil {
-		return "", fmt.Errorf("%w: expected %d hexadecimal characters", kind, length)
-	}
-	allZero := true
-	for _, part := range decoded {
-		if part != 0 {
-			allZero = false
-			break
-		}
-	}
-	if allZero {
-		return "", fmt.Errorf("%w: zero is not a valid identifier", kind)
-	}
-	return strings.ToLower(value), nil
-}
 
 type ConversationRef struct {
 	SourceID string `json:"sourceId"`
@@ -68,9 +32,8 @@ type TraceAgent struct {
 }
 
 type TraceFilter struct {
-	TraceID string
-	Offset  int
-	Limit   int
+	TraceID TraceID
+	Page    Page
 }
 
 type Trace struct {

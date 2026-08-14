@@ -34,7 +34,7 @@ func (reader *readerStub) ListSessions(_ context.Context, filter query.SessionLi
 	return query.SessionPage{}, nil
 }
 
-func (reader *readerStub) GetSessionSummary(_ context.Context, _, _ string) (query.Session, error) {
+func (reader *readerStub) GetSessionSummary(_ context.Context, _ query.ConversationIdentity) (query.Session, error) {
 	return reader.summary, reader.summaryErr
 }
 
@@ -64,7 +64,7 @@ func TestGetOverviewUsesSharedRangeAndQueryContract(t *testing.T) {
 	if reader.dashboardFilter.SourceID != "claude" || reader.dashboardFilter.Search != "review" {
 		t.Fatalf("dashboard filters were not forwarded: %#v", reader.dashboardFilter)
 	}
-	if reader.sessionFilter.SourceID != "claude" || reader.sessionFilter.Search != "review" || reader.sessionFilter.PageSize != 100 {
+	if reader.sessionFilter.SourceID != "claude" || reader.sessionFilter.Search != "review" || reader.sessionFilter.Page.Size() != 100 {
 		t.Fatalf("session filters were not forwarded: %#v", reader.sessionFilter)
 	}
 	if output.Overview.SignalCounts.Traces != 4 {
@@ -88,7 +88,7 @@ func TestGetTraceReturnsCompleteTraceAndPreservesTypedUsage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.traceFilter.TraceID != traceID || reader.traceFilter.Limit != 100 {
+	if reader.traceFilter.TraceID.String() != traceID || reader.traceFilter.Page.Size() != 100 {
 		t.Fatalf("unexpected trace filter: %#v", reader.traceFilter)
 	}
 	if output.Trace.TraceID != traceID || output.Trace.Activities[0].Tokens.Input == nil || *output.Trace.Activities[0].Tokens.Input != 12 {
@@ -116,7 +116,7 @@ func TestGetSessionActivitiesIsBoundedAndUsesOpaqueContinuation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.activityFilter.SourceID != "codex" || reader.activityFilter.ConversationID != "run-1" || reader.activityFilter.PageSize != 4 || reader.activityFilter.Offset != 5 {
+	if reader.activityFilter.Identity.SourceID() != "codex" || reader.activityFilter.Identity.ConversationID() != "run-1" || reader.activityFilter.Page.Size() != 4 || reader.activityFilter.Page.Offset() != 5 {
 		t.Fatalf("unexpected activity filter: %#v", reader.activityFilter)
 	}
 	if output.Total != 9 || len(output.Activities) != 1 || output.NextPageToken != encodePageToken(6) || !output.HasEarlier || !output.HasMore {

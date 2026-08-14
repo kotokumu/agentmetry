@@ -46,12 +46,8 @@ FROM session_rollups WHERE ended_at >= ? AND (? = '' OR source = ?)`, since, fil
 }
 
 func (store *Store) ListSessions(ctx context.Context, filter query.SessionListFilter) (query.SessionPage, error) {
-	if filter.PageSize < 1 || filter.PageSize > 100 {
-		filter.PageSize = 100
-	}
-	if filter.Offset < 0 {
-		filter.Offset = 0
-	}
+	pageSize := filter.Page.Size()
+	offset := filter.Page.Offset()
 	if strings.TrimSpace(filter.Search) == "" {
 		return store.listSessionsFromRollups(ctx, filter)
 	}
@@ -65,14 +61,14 @@ FROM activity
 GROUP BY source, run_id
 ORDER BY MAX(observed_at) DESC, source ASC, run_id ASC
 LIMIT ? OFFSET ?`, branches)
-	args = append(args, filter.PageSize+1, filter.Offset)
+	args = append(args, pageSize+1, offset)
 	rows, err := store.db.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return query.SessionPage{}, fmt.Errorf("query session summaries: %w", err)
 	}
 	defer rows.Close()
 
-	page := query.SessionPage{Sessions: make([]query.Session, 0, filter.PageSize)}
+	page := query.SessionPage{Sessions: make([]query.Session, 0, pageSize)}
 	for rows.Next() {
 		var session query.Session
 		var startedAt, endedAt string
@@ -93,25 +89,27 @@ LIMIT ? OFFSET ?`, branches)
 	if err := rows.Err(); err != nil {
 		return query.SessionPage{}, fmt.Errorf("iterate session summaries: %w", err)
 	}
-	if len(page.Sessions) > filter.PageSize {
-		page.Sessions = page.Sessions[:filter.PageSize]
+	if len(page.Sessions) > pageSize {
+		page.Sessions = page.Sessions[:pageSize]
 		page.HasMore = true
-		page.NextOffset = filter.Offset + filter.PageSize
+		page.NextOffset = filter.Page.NextOffset(pageSize)
 	}
 	return page, nil
 }
 
 func (store *Store) listSessionsFromRollups(ctx context.Context, filter query.SessionListFilter) (query.SessionPage, error) {
+	pageSize := filter.Page.Size()
+	offset := filter.Page.Offset()
 	rows, err := store.db.QueryContext(ctx, `SELECT source, run_id, started_at, ended_at, activity_count, agent_count
 FROM session_rollups
 WHERE ended_at >= ? AND (? = '' OR source = ?) AND (? = '' OR run_id = ?)
 ORDER BY ended_at DESC, source ASC, run_id ASC
-LIMIT ? OFFSET ?`, formatTime(filter.Since), filter.SourceID, filter.SourceID, filter.SessionID, filter.SessionID, filter.PageSize+1, filter.Offset)
+LIMIT ? OFFSET ?`, formatTime(filter.Since), filter.SourceID, filter.SourceID, filter.SessionID, filter.SessionID, pageSize+1, offset)
 	if err != nil {
 		return query.SessionPage{}, fmt.Errorf("query session rollups: %w", err)
 	}
 	defer rows.Close()
-	page := query.SessionPage{Sessions: make([]query.Session, 0, filter.PageSize)}
+	page := query.SessionPage{Sessions: make([]query.Session, 0, pageSize)}
 	for rows.Next() {
 		var session query.Session
 		var startedAt, endedAt string
@@ -135,35 +133,31 @@ LIMIT ? OFFSET ?`, formatTime(filter.Since), filter.SourceID, filter.SourceID, f
 	if err := rows.Err(); err != nil {
 		return query.SessionPage{}, fmt.Errorf("iterate session rollups: %w", err)
 	}
-	if len(page.Sessions) > filter.PageSize {
-		page.Sessions = page.Sessions[:filter.PageSize]
+	if len(page.Sessions) > pageSize {
+		page.Sessions = page.Sessions[:pageSize]
 		page.HasMore = true
-		page.NextOffset = filter.Offset + filter.PageSize
+		page.NextOffset = filter.Page.NextOffset(pageSize)
 	}
 	return page, nil
 }
 
-func (store *Store) GetSessionSummary(ctx context.Context, sourceID, sessionID string) (query.Session, error) {
-	return store.loadSessionSummary(ctx, sourceID, sessionID)
+func (store *Store) GetSessionSummary(ctx context.Context, identity query.ConversationIdentity) (query.Session, error) {
+	return store.loadSessionSummary(ctx, identity.SourceID(), identity.ConversationID())
 }
 
 func (store *Store) ListSessionActivities(ctx context.Context, filter query.ActivityPageFilter) (query.ActivityPage, error) {
-	if filter.PageSize < 1 || filter.PageSize > 100 {
-		filter.PageSize = 100
-	}
-	if filter.Offset < 0 {
-		filter.Offset = 0
-	}
-	offset := filter.Offset
-	if offset == 0 && filter.TraceID != "" && filter.SpanID != "" {
+	sourceID := filter.Identity.SourceID()
+	conversationID := filter.Identity.ConversationID()
+	offset := filter.Page.Offset()
+	if offset == 0 && filter.Anchor.Present() {
 		var err error
-		offset, err = store.anchorOffset(ctx, filter.SourceID, filter.ConversationID, filter.TraceID, filter.SpanID)
+		offset, err = store.anchorOffset(ctx, sourceID, conversationID, filter.Anchor.TraceID().String(), filter.Anchor.SpanID().String(), filter.Page)
 		if err != nil {
 			return query.ActivityPage{}, err
 		}
 	}
-	spanWhere, spanArgs := activityWhere("ended_at", formatTime(time.Unix(0, 0)), filter.SourceID, filter.ConversationID, filter.AgentID)
-	logWhere, logArgs := activityWhere("observed_at", formatTime(time.Unix(0, 0)), filter.SourceID, filter.ConversationID, filter.AgentID)
+	spanWhere, spanArgs := activityWhere("ended_at", formatTime(time.Unix(0, 0)), sourceID, conversationID, filter.AgentID)
+	logWhere, logArgs := activityWhere("observed_at", formatTime(time.Unix(0, 0)), sourceID, conversationID, filter.AgentID)
 	spanWhere += " AND activity_kind <> 'unknown'"
 	logWhere += " AND activity_kind <> 'unknown'"
 	var total int64
@@ -176,20 +170,20 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 	if total == 0 {
 		return query.ActivityPage{}, query.ErrConversationNotFound
 	}
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, filter.SourceID, filter.ConversationID, true, filter.AgentID)
+	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, sourceID, conversationID, true, filter.AgentID)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}
 	activities = enrichActivityRelationships(activities)
 	offset = boundedOffset(len(activities), offset)
-	pageEnd := min(len(activities), offset+filter.PageSize)
+	pageEnd := min(len(activities), filter.Page.WindowEnd(offset))
 	return query.ActivityPage{
 		Activities: activities[offset:pageEnd], Total: int64(len(activities)), Offset: offset,
 		HasEarlier: offset > 0, HasMore: int64(pageEnd) < int64(len(activities)),
 	}, nil
 }
 
-func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, traceID, spanID string) (int, error) {
+func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, traceID, spanID string, page query.Page) (int, error) {
 	var observedAt string
 	if err := store.db.QueryRowContext(ctx, `SELECT observed_at FROM (
   SELECT ended_at AS observed_at FROM spans WHERE source = ? AND run_id = ? AND trace_id = ? AND span_id = ? AND activity_kind <> 'unknown'
@@ -209,10 +203,7 @@ func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, trace
 		formatTime(time.Unix(0, 0)), observedAt, sessionID, sourceID).Scan(&before); err != nil {
 		return 0, fmt.Errorf("count activity anchor offset: %w", err)
 	}
-	if before < 25 {
-		return 0, nil
-	}
-	return int(before - 25), nil
+	return page.OffsetAround(int(before)), nil
 }
 
 func (store *Store) dashboardSources(ctx context.Context, since, sourceID string) ([]query.TelemetrySource, error) {

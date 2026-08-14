@@ -10,16 +10,18 @@ import (
 // GetConversation returns one source-qualified conversation independently of
 // dashboard time filters and display pagination.
 func (store *Store) GetConversation(ctx context.Context, filter query.ConversationFilter) (query.Session, error) {
-	activities, err := store.activities(ctx, formatTime(time.Time{}), -1, filter.SourceID, filter.ConversationID)
+	sourceID := filter.Identity.SourceID()
+	conversationID := filter.Identity.ConversationID()
+	activities, err := store.activities(ctx, formatTime(time.Time{}), -1, sourceID, conversationID)
 	if err != nil {
 		return query.Session{}, err
 	}
 	if len(activities) == 0 {
 		return query.Session{}, query.ErrConversationNotFound
 	}
-	targetRequested := filter.TraceID != "" || filter.SpanID != ""
+	targetRequested := filter.Anchor.Present()
 	targetMatches := func(activity query.Activity) bool {
-		return activity.Signal == "trace" && activity.TraceID == filter.TraceID && activity.SpanID == filter.SpanID
+		return activity.Signal == "trace" && activity.TraceID == filter.Anchor.TraceID().String() && activity.SpanID == filter.Anchor.SpanID().String()
 	}
 	if targetRequested {
 		found := false
@@ -34,22 +36,19 @@ func (store *Store) GetConversation(ctx context.Context, filter query.Conversati
 		}
 	}
 	sessions := buildSessions(activities, query.OverviewFilter{
-		SourceID:      filter.SourceID,
+		SourceID:      sourceID,
 		ActivityLimit: len(activities),
 	}, store.describeSource, func(activity query.Activity) bool {
 		return meaningful(activity) || (targetRequested && targetMatches(activity))
 	})
 	for _, session := range sessions {
-		if session.SourceID == filter.SourceID && session.ID == filter.ConversationID {
-			limit := filter.ActivityLimit
-			if limit < 1 || limit > 100 {
-				limit = 100
-			}
-			offset := boundedOffset(len(session.Activities), filter.ActivityOffset)
-			if targetRequested && !filter.UseActivityOffset {
+		if session.SourceID == sourceID && session.ID == conversationID {
+			limit := filter.Page.Size()
+			offset := boundedOffset(len(session.Activities), filter.Page.Offset())
+			if targetRequested && filter.PageMode == query.ConversationPageAroundAnchor {
 				for index, activity := range session.Activities {
 					if targetMatches(activity) {
-						offset = boundedOffset(len(session.Activities), index-25)
+						offset = boundedOffset(len(session.Activities), filter.Page.OffsetAround(index))
 						break
 					}
 				}

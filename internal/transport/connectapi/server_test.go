@@ -34,7 +34,7 @@ func (reader *readerStub) ListSessions(_ context.Context, filter query.SessionLi
 	return reader.sessions, nil
 }
 
-func (reader *readerStub) GetSessionSummary(_ context.Context, _, _ string) (query.Session, error) {
+func (reader *readerStub) GetSessionSummary(_ context.Context, _ query.ConversationIdentity) (query.Session, error) {
 	return reader.conversation, nil
 }
 
@@ -86,7 +86,7 @@ func TestConnectServerUsesOpaqueSessionPageToken(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.lastSessions.PageSize != 50 || reader.lastSessions.Offset != 100 {
+	if reader.lastSessions.Page.Size() != 50 || reader.lastSessions.Page.Offset() != 100 {
 		t.Fatalf("unexpected page filter: %#v", reader.lastSessions)
 	}
 	if response.Msg.GetPage().GetNextPageToken() != encodePageToken(200) || response.Msg.GetPage().GetPreviousPageToken() != encodePageToken(50) || !response.Msg.GetPage().GetHasMore() {
@@ -105,6 +105,17 @@ func TestConnectServerRejectsUnboundedActivityPages(t *testing.T) {
 	}))
 	if err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("error = %v, want invalid argument", err)
+	}
+}
+
+func TestTimelineDirectionRejectsUnsupportedProtoValues(t *testing.T) {
+	for _, value := range []v1.PageDirection{v1.PageDirection_PAGE_DIRECTION_NEWER, v1.PageDirection(99)} {
+		if _, err := timelineDirection(value); err == nil {
+			t.Fatalf("timelineDirection(%v) accepted an unsupported value", value)
+		}
+	}
+	if direction, err := timelineDirection(v1.PageDirection_PAGE_DIRECTION_UNSPECIFIED); err != nil || direction != query.TimelineOlder {
+		t.Fatalf("default direction = %q, %v", direction, err)
 	}
 }
 
@@ -140,7 +151,7 @@ func TestConnectServerBoundsTracePages(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if reader.lastTrace.Offset != 50 || reader.lastTrace.Limit != 50 {
+	if reader.lastTrace.Page.Offset() != 50 || reader.lastTrace.Page.Size() != 50 {
 		t.Fatalf("unexpected trace filter: %#v", reader.lastTrace)
 	}
 	if response.Msg.GetTotalActivities() != 101 || !response.Msg.GetPage().GetHasMore() || response.Msg.GetPage().GetPreviousPageToken() != encodePageToken(0) {

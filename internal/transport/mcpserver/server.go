@@ -464,10 +464,11 @@ func (service *Service) getAgentContext(context.Context, *mcp.CallToolRequest, A
 }
 
 func (service *Service) getRunContext(ctx context.Context, _ *mcp.CallToolRequest, input RunContextInput) (*mcp.CallToolResult, RunContextOutput, error) {
-	if input.Source == "" || input.RunID == "" {
-		return nil, RunContextOutput{}, fmt.Errorf("source and runId are required")
+	identity, err := query.NewConversationIdentity(input.Source, input.RunID)
+	if err != nil {
+		return nil, RunContextOutput{}, err
 	}
-	summary, err := service.summaryReader.GetSessionSummary(ctx, input.Source, input.RunID)
+	summary, err := service.summaryReader.GetSessionSummary(ctx, identity)
 	if errors.Is(err, query.ErrConversationNotFound) {
 		return nil, RunContextOutput{}, fmt.Errorf("run not found for source %q and runId %q", input.Source, input.RunID)
 	}
@@ -559,10 +560,11 @@ func (service *Service) compareRuns(ctx context.Context, _ *mcp.CallToolRequest,
 }
 
 func (service *Service) loadSummary(ctx context.Context, input RunContextInput) (query.Session, error) {
-	if input.Source == "" || input.RunID == "" {
-		return query.Session{}, fmt.Errorf("source and runId are required")
+	identity, err := query.NewConversationIdentity(input.Source, input.RunID)
+	if err != nil {
+		return query.Session{}, err
 	}
-	summary, err := service.summaryReader.GetSessionSummary(ctx, input.Source, input.RunID)
+	summary, err := service.summaryReader.GetSessionSummary(ctx, identity)
 	if errors.Is(err, query.ErrConversationNotFound) {
 		return query.Session{}, fmt.Errorf("run not found for source %q and runId %q", input.Source, input.RunID)
 	}
@@ -574,9 +576,17 @@ func (service *Service) loadRunAnalysis(ctx context.Context, input RunContextInp
 	if err != nil {
 		return query.Session{}, nil, err
 	}
+	identity, err := query.NewConversationIdentity(input.Source, input.RunID)
+	if err != nil {
+		return query.Session{}, nil, err
+	}
 	activities := make([]query.Activity, 0, min(int(summary.ActivityCount), 1000))
 	for offset := 0; offset < 1000; offset += 100 {
-		page, pageErr := service.activityReader.ListSessionActivities(ctx, query.ActivityPageFilter{SourceID: input.Source, ConversationID: input.RunID, PageSize: 100, Offset: offset, Direction: "older"})
+		queryPage, pageErr := query.NewPage(offset, 100)
+		if pageErr != nil {
+			return query.Session{}, nil, pageErr
+		}
+		page, pageErr := service.activityReader.ListSessionActivities(ctx, query.ActivityPageFilter{Identity: identity, Page: queryPage, Direction: query.TimelineOlder})
 		if errors.Is(pageErr, query.ErrConversationNotFound) {
 			break
 		}
@@ -664,7 +674,11 @@ func (service *Service) getTrace(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
-	trace, err := service.traceReader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Offset: offset, Limit: pageSize})
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, TraceOutput{}, err
+	}
+	trace, err := service.traceReader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Page: queryPage})
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
@@ -692,7 +706,11 @@ func (service *Service) getOverview(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, OverviewOutput{}, err
 	}
-	sessions, err := service.sessionReader.ListSessions(ctx, query.SessionListFilter{Since: filter.Since, SourceID: input.Source, Search: input.Search, PageSize: pageSize, Offset: offset})
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, OverviewOutput{}, err
+	}
+	sessions, err := service.sessionReader.ListSessions(ctx, query.SessionListFilter{Since: filter.Since, SourceID: input.Source, Search: input.Search, Page: queryPage})
 	if err != nil {
 		return nil, OverviewOutput{}, err
 	}
@@ -721,14 +739,19 @@ func (service *Service) getSessionActivities(ctx context.Context, _ *mcp.CallToo
 	if err != nil {
 		return nil, SessionActivitiesOutput{}, err
 	}
-	direction := input.Direction
-	if direction == "" {
-		direction = "older"
+	identity, err := query.NewConversationIdentity(input.Source, input.SessionID)
+	if err != nil {
+		return nil, SessionActivitiesOutput{}, err
 	}
-	if direction != "older" {
-		return nil, SessionActivitiesOutput{}, fmt.Errorf("direction newer is not supported; use older")
+	direction, err := query.ParseTimelineDirection(input.Direction)
+	if err != nil {
+		return nil, SessionActivitiesOutput{}, err
 	}
-	page, err := service.activityReader.ListSessionActivities(ctx, query.ActivityPageFilter{SourceID: input.Source, ConversationID: input.SessionID, AgentID: input.AgentID, PageSize: pageSize, Offset: offset, Direction: direction})
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, SessionActivitiesOutput{}, err
+	}
+	page, err := service.activityReader.ListSessionActivities(ctx, query.ActivityPageFilter{Identity: identity, AgentID: input.AgentID, Page: queryPage, Direction: direction})
 	if err != nil {
 		return nil, SessionActivitiesOutput{}, err
 	}

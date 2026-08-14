@@ -52,34 +52,15 @@ func New(reader Reader, assets fs.FS, now Clock, planImporters ...planusage.RawI
 }
 
 func (api *API) conversation(response http.ResponseWriter, request *http.Request) {
-	sourceID := strings.TrimSpace(request.PathValue("sourceId"))
-	conversationID := strings.TrimSpace(request.PathValue("conversationId"))
-	if sourceID == "" || conversationID == "" {
-		writeJSONError(response, http.StatusBadRequest, fmt.Errorf("source and conversation identities are required"))
+	identity, err := query.NewConversationIdentity(request.PathValue("sourceId"), request.PathValue("conversationId"))
+	if err != nil {
+		writeJSONError(response, http.StatusBadRequest, err)
 		return
 	}
-	if len(sourceID) > 100 || len(conversationID) > 500 {
-		writeJSONError(response, http.StatusBadRequest, fmt.Errorf("conversation identity is too long"))
+	anchor, err := query.NewActivityAnchor(request.URL.Query().Get("traceId"), request.URL.Query().Get("spanId"))
+	if err != nil {
+		writeJSONError(response, http.StatusBadRequest, err)
 		return
-	}
-	traceID := strings.TrimSpace(request.URL.Query().Get("traceId"))
-	spanID := strings.TrimSpace(request.URL.Query().Get("spanId"))
-	if (traceID == "") != (spanID == "") {
-		writeJSONError(response, http.StatusBadRequest, fmt.Errorf("traceId and spanId must be provided together"))
-		return
-	}
-	if traceID != "" {
-		var err error
-		traceID, err = query.ParseTraceID(traceID)
-		if err != nil {
-			writeJSONError(response, http.StatusBadRequest, err)
-			return
-		}
-		spanID, err = query.ParseSpanID(spanID)
-		if err != nil {
-			writeJSONError(response, http.StatusBadRequest, err)
-			return
-		}
 	}
 	offset, err := pageInteger(request, "offset", 0)
 	if err != nil {
@@ -91,15 +72,21 @@ func (api *API) conversation(response http.ResponseWriter, request *http.Request
 		writeJSONError(response, http.StatusBadRequest, fmt.Errorf("limit must be between 1 and 100"))
 		return
 	}
+	page, err := query.NewPage(offset, limit)
+	if err != nil {
+		writeJSONError(response, http.StatusBadRequest, err)
+		return
+	}
 	pageMode := request.URL.Query().Get("mode")
 	if pageMode != "" && pageMode != "page" {
 		writeJSONError(response, http.StatusBadRequest, fmt.Errorf("mode must be page when provided"))
 		return
 	}
-	conversation, err := api.reader.GetConversation(request.Context(), query.ConversationFilter{
-		SourceID: sourceID, ConversationID: conversationID, TraceID: traceID, SpanID: spanID,
-		ActivityOffset: offset, ActivityLimit: limit, UseActivityOffset: pageMode == "page",
-	})
+	mode := query.ConversationPageAroundAnchor
+	if pageMode == "page" {
+		mode = query.ConversationPageFromOffset
+	}
+	conversation, err := api.reader.GetConversation(request.Context(), query.ConversationFilter{Identity: identity, Anchor: anchor, Page: page, PageMode: mode})
 	if errors.Is(err, query.ErrConversationNotFound) || errors.Is(err, query.ErrConversationTargetNotFound) {
 		writeJSONError(response, http.StatusNotFound, err)
 		return
@@ -134,7 +121,12 @@ func (api *API) trace(response http.ResponseWriter, request *http.Request) {
 		writeJSONError(response, http.StatusBadRequest, errors.New("limit must be between 1 and 100"))
 		return
 	}
-	trace, err := api.reader.GetTrace(request.Context(), query.TraceFilter{TraceID: traceID, Offset: offset, Limit: limit})
+	page, err := query.NewPage(offset, limit)
+	if err != nil {
+		writeJSONError(response, http.StatusBadRequest, err)
+		return
+	}
+	trace, err := api.reader.GetTrace(request.Context(), query.TraceFilter{TraceID: traceID, Page: page})
 	if errors.Is(err, query.ErrTraceNotFound) {
 		writeJSONError(response, http.StatusNotFound, err)
 		return

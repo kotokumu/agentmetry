@@ -16,8 +16,7 @@ type SessionListFilter struct {
 	SourceID  string
 	Search    string
 	SessionID string
-	PageSize  int
-	Offset    int
+	Page      Page
 }
 
 type SessionPage struct {
@@ -27,14 +26,11 @@ type SessionPage struct {
 }
 
 type ActivityPageFilter struct {
-	SourceID       string
-	ConversationID string
-	AgentID        string
-	PageSize       int
-	Offset         int
-	Direction      string
-	TraceID        string
-	SpanID         string
+	Identity  ConversationIdentity
+	AgentID   string
+	Page      Page
+	Direction TimelineDirection
+	Anchor    ActivityAnchor
 }
 
 type ActivityPage struct {
@@ -54,7 +50,7 @@ type SessionListReader interface {
 }
 
 type SessionSummaryReader interface {
-	GetSessionSummary(context.Context, string, string) (Session, error)
+	GetSessionSummary(context.Context, ConversationIdentity) (Session, error)
 }
 
 type SessionActivitiesReader interface {

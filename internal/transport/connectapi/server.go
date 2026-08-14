@@ -65,9 +65,13 @@ func (server *Server) ListSessions(ctx context.Context, request *connect.Request
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	page, err := server.reader.ListSessions(ctx, query.SessionListFilter{
 		Since: filter.Since, SourceID: filter.SourceID, Search: filter.Search,
-		PageSize: pageSize, Offset: offset,
+		Page: queryPage,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
@@ -79,12 +83,11 @@ func (server *Server) ListSessions(ctx context.Context, request *connect.Request
 }
 
 func (server *Server) GetSession(ctx context.Context, request *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
-	sourceID := strings.TrimSpace(request.Msg.GetSourceId())
-	sessionID := strings.TrimSpace(request.Msg.GetSessionId())
-	if sourceID == "" || sessionID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source_id and session_id are required"))
+	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	session, err := server.reader.GetSessionSummary(ctx, sourceID, sessionID)
+	session, err := server.reader.GetSessionSummary(ctx, identity)
 	if errors.Is(err, query.ErrConversationNotFound) || errors.Is(err, query.ErrConversationTargetNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
@@ -98,10 +101,9 @@ func (server *Server) GetSession(ctx context.Context, request *connect.Request[v
 }
 
 func (server *Server) ListSessionActivities(ctx context.Context, request *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
-	sourceID := strings.TrimSpace(request.Msg.GetSourceId())
-	sessionID := strings.TrimSpace(request.Msg.GetSessionId())
-	if sourceID == "" || sessionID == "" {
-		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("source_id and session_id are required"))
+	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	pageSize, err := boundedPageSize(request.Msg.GetPage())
 	if err != nil {
@@ -111,11 +113,21 @@ func (server *Server) ListSessionActivities(ctx context.Context, request *connec
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	direction, err := timelineDirection(request.Msg.GetDirection())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	anchor, err := query.NewActivityAnchor(request.Msg.GetAnchor().GetTraceId(), request.Msg.GetAnchor().GetSpanId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	page, err := server.reader.ListSessionActivities(ctx, query.ActivityPageFilter{
-		SourceID: sourceID, ConversationID: sessionID, PageSize: pageSize, Offset: offset,
-		AgentID:   strings.TrimSpace(request.Msg.GetAgentId()),
-		Direction: strings.ToLower(request.Msg.GetDirection().String()),
-		TraceID:   request.Msg.GetAnchor().GetTraceId(), SpanID: request.Msg.GetAnchor().GetSpanId(),
+		Identity: identity, Page: queryPage,
+		AgentID: strings.TrimSpace(request.Msg.GetAgentId()), Direction: direction, Anchor: anchor,
 	})
 	if errors.Is(err, query.ErrConversationNotFound) || errors.Is(err, query.ErrConversationTargetNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
@@ -143,7 +155,11 @@ func (server *Server) GetTrace(ctx context.Context, request *connect.Request[v1.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Offset: offset, Limit: pageSize})
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Page: queryPage})
 	if errors.Is(err, query.ErrTraceNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
@@ -198,6 +214,15 @@ func boundedPageSize(page *v1.PageRequest) (int, error) {
 		return 0, errors.New("page_size must be between 1 and 100")
 	}
 	return size, nil
+}
+
+func timelineDirection(value v1.PageDirection) (query.TimelineDirection, error) {
+	switch value {
+	case v1.PageDirection_PAGE_DIRECTION_UNSPECIFIED, v1.PageDirection_PAGE_DIRECTION_OLDER:
+		return query.TimelineOlder, nil
+	default:
+		return "", fmt.Errorf("%w: %s is not supported; use older", query.ErrInvalidTimelineDirection, value)
+	}
 }
 
 func parsePageToken(token string) (int, error) {

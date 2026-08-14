@@ -15,6 +15,42 @@ import (
 	"github.com/theoden9014/agentmetry/sourceplugin"
 )
 
+func mustConversationIdentity(t *testing.T, sourceID, conversationID string) query.ConversationIdentity {
+	t.Helper()
+	identity, err := query.NewConversationIdentity(sourceID, conversationID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity
+}
+
+func mustTraceID(t *testing.T, value string) query.TraceID {
+	t.Helper()
+	identity, err := query.ParseTraceID(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return identity
+}
+
+func mustActivityAnchor(t *testing.T, traceID, spanID string) query.ActivityAnchor {
+	t.Helper()
+	anchor, err := query.NewActivityAnchor(traceID, spanID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return anchor
+}
+
+func mustPage(t *testing.T, offset, size int) query.Page {
+	t.Helper()
+	page, err := query.NewPage(offset, size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return page
+}
+
 func TestCommitBatchReplacesSpanRevisionAndBuildsOverview(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {
@@ -89,7 +125,7 @@ func TestCommitBatchReplacesSpanRevisionAndBuildsOverview(t *testing.T) {
 	if dashboard.RunCount != 1 || dashboard.AgentCount != 1 {
 		t.Fatalf("unexpected dashboard identity counts: %#v", dashboard)
 	}
-	summary, err := database.GetSessionSummary(ctx, "unknown", "run-1")
+	summary, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "unknown", "run-1"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -201,7 +237,7 @@ func TestGetTraceCorrelatesConversationsAndReportsIncompleteParents(t *testing.T
 	if err := database.CommitBatch(ctx, canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
 		t.Fatal(err)
 	}
-	trace, err := database.GetTrace(ctx, query.TraceFilter{TraceID: traceID})
+	trace, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, traceID)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -221,7 +257,7 @@ func TestGetTraceCorrelatesConversationsAndReportsIncompleteParents(t *testing.T
 		t.Fatalf("authoritative usage was not marked as a contribution: %#v", trace.Activities[2])
 	}
 
-	page, err := database.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Offset: 1, Limit: 1})
+	page, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, traceID), Page: mustPage(t, 1, 1)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,7 +272,7 @@ func TestGetTraceReturnsNotFoundForUnknownIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	_, err = database.GetTrace(context.Background(), query.TraceFilter{TraceID: "22222222222222222222222222222222"})
+	_, err = database.GetTrace(context.Background(), query.TraceFilter{TraceID: mustTraceID(t, "22222222222222222222222222222222")})
 	if !errors.Is(err, query.ErrTraceNotFound) {
 		t.Fatalf("error = %v, want ErrTraceNotFound", err)
 	}
@@ -312,13 +348,56 @@ func TestListSessionActivitiesFiltersByAgent(t *testing.T) {
 	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
 		t.Fatal(err)
 	}
-	page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{SourceID: "example", ConversationID: "run-1", AgentID: "reviewer", PageSize: 100})
+	page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{Identity: mustConversationIdentity(t, "example", "run-1"), AgentID: "reviewer"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if page.Total != 1 || len(page.Activities) != 1 || page.Activities[0].AgentID != "reviewer" {
 		t.Fatalf("agent-filtered activities = %#v, want one reviewer activity", page)
 	}
+}
+
+func TestListSessionActivitiesKeepsAnchorInsideSmallPage(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	const traceID = "11111111111111111111111111111111"
+	const targetIndex = 30
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := make([]canonical.Log, 0, 60)
+	for index := range 60 {
+		logs = append(logs, canonical.Log{
+			Source: "example", ObservedAt: now.Add(time.Duration(index) * time.Second),
+			TraceID: traceID, SpanID: fmt.Sprintf("%016x", index+1),
+			Name: "activity", Kind: canonical.ActivityMessage,
+			Agent: canonical.AgentContext{RunID: "run-1", AgentID: "main"},
+		})
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+
+	targetSpanID := fmt.Sprintf("%016x", targetIndex+1)
+	page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+		Identity: mustConversationIdentity(t, "example", "run-1"),
+		Anchor:   mustActivityAnchor(t, traceID, targetSpanID),
+		Page:     mustPage(t, 0, 10),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Activities) != 10 {
+		t.Fatalf("activity count = %d, want 10", len(page.Activities))
+	}
+	for _, activity := range page.Activities {
+		if activity.TraceID == traceID && activity.SpanID == targetSpanID {
+			return
+		}
+	}
+	t.Fatal("anchor fell outside the bounded activity page")
 }
 
 func TestOverviewCountsOneAuthoritativeUsageContribution(t *testing.T) {
@@ -476,7 +555,7 @@ func TestSessionSummaryInfersAgentParentFromSpanParentage(t *testing.T) {
 	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalTrace, Spans: spans}); err != nil {
 		t.Fatal(err)
 	}
-	session, err := database.GetSessionSummary(context.Background(), "example", "run-topology")
+	session, err := database.GetSessionSummary(context.Background(), mustConversationIdentity(t, "example", "run-topology"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,9 +647,9 @@ func TestConversationQueryIgnoresDashboardRangeAndDisplayPage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	conversation, err := database.GetConversation(context.Background(), query.ConversationFilter{
-		SourceID: "example", ConversationID: "old-conversation", TraceID: traceID, SpanID: spanID,
-	})
+	identity := mustConversationIdentity(t, "example", "old-conversation")
+	anchor := mustActivityAnchor(t, traceID, spanID)
+	conversation, err := database.GetConversation(context.Background(), query.ConversationFilter{Identity: identity, Anchor: anchor})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -591,9 +670,9 @@ func TestConversationQueryIgnoresDashboardRangeAndDisplayPage(t *testing.T) {
 		t.Fatal("requested unknown-kind target was not retained in the bounded exact projection")
 	}
 	continuation, err := database.GetConversation(context.Background(), query.ConversationFilter{
-		SourceID: "example", ConversationID: "old-conversation", TraceID: traceID, SpanID: spanID,
-		ActivityOffset: conversation.ActivityOffset + len(conversation.Activities), ActivityLimit: 100,
-		UseActivityOffset: true,
+		Identity: identity, Anchor: anchor,
+		Page:     mustPage(t, conversation.ActivityOffset+len(conversation.Activities), 100),
+		PageMode: query.ConversationPageFromOffset,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -605,7 +684,7 @@ func TestConversationQueryIgnoresDashboardRangeAndDisplayPage(t *testing.T) {
 		t.Fatalf("continuation skipped or duplicated the target boundary: first=%q last=%q", continuation.Activities[0].Content, continuation.Activities[len(continuation.Activities)-1].Content)
 	}
 	_, err = database.GetConversation(context.Background(), query.ConversationFilter{
-		SourceID: "example", ConversationID: "old-conversation", TraceID: traceID, SpanID: "bbbbbbbbbbbbbbbb",
+		Identity: identity, Anchor: mustActivityAnchor(t, traceID, "bbbbbbbbbbbbbbbb"),
 	})
 	if !errors.Is(err, query.ErrConversationTargetNotFound) {
 		t.Fatalf("wrong target error = %v, want ErrConversationTargetNotFound", err)

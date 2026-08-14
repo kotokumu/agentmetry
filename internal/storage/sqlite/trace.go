@@ -14,10 +14,7 @@ import (
 )
 
 func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (query.Trace, error) {
-	traceID, err := query.ParseTraceID(filter.TraceID)
-	if err != nil {
-		return query.Trace{}, err
-	}
+	traceID := filter.TraceID.String()
 	summary, err := store.loadTraceSummary(ctx, traceID)
 	if err != nil {
 		return query.Trace{}, err
@@ -25,15 +22,9 @@ func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (que
 	if summary.ActivityCount == 0 {
 		return query.Trace{}, query.ErrTraceNotFound
 	}
-	offset := max(0, filter.Offset)
-	limit := filter.Limit
-	if limit <= 0 {
-		limit = -1
-	}
-	branchLimit := -1
-	if limit >= 0 {
-		branchLimit = offset + limit
-	}
+	offset := filter.Page.Offset()
+	limit := filter.Page.Size()
+	branchLimit := filter.Page.WindowEnd(offset)
 	const statement = `SELECT source, signal, trace_id, span_id, parent_span_id, name,
   activity_kind, tool_name, target_agent_id, target_agent_type, content,
   agent_id, agent_definition, agent_type, parent_agent_id, run_id, model,

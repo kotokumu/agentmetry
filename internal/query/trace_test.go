@@ -10,8 +10,8 @@ func TestParseTraceIDNormalizesValidOTLPIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "abcdefabcdefabcdefabcdefabcdefab" {
-		t.Fatalf("trace ID = %q", got)
+	if got.String() != "abcdefabcdefabcdefabcdefabcdefab" {
+		t.Fatalf("trace ID = %q", got.String())
 	}
 }
 
@@ -28,8 +28,8 @@ func TestParseSpanIDNormalizesAndValidatesOTLPIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got != "abcdefabcdefabcd" {
-		t.Fatalf("span ID = %q", got)
+	if got.String() != "abcdefabcdefabcd" {
+		t.Fatalf("span ID = %q", got.String())
 	}
 	for _, value := range []string{"", "not-a-span-id", "0000000000000000"} {
 		if _, err := ParseSpanID(value); !errors.Is(err, ErrInvalidSpanID) {
