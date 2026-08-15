@@ -36,3 +36,28 @@ test("the checked-in Tauri configuration enables signed GitHub updates", () => {
     createsArtifacts: true,
   });
 });
+
+test("the remote dashboard can invoke only the two app update commands", () => {
+  const capability = JSON.parse(
+    readFileSync(
+      resolve(
+        root,
+        "src-tauri",
+        "capabilities",
+        "dashboard-updates.json",
+      ),
+      "utf8",
+    ),
+  );
+
+  assert.deepEqual(capability.remote, {
+    urls: ["http://127.0.0.1:17890/*"],
+  });
+  assert.deepEqual(capability.windows, ["main"]);
+  assert.deepEqual(capability.permissions, [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-check-for-app-update",
+    "allow-install-app-update",
+  ]);
+});
