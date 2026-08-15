@@ -1,18 +1,14 @@
 package otel
 
 import (
-	"encoding/json"
 	"fmt"
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/observation"
 	"go.opentelemetry.io/collector/pdata/plog"
-	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 	"go.opentelemetry.io/collector/pdata/pmetric"
-	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.opentelemetry.io/collector/pdata/ptrace"
-	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 )
 
 const normalizerVersion = 1
@@ -30,16 +26,13 @@ func BuildTraceObservations(traces ptrace.Traces, projection canonical.Batch) ([
 				}
 				span := scope.Spans().At(recordIndex)
 				projected := projection.Spans[ordinal]
-				payload, err := marshalSingleSpan(resource, scope, span)
-				if err != nil {
-					return nil, err
-				}
-				attributes, err := marshalAttributeLayers(resource.Resource().Attributes().AsRaw(), scope.Scope().Attributes().AsRaw(), span.Attributes().AsRaw())
-				if err != nil {
-					return nil, err
+				observationOrdinal := ordinal
+				ordinal++
+				if !canonical.IsSemanticSpan(projected) {
+					continue
 				}
 				observations = append(observations, observation.Observation{
-					Ordinal: ordinal, Signal: canonical.SignalTrace, Kind: projected.Kind,
+					Ordinal: observationOrdinal, Signal: canonical.SignalTrace, Kind: projected.Kind,
 					Source: projected.Source, SourceEventName: span.Name(),
 					OccurredAt: projected.StartedAt, ObservedAt: projected.EndedAt,
 					TraceID: projected.TraceID, SpanID: projected.SpanID, ParentSpanID: projected.ParentSpanID,
@@ -47,9 +40,8 @@ func BuildTraceObservations(traces ptrace.Traces, projection canonical.Batch) ([
 					AgentDefinition: projected.Agent.AgentDefinition,
 					AgentType:       projected.Agent.AgentType, ParentAgentID: projected.Agent.ParentAgentID,
 					Model: projected.Agent.Model, Usage: projected.Agent.Tokens,
-					Payload: payload, SourceAttributes: attributes, NormalizerVersion: normalizerVersion,
+					NormalizerVersion: normalizerVersion,
 				})
-				ordinal++
 			}
 		}
 	}
@@ -82,14 +74,6 @@ func BuildLogObservations(logs plog.Logs, projection canonical.Batch) ([]observa
 				if record.ObservedTimestamp() == 0 {
 					observedAt = projected.ObservedAt
 				}
-				payload, err := marshalSingleLog(resource, scope, record)
-				if err != nil {
-					return nil, err
-				}
-				attributes, err := marshalAttributeLayers(resource.Resource().Attributes().AsRaw(), scope.Scope().Attributes().AsRaw(), record.Attributes().AsRaw())
-				if err != nil {
-					return nil, err
-				}
 				observations = append(observations, observation.Observation{
 					Ordinal: ordinal, Signal: canonical.SignalLog, Kind: projected.Kind,
 					Source: projected.Source, SourceEventName: sourceEventName,
@@ -99,7 +83,7 @@ func BuildLogObservations(logs plog.Logs, projection canonical.Batch) ([]observa
 					AgentDefinition: projected.Agent.AgentDefinition,
 					AgentType:       projected.Agent.AgentType, ParentAgentID: projected.Agent.ParentAgentID,
 					Model: projected.Agent.Model, Usage: projected.Agent.Tokens,
-					Payload: payload, SourceAttributes: attributes, NormalizerVersion: normalizerVersion,
+					NormalizerVersion: normalizerVersion,
 				})
 				ordinal++
 			}
@@ -111,8 +95,8 @@ func BuildLogObservations(logs plog.Logs, projection canonical.Batch) ([]observa
 	return observations, nil
 }
 
-// BuildMetricObservations keeps one complete observation per OTLP metric. The
-// payload retains all data points, temporality, buckets, and exemplars.
+// BuildMetricObservations creates query metadata for each OTLP metric. Complete
+// points, temporality, buckets, and exemplars remain in the protobuf journal.
 func (normalizer Normalizer) BuildMetricObservations(metrics pmetric.Metrics) ([]observation.Observation, error) {
 	observations := make([]observation.Observation, 0)
 	ordinal := 0
@@ -124,14 +108,6 @@ func (normalizer Normalizer) BuildMetricObservations(metrics pmetric.Metrics) ([
 			for metricIndex := 0; metricIndex < scope.Metrics().Len(); metricIndex++ {
 				metric := scope.Metrics().At(metricIndex)
 				profiled := normalizer.profile(metric.Name(), resourceAttributes)
-				payload, err := marshalSingleMetric(resource, scope, metric)
-				if err != nil {
-					return nil, err
-				}
-				attributes, err := marshalAttributeLayers(resourceAttributes, scope.Scope().Attributes().AsRaw(), nil)
-				if err != nil {
-					return nil, err
-				}
 				agent := canonical.DeriveAgentContext(resourceAttributes)
 				observations = append(observations, observation.Observation{
 					Ordinal: ordinal, Signal: canonical.SignalMetric, Kind: canonical.ActivityUnknown,
@@ -139,69 +115,13 @@ func (normalizer Normalizer) BuildMetricObservations(metrics pmetric.Metrics) ([
 					OccurredAt: metricTime(metric), ObservedAt: metricTime(metric),
 					SessionID: agent.RunID, AgentID: agent.AgentID, AgentDefinition: agent.AgentDefinition, AgentType: agent.AgentType,
 					ParentAgentID: agent.ParentAgentID, Model: agent.Model, Usage: agent.Tokens,
-					Payload: payload, SourceAttributes: attributes, NormalizerVersion: normalizerVersion,
+					NormalizerVersion: normalizerVersion,
 				})
 				ordinal++
 			}
 		}
 	}
 	return observations, nil
-}
-
-func marshalSingleSpan(resource ptrace.ResourceSpans, scope ptrace.ScopeSpans, span ptrace.Span) (json.RawMessage, error) {
-	single := ptrace.NewTraces()
-	destinationResource := single.ResourceSpans().AppendEmpty()
-	resource.Resource().CopyTo(destinationResource.Resource())
-	destinationResource.SetSchemaUrl(resource.SchemaUrl())
-	destinationScope := destinationResource.ScopeSpans().AppendEmpty()
-	scope.Scope().CopyTo(destinationScope.Scope())
-	destinationScope.SetSchemaUrl(scope.SchemaUrl())
-	span.CopyTo(destinationScope.Spans().AppendEmpty())
-	payload, err := ptraceotlp.NewExportRequestFromTraces(single).MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal canonical span JSON: %w", err)
-	}
-	return payload, nil
-}
-
-func marshalSingleLog(resource plog.ResourceLogs, scope plog.ScopeLogs, record plog.LogRecord) (json.RawMessage, error) {
-	single := plog.NewLogs()
-	destinationResource := single.ResourceLogs().AppendEmpty()
-	resource.Resource().CopyTo(destinationResource.Resource())
-	destinationResource.SetSchemaUrl(resource.SchemaUrl())
-	destinationScope := destinationResource.ScopeLogs().AppendEmpty()
-	scope.Scope().CopyTo(destinationScope.Scope())
-	destinationScope.SetSchemaUrl(scope.SchemaUrl())
-	record.CopyTo(destinationScope.LogRecords().AppendEmpty())
-	payload, err := plogotlp.NewExportRequestFromLogs(single).MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal canonical log JSON: %w", err)
-	}
-	return payload, nil
-}
-
-func marshalSingleMetric(resource pmetric.ResourceMetrics, scope pmetric.ScopeMetrics, metric pmetric.Metric) (json.RawMessage, error) {
-	single := pmetric.NewMetrics()
-	destinationResource := single.ResourceMetrics().AppendEmpty()
-	resource.Resource().CopyTo(destinationResource.Resource())
-	destinationResource.SetSchemaUrl(resource.SchemaUrl())
-	destinationScope := destinationResource.ScopeMetrics().AppendEmpty()
-	scope.Scope().CopyTo(destinationScope.Scope())
-	destinationScope.SetSchemaUrl(scope.SchemaUrl())
-	metric.CopyTo(destinationScope.Metrics().AppendEmpty())
-	payload, err := pmetricotlp.NewExportRequestFromMetrics(single).MarshalJSON()
-	if err != nil {
-		return nil, fmt.Errorf("marshal canonical metric JSON: %w", err)
-	}
-	return payload, nil
-}
-
-func marshalAttributeLayers(resource, scope, record map[string]any) (json.RawMessage, error) {
-	payload, err := json.Marshal(map[string]any{"resource": resource, "scope": scope, "record": record})
-	if err != nil {
-		return nil, fmt.Errorf("marshal source attributes: %w", err)
-	}
-	return payload, nil
 }
 
 func metricTime(metric pmetric.Metric) time.Time {

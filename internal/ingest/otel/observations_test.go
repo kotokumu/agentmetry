@@ -1,8 +1,6 @@
 package otel
 
 import (
-	"bytes"
-	"encoding/json"
 	"testing"
 
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -11,7 +9,7 @@ import (
 	source "github.com/theoden9014/agentmetry/sourceplugin"
 )
 
-func TestTraceObservationsRetainEventsLinksScopesAndSchemaURLs(t *testing.T) {
+func TestTraceObservationsProjectSemanticMetadataWithoutDuplicatingPayload(t *testing.T) {
 	traces := ptrace.NewTraces()
 	resource := traces.ResourceSpans().AppendEmpty()
 	resource.SetSchemaUrl("https://example.test/resource-schema")
@@ -33,20 +31,31 @@ func TestTraceObservationsRetainEventsLinksScopesAndSchemaURLs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(observations) != 1 || observations[0].Source != source.Unknown || !json.Valid(observations[0].Payload) {
+	if len(observations) != 1 || observations[0].Source != source.Unknown || observations[0].SourceEventName != "gen_ai.response.completed" {
 		t.Fatalf("unexpected observations: %#v", observations)
-	}
-	for _, expected := range [][]byte{
-		[]byte("resource-schema"), []byte("scope-schema"), []byte("example-scope"),
-		[]byte("tool-finished"), []byte("binary"),
-	} {
-		if !bytes.Contains(observations[0].Payload, expected) {
-			t.Fatalf("payload does not contain %q: %s", expected, observations[0].Payload)
-		}
 	}
 }
 
-func TestMetricObservationsRetainTemporalityBucketsAndExemplars(t *testing.T) {
+func TestTraceObservationsSkipIncidentalRuntimeSpans(t *testing.T) {
+	traces := ptrace.NewTraces()
+	spans := traces.ResourceSpans().AppendEmpty().ScopeSpans().AppendEmpty().Spans()
+	spans.AppendEmpty().SetName("handle_responses")
+	spans.AppendEmpty().SetName("gen_ai.response.completed")
+
+	projection, err := NewNormalizer(source.NewRegistry()).NormalizeTraces(traces)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations, err := BuildTraceObservations(traces, projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observations) != 1 || observations[0].Ordinal != 1 || observations[0].SourceEventName != "gen_ai.response.completed" {
+		t.Fatalf("unexpected semantic observations: %#v", observations)
+	}
+}
+
+func TestMetricObservationsProjectMetadataWithoutDuplicatingPayload(t *testing.T) {
 	metrics := pmetric.NewMetrics()
 	resource := metrics.ResourceMetrics().AppendEmpty()
 	scope := resource.ScopeMetrics().AppendEmpty()
@@ -66,12 +75,7 @@ func TestMetricObservationsRetainTemporalityBucketsAndExemplars(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(observations) != 1 || !json.Valid(observations[0].Payload) {
+	if len(observations) != 1 || observations[0].SourceEventName != "gen_ai.usage.tokens" {
 		t.Fatalf("unexpected observations: %#v", observations)
-	}
-	for _, expected := range [][]byte{[]byte(`"aggregationTemporality":2`), []byte("bucketCounts"), []byte("exemplars")} {
-		if !bytes.Contains(observations[0].Payload, expected) {
-			t.Fatalf("payload does not contain %q: %s", expected, observations[0].Payload)
-		}
 	}
 }

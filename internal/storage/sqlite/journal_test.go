@@ -2,15 +2,30 @@ package sqlite
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/hex"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/ingest"
+	"github.com/theoden9014/agentmetry/internal/journal"
 	"github.com/theoden9014/agentmetry/internal/observation"
 )
+
+func TestOpenRefusesPendingDataMigrationInsteadOfCreatingAnEmptyDatabase(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agentmetry.db")
+	if err := os.WriteFile(path+".migration.json", []byte(`{"phase":"source-preserved"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(path); err == nil {
+		t.Fatal("database opened while its canonical path was under migration")
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("Open created a replacement database: %v", err)
+	}
+}
 
 func TestCommitExportAtomicallyStoresJournalObservationsAndReadModel(t *testing.T) {
 	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
@@ -23,11 +38,10 @@ func TestCommitExportAtomicallyStoresJournalObservationsAndReadModel(t *testing.
 	payload := []byte{0x0a, 0x00}
 	accepted := ingest.AcceptedExport{
 		Envelope: ingest.Envelope{
-			Signal:        canonical.SignalLog,
-			Transport:     ingest.TransportGRPC,
-			ReceivedAt:    now,
-			Protobuf:      payload,
-			CanonicalJSON: json.RawMessage(`{"resourceLogs":[]}`),
+			Signal:     canonical.SignalLog,
+			Transport:  ingest.TransportGRPC,
+			ReceivedAt: now,
+			Protobuf:   payload,
 		},
 		Observations: []observation.Observation{{
 			Ordinal:           0,
@@ -39,8 +53,6 @@ func TestCommitExportAtomicallyStoresJournalObservationsAndReadModel(t *testing.
 			SessionID:         "session-1",
 			Model:             "gpt-example",
 			Usage:             canonical.TokenUsage{Input: 10, Output: 2},
-			Payload:           json.RawMessage(`{"complete":true}`),
-			SourceAttributes:  json.RawMessage(`{"vendor":"kept"}`),
 			NormalizerVersion: 1,
 		}},
 		Projection: canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{
@@ -74,12 +86,57 @@ func TestCommitExportAtomicallyStoresJournalObservationsAndReadModel(t *testing.
 	}
 
 	var storedPayload []byte
-	var storedJSON, status string
-	if err := database.db.QueryRow("SELECT payload_protobuf, payload_json, normalization_status FROM otlp_exports").Scan(&storedPayload, &storedJSON, &status); err != nil {
+	var codec, storedHash, status string
+	var originalSize int
+	if err := database.db.QueryRow("SELECT payload_protobuf, payload_codec, payload_size, payload_sha256, normalization_status FROM otlp_exports").Scan(&storedPayload, &codec, &originalSize, &storedHash, &status); err != nil {
 		t.Fatal(err)
 	}
-	if string(storedPayload) != string(payload) || !json.Valid([]byte(storedJSON)) || status != "projected" {
-		t.Fatalf("unexpected journal row: payload=%x json=%q status=%q", storedPayload, storedJSON, status)
+	hashBytes, err := hex.DecodeString(storedHash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var hash [32]byte
+	copy(hash[:], hashBytes)
+	decoded, err := journal.Restore(journal.Codec(codec), storedPayload, originalSize, hash)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(decoded) != string(payload) || status != "projected" {
+		t.Fatalf("unexpected journal row: payload=%x status=%q", decoded, status)
+	}
+}
+
+func TestCommitExportProjectsOnlySemanticTraceRecords(t *testing.T) {
+	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	now := time.Date(2026, 8, 16, 2, 0, 0, 0, time.UTC)
+	accepted := ingest.AcceptedExport{
+		Envelope: ingest.NewEnvelope(canonical.SignalTrace, ingest.TransportGRPC, now, []byte{0x0a, 0x00}),
+		Observations: []observation.Observation{
+			{Ordinal: 1, Signal: canonical.SignalTrace, Kind: canonical.ActivityTool, SourceEventName: "call", OccurredAt: now, ObservedAt: now, SessionID: "conversation-1"},
+		},
+		Projection: canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{
+			{TraceID: "trace-1", SpanID: "runtime", Name: "handle_responses", Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now, Attributes: map[string]any{}},
+			{TraceID: "trace-1", SpanID: "semantic", Name: "call", Kind: canonical.ActivityTool, StartedAt: now, EndedAt: now, Agent: canonical.AgentContext{RunID: "conversation-1"}, Attributes: map[string]any{}},
+		}},
+	}
+
+	if err := database.CommitExport(context.Background(), accepted); err != nil {
+		t.Fatal(err)
+	}
+	var observations, spans int
+	if err := database.db.QueryRow("SELECT COUNT(*) FROM observations").Scan(&observations); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.db.QueryRow("SELECT COUNT(*) FROM spans").Scan(&spans); err != nil {
+		t.Fatal(err)
+	}
+	if observations != 1 || spans != 1 {
+		t.Fatalf("projected runtime telemetry: observations=%d spans=%d", observations, spans)
 	}
 }
 
@@ -93,13 +150,7 @@ func TestCommitExportRetainsRawPayloadWhenNormalizationFails(t *testing.T) {
 	now := time.Date(2026, 8, 11, 4, 30, 0, 0, time.UTC)
 	payload := []byte{0x0a, 0x00}
 	accepted := ingest.AcceptedExport{
-		Envelope: ingest.NewEnvelope(
-			canonical.SignalLog,
-			ingest.TransportHTTPProtobuf,
-			now,
-			payload,
-			json.RawMessage(`{"resourceLogs":[]}`),
-		),
+		Envelope:           ingest.NewEnvelope(canonical.SignalLog, ingest.TransportHTTPProtobuf, now, payload),
 		NormalizationError: "unsupported source revision",
 		Projection: canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{
 			ObservedAt: now,

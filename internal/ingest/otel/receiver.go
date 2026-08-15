@@ -77,11 +77,7 @@ func (receiver *traceReceiver) accept(ctx context.Context, request ptraceotlp.Ex
 	if err != nil {
 		return fmt.Errorf("marshal canonical trace protobuf: %w", err)
 	}
-	canonicalJSON, err := request.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("marshal canonical trace JSON: %w", err)
-	}
-	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalTrace, transport, time.Now(), protobuf, canonicalJSON)}
+	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalTrace, transport, time.Now(), protobuf)}
 	accepted.Projection, err = receiver.normalizer.NormalizeTraces(request.Traces())
 	if err == nil {
 		accepted.Observations, err = BuildTraceObservations(request.Traces(), accepted.Projection)
@@ -91,6 +87,7 @@ func (receiver *traceReceiver) accept(ctx context.Context, request ptraceotlp.Ex
 		accepted.Observations = nil
 		accepted.NormalizationError = err.Error()
 	}
+	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
 	return receiver.committer.CommitExport(ctx, accepted)
 }
 
@@ -116,11 +113,7 @@ func (receiver *logReceiver) accept(ctx context.Context, request plogotlp.Export
 	if err != nil {
 		return fmt.Errorf("marshal canonical log protobuf: %w", err)
 	}
-	canonicalJSON, err := request.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("marshal canonical log JSON: %w", err)
-	}
-	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalLog, transport, time.Now(), protobuf, canonicalJSON)}
+	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalLog, transport, time.Now(), protobuf)}
 	accepted.Projection, err = receiver.normalizer.NormalizeLogs(request.Logs())
 	if err == nil {
 		accepted.Observations, err = BuildLogObservations(request.Logs(), accepted.Projection)
@@ -130,6 +123,7 @@ func (receiver *logReceiver) accept(ctx context.Context, request plogotlp.Export
 		accepted.Observations = nil
 		accepted.NormalizationError = err.Error()
 	}
+	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
 	return receiver.committer.CommitExport(ctx, accepted)
 }
 
@@ -155,11 +149,7 @@ func (receiver *metricReceiver) accept(ctx context.Context, request pmetricotlp.
 	if err != nil {
 		return fmt.Errorf("marshal canonical metric protobuf: %w", err)
 	}
-	canonicalJSON, err := request.MarshalJSON()
-	if err != nil {
-		return fmt.Errorf("marshal canonical metric JSON: %w", err)
-	}
-	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalMetric, transport, time.Now(), protobuf, canonicalJSON)}
+	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalMetric, transport, time.Now(), protobuf)}
 	accepted.Projection, err = receiver.normalizer.NormalizeMetrics(request.Metrics())
 	if err == nil {
 		accepted.Observations, err = receiver.normalizer.BuildMetricObservations(request.Metrics())
@@ -169,6 +159,7 @@ func (receiver *metricReceiver) accept(ctx context.Context, request pmetricotlp.
 		accepted.Observations = nil
 		accepted.NormalizationError = err.Error()
 	}
+	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
 	return receiver.committer.CommitExport(ctx, accepted)
 }
 

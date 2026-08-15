@@ -55,7 +55,7 @@ func TestTraceExportCommitsCanonicalOTLPEnvelope(t *testing.T) {
 	if committer.accepted.Envelope.Signal != "trace" || committer.accepted.Envelope.Transport != ingest.TransportGRPC {
 		t.Fatalf("unexpected envelope: %#v", committer.accepted.Envelope)
 	}
-	if len(committer.accepted.Envelope.Protobuf) == 0 || len(committer.accepted.Envelope.CanonicalJSON) == 0 {
+	if len(committer.accepted.Envelope.Protobuf) == 0 {
 		t.Fatalf("canonical payload was not retained: %#v", committer.accepted.Envelope)
 	}
 }

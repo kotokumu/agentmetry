@@ -21,6 +21,7 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/theoden9014/agentmetry/internal/app"
+	"github.com/theoden9014/agentmetry/internal/compaction"
 	"github.com/theoden9014/agentmetry/internal/planusage"
 	"github.com/theoden9014/agentmetry/internal/source/builtin"
 	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
@@ -32,6 +33,7 @@ type configuration struct {
 	otlpHTTPAddress  string
 	grpcAddress      string
 	database         string
+	compactDatabase  bool
 }
 
 func main() {
@@ -121,34 +123,76 @@ func run() error {
 	if err := os.MkdirAll(filepath.Dir(config.database), 0o755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
+	if config.compactDatabase {
+		result, err := compaction.Migrate(context.Background(), config.database, builtin.Registry(), func(progress compaction.Progress) {
+			if progress.Completed%100 == 0 || progress.Completed == progress.Total {
+				slog.Info("compacting telemetry database", "completed", progress.Completed, "total", progress.Total)
+			}
+		})
+		if err != nil {
+			return err
+		}
+		slog.Info("telemetry database compacted", "before_bytes", result.SourceBytes, "after_bytes", result.CompactBytes, "exports", result.Exports, "semantic_spans", result.SemanticSpans)
+		return nil
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	errorsChannel := make(chan error, 3)
+	maintenance := app.NewMaintenanceHandler()
+	dashboardServer := &http.Server{
+		Addr:              config.dashboardAddress,
+		Handler:           maintenance,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	dashboardListener, err := net.Listen("tcp", config.dashboardAddress)
+	if err != nil {
+		return fmt.Errorf("reserve dashboard address before database migration: %w", err)
+	}
+	go func() {
+		slog.Info("dashboard maintenance surface listening", "address", config.dashboardAddress)
+		errorsChannel <- dashboardServer.Serve(dashboardListener)
+	}()
+
+	if _, err := compaction.MigrateIfNeeded(ctx, config.database, builtin.Registry(), func(progress compaction.Progress) {
+		maintenance.Progress(progress.Completed, progress.Total)
+		if progress.Completed%100 == 0 || progress.Completed == progress.Total {
+			slog.Info("migrating telemetry database", "completed", progress.Completed, "total", progress.Total)
+		}
+	}); err != nil {
+		migrationError := fmt.Errorf("migrate telemetry database: %w", err)
+		maintenance.Fail(migrationError)
+		select {
+		case <-ctx.Done():
+			_ = dashboardServer.Close()
+			return migrationError
+		case serverError := <-errorsChannel:
+			return errors.Join(migrationError, serverError)
+		}
+	}
 	database, err := store.Open(config.database, builtin.Registry())
 	if err != nil {
+		_ = dashboardServer.Close()
 		return err
 	}
 	defer database.Close()
 
 	services := app.NewServices(database, webassets.FS(), time.Now)
+	maintenance.Ready(services.Dashboard)
 	grpcServer := grpc.NewServer()
 	services.OTLPReceiver.RegisterGRPC(grpcServer)
 	grpcListener, err := net.Listen("tcp", config.grpcAddress)
 	if err != nil {
+		_ = dashboardServer.Close()
 		return fmt.Errorf("listen for OTLP gRPC: %w", err)
 	}
 
-	dashboardServer := &http.Server{
-		Addr:              config.dashboardAddress,
-		Handler:           services.Dashboard,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
 	otlpHTTPServer := &http.Server{
 		Addr:              config.otlpHTTPAddress,
 		Handler:           services.OTLPHTTPHandler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-	errorsChannel := make(chan error, 3)
 	go func() {
 		slog.Info("OTLP gRPC listening", "address", config.grpcAddress)
 		errorsChannel <- grpcServer.Serve(grpcListener)
@@ -157,10 +201,7 @@ func run() error {
 		slog.Info("OTLP HTTP listening", "address", config.otlpHTTPAddress)
 		errorsChannel <- otlpHTTPServer.ListenAndServe()
 	}()
-	go func() {
-		slog.Info("dashboard, API, and MCP listening", "address", config.dashboardAddress)
-		errorsChannel <- dashboardServer.ListenAndServe()
-	}()
+	slog.Info("dashboard, API, and MCP ready", "address", config.dashboardAddress)
 
 	select {
 	case <-ctx.Done():
@@ -188,6 +229,7 @@ func parseFlags() configuration {
 	flag.StringVar(&config.otlpHTTPAddress, "otlp-http-address", "127.0.0.1:4318", "OTLP HTTP listen address")
 	flag.StringVar(&config.grpcAddress, "otlp-grpc-address", "127.0.0.1:4317", "OTLP gRPC listen address")
 	flag.StringVar(&config.database, "database", filepath.Join("data", "agentmetry.db"), "SQLite database path")
+	flag.BoolVar(&config.compactDatabase, "compact-database", false, "compact a closed legacy database and exit")
 	flag.Parse()
 	return config
 }

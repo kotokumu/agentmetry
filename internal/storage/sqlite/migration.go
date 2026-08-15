@@ -62,6 +62,34 @@ func convergeSchema(ctx context.Context, database *sql.DB) error {
 	return verifyConverged(ctx, database, desired)
 }
 
+// RequiresProjectionRebuild reports whether converging this database to the
+// current Atlas schema would require anything beyond safe additive DDL. The
+// data migration coordinator uses this signal to regenerate disposable
+// projections from the lossless journal instead of asking Atlas to transform
+// data.
+func RequiresProjectionRebuild(ctx context.Context, database *sql.DB) (bool, error) {
+	driver, err := atlassqlite.Open(database)
+	if err != nil {
+		return false, fmt.Errorf("open Atlas SQLite driver: %w", err)
+	}
+	current, err := driver.InspectSchema(ctx, "main", nil)
+	if err != nil {
+		return false, fmt.Errorf("inspect current SQLite schema: %w", err)
+	}
+	desired, err := evaluateDesiredSchema()
+	if err != nil {
+		return false, err
+	}
+	changes, err := driver.SchemaDiff(current, desired)
+	if err != nil {
+		return false, fmt.Errorf("diff SQLite schema: %w", err)
+	}
+	if len(changes) == 0 {
+		return false, nil
+	}
+	return validateAutomaticChanges(changes) != nil, nil
+}
+
 func evaluateDesiredSchema() (*schema.Schema, error) {
 	var desired schema.Schema
 	if err := atlassqlite.EvalHCLBytes(desiredSchemaHCL, &desired, nil); err != nil {

@@ -6,11 +6,15 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/ingest"
+	"github.com/theoden9014/agentmetry/internal/journal"
 	"github.com/theoden9014/agentmetry/internal/observation"
+	"github.com/theoden9014/agentmetry/internal/storage/ownership"
+	storageversion "github.com/theoden9014/agentmetry/internal/storage/version"
 	"github.com/theoden9014/agentmetry/sourceplugin"
 	_ "modernc.org/sqlite"
 )
@@ -18,37 +22,73 @@ import (
 type Store struct {
 	db       *sql.DB
 	profiles sourceplugin.Registry
+	owner    *ownership.Lock
 }
 
 func Open(path string, profiles ...sourceplugin.Registry) (*Store, error) {
+	ownershipContext, cancelOwnership := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelOwnership()
+	owner, err := ownership.Acquire(ownershipContext, path)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(path + ".migration.json"); err == nil {
+		_ = owner.Close()
+		return nil, fmt.Errorf("database has a pending data migration; recover it before opening")
+	} else if !os.IsNotExist(err) {
+		_ = owner.Close()
+		return nil, fmt.Errorf("inspect data migration manifest: %w", err)
+	}
+	info, statErr := os.Stat(path)
+	fresh := os.IsNotExist(statErr) || (statErr == nil && info.Size() == 0)
+	if statErr != nil && !fresh {
+		_ = owner.Close()
+		return nil, fmt.Errorf("inspect sqlite database: %w", statErr)
+	}
 	database, err := sql.Open("sqlite", path)
 	if err != nil {
+		_ = owner.Close()
 		return nil, fmt.Errorf("open sqlite: %w", err)
 	}
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(1)
 
-	store := &Store{db: database}
+	store := &Store{db: database, owner: owner}
 	if len(profiles) > 0 {
 		store.profiles = profiles[0]
 	}
 	if err := store.configure(context.Background()); err != nil {
 		_ = database.Close()
+		_ = owner.Close()
 		return nil, err
 	}
 	if err := convergeSchema(context.Background(), database); err != nil {
 		_ = database.Close()
+		_ = owner.Close()
 		return nil, err
+	}
+	if fresh {
+		if _, err := database.Exec(fmt.Sprintf("PRAGMA user_version=%d", storageversion.CurrentGeneration)); err != nil {
+			_ = database.Close()
+			_ = owner.Close()
+			return nil, fmt.Errorf("initialize journal format version: %w", err)
+		}
 	}
 	if err := store.rebuildSessionRollups(context.Background()); err != nil {
 		_ = database.Close()
+		_ = owner.Close()
 		return nil, err
 	}
 	return store, nil
 }
 
 func (store *Store) Close() error {
-	return store.db.Close()
+	databaseErr := store.db.Close()
+	ownerErr := store.owner.Close()
+	if databaseErr != nil {
+		return databaseErr
+	}
+	return ownerErr
 }
 
 func (store *Store) configure(ctx context.Context) error {
@@ -85,13 +125,17 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 }
 
 func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedExport) error {
+	prepared, err := prepareExport(accepted)
+	if err != nil {
+		return err
+	}
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin OTLP export commit: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
 
-	exportID, err := insertExport(ctx, transaction, accepted)
+	exportID, err := insertExport(ctx, transaction, accepted, prepared)
 	if err != nil {
 		return err
 	}
@@ -116,6 +160,9 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 
 func commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch) error {
 	for _, span := range batch.Spans {
+		if !canonical.IsSemanticSpan(span) {
+			continue
+		}
 		if err := putSpan(ctx, transaction, span); err != nil {
 			return err
 		}
@@ -133,24 +180,46 @@ func commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.
 	return nil
 }
 
-func insertExport(ctx context.Context, transaction *sql.Tx, accepted ingest.AcceptedExport) (int64, error) {
-	status := "projected"
-	if accepted.NormalizationError != "" {
-		status = "failed"
+type preparedExport struct {
+	payload journal.Payload
+	journal ingest.JournalMetadata
+}
+
+func prepareExport(accepted ingest.AcceptedExport) (preparedExport, error) {
+	payload, err := journal.Encode(accepted.Envelope.Protobuf)
+	if err != nil {
+		return preparedExport{}, fmt.Errorf("encode OTLP journal payload: %w", err)
 	}
-	source := observationSource(accepted.Observations)
-	normalizerVersion := 1
-	if len(accepted.Observations) > 0 {
-		normalizerVersion = accepted.Observations[0].NormalizerVersion
+	metadata := accepted.Journal
+	if metadata.Source == "" || metadata.NormalizerVersion == 0 || metadata.NormalizationStatus == "" {
+		derived := ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
+		if metadata.Source == "" {
+			metadata.Source = derived.Source
+		}
+		if metadata.NormalizerVersion == 0 {
+			metadata.NormalizerVersion = derived.NormalizerVersion
+		}
+		if metadata.NormalizationStatus == "" {
+			metadata.NormalizationStatus = derived.NormalizationStatus
+		}
 	}
+	return preparedExport{payload: payload, journal: metadata}, nil
+}
+
+func insertExport(ctx context.Context, transaction *sql.Tx, accepted ingest.AcceptedExport, prepared preparedExport) (int64, error) {
+	payload := prepared.payload
+	metadata := prepared.journal
+	if metadata.NormalizationStatus == "failed" && accepted.NormalizationError == "" {
+		return 0, fmt.Errorf("failed journal export has no normalization error")
+	}
+	hash := payload.SHA256()
 	result, err := transaction.ExecContext(ctx, `INSERT INTO otlp_exports (
-  received_at, signal, transport, payload_protobuf, payload_json, payload_sha256,
+  received_at, signal, transport, payload_protobuf, payload_codec, payload_sha256,
   payload_size, source, normalizer_version, normalization_status, normalization_error
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		formatTime(accepted.Envelope.ReceivedAt), accepted.Envelope.Signal, accepted.Envelope.Transport,
-		accepted.Envelope.Protobuf, string(accepted.Envelope.CanonicalJSON),
-		hex.EncodeToString(accepted.Envelope.SHA256[:]), len(accepted.Envelope.Protobuf),
-		source, normalizerVersion, status, accepted.NormalizationError,
+		payload.Bytes(), payload.Codec(), hex.EncodeToString(hash[:]), payload.OriginalSize(),
+		metadata.Source, metadata.NormalizerVersion, metadata.NormalizationStatus, accepted.NormalizationError,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert OTLP export: %w", err)
@@ -162,26 +231,6 @@ func insertExport(ctx context.Context, transaction *sql.Tx, accepted ingest.Acce
 	return exportID, nil
 }
 
-func observationSource(observations []observation.Observation) string {
-	if len(observations) == 0 {
-		return "unknown"
-	}
-	source := observations[0].Source
-	if source == "" {
-		source = "unknown"
-	}
-	for _, item := range observations[1:] {
-		candidate := item.Source
-		if candidate == "" {
-			candidate = "unknown"
-		}
-		if candidate != source {
-			return "mixed"
-		}
-	}
-	return source
-}
-
 func insertObservation(ctx context.Context, transaction *sql.Tx, exportID int64, item observation.Observation) error {
 	_, err := transaction.ExecContext(ctx, `INSERT INTO observations (
   export_id, ordinal, signal, kind, source, source_event_name, occurred_at, observed_at,
@@ -189,8 +238,8 @@ func insertObservation(ctx context.Context, transaction *sql.Tx, exportID int64,
   model, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
   cache_write_tokens_reported, reasoning_tokens_reported,
-  payload_json, attributes_json, normalizer_version
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  normalizer_version
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		exportID, item.Ordinal, item.Signal, item.Kind, item.Source, item.SourceEventName,
 		formatTime(item.OccurredAt), formatTime(item.ObservedAt), item.TraceID, item.SpanID,
 		item.ParentSpanID, item.SessionID, item.AgentID, item.AgentDefinition, item.AgentType, item.ParentAgentID,
@@ -198,8 +247,7 @@ func insertObservation(ctx context.Context, transaction *sql.Tx, exportID int64,
 		item.Usage.CacheWrite, item.Usage.Reasoning,
 		boolInt(item.Usage.InputReported()), boolInt(item.Usage.OutputReported()),
 		boolInt(item.Usage.CacheReadReported()), boolInt(item.Usage.CacheWriteReported()),
-		boolInt(item.Usage.ReasoningReported()), string(item.Payload),
-		string(item.SourceAttributes), item.NormalizerVersion,
+		boolInt(item.Usage.ReasoningReported()), item.NormalizerVersion,
 	)
 	if err != nil {
 		return fmt.Errorf("insert canonical observation: %w", err)

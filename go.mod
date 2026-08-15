@@ -5,7 +5,9 @@ go 1.26.4
 require (
 	ariga.io/atlas v1.3.0
 	connectrpc.com/connect v1.20.0
+	github.com/gofrs/flock v0.13.0
 	github.com/google/go-cmp v0.7.0
+	github.com/klauspost/compress v1.19.2
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	go.opentelemetry.io/collector/pdata v1.64.0
 	google.golang.org/grpc v1.82.1

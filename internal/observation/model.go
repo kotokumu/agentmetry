@@ -1,14 +1,14 @@
 package observation
 
 import (
-	"encoding/json"
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 )
 
-// Observation is a source-neutral, append-only projection of one OTLP record.
-// Payload retains the complete OTLP JSON subtree needed to reinterpret it.
+// Observation is a source-neutral, append-only semantic projection of one OTLP
+// record. The lossless protobuf journal, rather than this read model, owns the
+// replayable source data.
 type Observation struct {
 	Ordinal           int
 	Signal            canonical.Signal
@@ -27,7 +27,5 @@ type Observation struct {
 	ParentAgentID     string
 	Model             string
 	Usage             canonical.TokenUsage
-	Payload           json.RawMessage
-	SourceAttributes  json.RawMessage
 	NormalizerVersion int
 }

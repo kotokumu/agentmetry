@@ -210,6 +210,28 @@ The tag and `src-tauri/tauri.conf.json` version must match exactly.
 
 ## Contributing
 
+### Compacting local telemetry storage
+
+New OTLP journal entries are stored as adaptive zstd-compressed protobuf, and
+runtime-only spans are kept in the replay journal instead of the dashboard read
+models. After an application update, databases created by earlier releases are
+automatically migrated before OTLP listeners accept new writes. The desktop app
+shows verified-export progress, preserves the original database on failure, and
+regenerates current dashboard projections from the lossless journal. Fresh
+installs and already-current databases skip historical replay.
+
+The same operation can be forced manually for maintenance:
+
+```sh
+agentmetry -compact-database -database /path/to/agentmetry.db
+```
+
+Quit every Agentmetry process before running manual compaction. The command streams the
+legacy journal into a sibling database, replays current semantic projections,
+verifies every restored payload and SHA-256 plus derived row counts, then
+replaces the legacy file only after validation succeeds. A durable manifest
+recovers interrupted file replacement on the next launch.
+
 Please open an issue for bugs, source-format changes, or feature proposals.
 Small, focused pull requests are welcome. Before submitting a change, run the
 backend and Web tests relevant to the area you touched.

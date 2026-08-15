@@ -29,6 +29,8 @@ const DASHBOARD_ADDRESS: &str = "127.0.0.1:17890";
 const OTLP_HTTP_ADDRESS: &str = "127.0.0.1:4318";
 const OTLP_GRPC_ADDRESS: &str = "127.0.0.1:4317";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+const SIDECAR_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+const DATABASE_READY_TIMEOUT: Duration = Duration::from_secs(24 * 60 * 60);
 const DESKTOP_NAVIGATION_SCRIPT: &str = r#"
   if (window.location.origin === 'http://127.0.0.1:17890') {
     window.addEventListener('mouseup', (event) => {
@@ -106,16 +108,19 @@ impl SidecarController {
         });
 
         if let Err(error) = wait_for_sidecar(DASHBOARD_ADDRESS, STARTUP_TIMEOUT) {
-            self.shutdown();
+            let _ = self.shutdown();
             return Err(format!("wait for Agentmetry sidecar: {error}"));
         }
         Ok(())
     }
 
-    fn shutdown(&mut self) {
+    fn shutdown(&mut self) -> Result<(), String> {
         if let Some(child) = self.child.take() {
-            let _ = child.kill();
+            child
+                .kill()
+                .map_err(|error| format!("stop Agentmetry sidecar: {error}"))?;
         }
+        Ok(())
     }
 }
 
@@ -168,10 +173,7 @@ fn main() {
             "navigate-back" => navigate_history(app, "window.history.back()"),
             "navigate-forward" => navigate_history(app, "window.history.forward()"),
             "quit" => {
-                let _ = with_controller(app, |controller, _| {
-                    controller.shutdown();
-                    Ok(())
-                });
+                let _ = with_controller(app, |controller, _| controller.shutdown());
                 app.exit(0);
             }
             _ => {}
@@ -186,10 +188,7 @@ fn main() {
             ..
         } => restore_main_window_on_reopen(app, has_visible_windows),
         RunEvent::Exit => {
-            let _ = with_controller(app, |controller, _| {
-                controller.shutdown();
-                Ok(())
-            });
+            let _ = with_controller(app, |controller, _| controller.shutdown());
         }
         _ => {}
     });
@@ -197,6 +196,21 @@ fn main() {
 
 fn spawn_update_check(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let database_ready = tauri::async_runtime::spawn_blocking(|| {
+            wait_for_database_ready(DASHBOARD_ADDRESS, DATABASE_READY_TIMEOUT)
+        })
+        .await;
+        match database_ready {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                eprintln!("Agentmetry update deferred until database migration completes: {error}");
+                return;
+            }
+            Err(error) => {
+                eprintln!("Agentmetry database readiness task failed: {error}");
+                return;
+            }
+        }
         if let Err(error) = install_available_update(app).await {
             eprintln!("Agentmetry update check failed: {error}");
         }
@@ -309,10 +323,19 @@ async fn install_available_update_inner(
         &app,
         UpdateStatusEvent::phase(UpdatePhase::Installing, &next_version),
     );
-    if let Err(error) = with_controller(&app, |controller, _| {
-        controller.shutdown();
-        Ok(())
-    }) {
+    if let Err(error) = with_controller(&app, |controller, _| controller.shutdown()) {
+        emit_update_status(&app, UpdateStatusEvent::failed(&error));
+        return Err(error);
+    }
+    if let Err(error) = wait_for_sidecar_shutdown(
+        &[DASHBOARD_ADDRESS, OTLP_HTTP_ADDRESS, OTLP_GRPC_ADDRESS],
+        SIDECAR_SHUTDOWN_TIMEOUT,
+    ) {
+        if let Err(relaunch_error) =
+            with_controller(&app, |controller, handle| controller.launch(handle))
+        {
+            eprintln!("restart Agentmetry sidecar after shutdown timeout: {relaunch_error}");
+        }
         emit_update_status(&app, UpdateStatusEvent::failed(&error));
         return Err(error);
     }
@@ -485,9 +508,43 @@ fn wait_for_sidecar(address: &str, timeout: Duration) -> Result<(), String> {
     ))
 }
 
+fn wait_for_sidecar_shutdown(addresses: &[&str], timeout: Duration) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    while started.elapsed() < timeout {
+        if addresses
+            .iter()
+            .all(|address| TcpStream::connect(address).is_err())
+        {
+            return Ok(());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    Err(format!(
+        "Agentmetry sidecar ports were not released within {timeout:?}"
+    ))
+}
+
 fn health_check(address: &str) -> bool {
+    health_status(address).is_some()
+}
+
+fn wait_for_database_ready(address: &str, timeout: Duration) -> Result<(), String> {
+    let started = std::time::Instant::now();
+    while started.elapsed() < timeout {
+        match health_status(address).as_deref() {
+            Some("ok") => return Ok(()),
+            Some("failed") => return Err("database migration failed".to_string()),
+            _ => thread::sleep(Duration::from_millis(250)),
+        }
+    }
+    Err(format!(
+        "{address}/healthz did not report a ready database within {timeout:?}"
+    ))
+}
+
+fn health_status(address: &str) -> Option<String> {
     let Ok(mut stream) = TcpStream::connect(address) else {
-        return false;
+        return None;
     };
     let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
     let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
@@ -495,19 +552,36 @@ fn health_check(address: &str) -> bool {
         .write_all(b"GET /healthz HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n")
         .is_err()
     {
-        return false;
+        return None;
     }
 
     let mut response = Vec::new();
     if stream.read_to_end(&mut response).is_err() {
-        return false;
+        return None;
     }
-    response.starts_with(b"HTTP/1.1 200 ") || response.starts_with(b"HTTP/1.0 200 ")
+    if !response.starts_with(b"HTTP/1.1 200 ") && !response.starts_with(b"HTTP/1.0 200 ") {
+        return None;
+    }
+    health_status_from_response(&response)
+}
+
+fn health_status_from_response(response: &[u8]) -> Option<String> {
+    let body = response
+        .windows(4)
+        .position(|window| window == b"\r\n\r\n")
+        .map(|index| &response[index + 4..])?;
+    let payload: serde_json::Value = serde_json::from_slice(body).ok()?;
+    payload.get("status")?.as_str().map(str::to_owned)
 }
 
 #[cfg(test)]
 mod tests {
-    use super::should_restore_main_window_on_reopen;
+    use std::{net::TcpListener, time::Duration};
+
+    use super::{
+        health_status_from_response, should_restore_main_window_on_reopen,
+        wait_for_sidecar_shutdown,
+    };
 
     #[test]
     fn reopen_restores_main_window_when_macos_reports_no_visible_windows() {
@@ -517,5 +591,28 @@ mod tests {
     #[test]
     fn reopen_does_not_restore_main_window_when_macos_reports_a_visible_window() {
         assert!(!should_restore_main_window_on_reopen(true));
+    }
+
+    #[test]
+    fn health_status_distinguishes_migration_from_ready_database() {
+        let migrating = b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n\r\n{\"status\":\"migrating\",\"completed\":5,\"total\":10}";
+        let ready = b"HTTP/1.1 200 OK\r\n\r\n{\"status\":\"ok\"}";
+        assert_eq!(
+            health_status_from_response(migrating).as_deref(),
+            Some("migrating")
+        );
+        assert_eq!(health_status_from_response(ready).as_deref(), Some("ok"));
+    }
+
+    #[test]
+    fn update_waits_for_legacy_sidecar_port_release() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        let address = listener
+            .local_addr()
+            .expect("read test address")
+            .to_string();
+        assert!(wait_for_sidecar_shutdown(&[&address], Duration::from_millis(10)).is_err());
+        drop(listener);
+        assert!(wait_for_sidecar_shutdown(&[&address], Duration::from_millis(10)).is_ok());
     }
 }

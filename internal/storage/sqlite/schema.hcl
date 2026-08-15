@@ -270,7 +270,10 @@ table "otlp_exports" {
   column "signal"              { type = text }
   column "transport"           { type = text }
   column "payload_protobuf"    { type = blob }
-  column "payload_json"        { type = text }
+  column "payload_codec" {
+    type    = text
+    default = "identity"
+  }
   column "payload_sha256"      { type = text }
   column "payload_size"        { type = integer }
   column "source"              { type = text }
@@ -345,8 +348,6 @@ table "observations" {
     type = integer
     default = 0
   }
-  column "payload_json"        { type = text }
-  column "attributes_json"     { type = text }
   column "normalizer_version"  { type = integer }
 
   primary_key {
