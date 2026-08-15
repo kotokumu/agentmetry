@@ -16,6 +16,8 @@ export class ActivityTable extends LitElement {
   @property() highlightedSpanId = "";
   @property() highlightedTraceId = "";
   @property() pagingContext = "";
+  @property({ attribute: false }) locationForTrace: (traceId: string) => string =
+    (traceId) => `/traces/${encodeURIComponent(traceId)}`;
 
   private readonly pagingLatched: Record<ActivityDirection, boolean> = { newer: false, older: false };
   private pagingObserver?: IntersectionObserver;
@@ -163,8 +165,23 @@ export class ActivityTable extends LitElement {
   private traceView(activity: Activity) {
     const traceId = activity.traceId || activity.relatedTraceId;
     return traceId
-      ? html`<a class="trace" href=${`/traces/${encodeURIComponent(traceId)}`} aria-label=${`Open trace ${traceId}`}>${activity.traceId ? shortId(traceId) : html`Linked ${shortId(traceId)}`}</a>`
+      ? html`<a class="trace" href=${this.locationForTrace(traceId)} aria-label=${`Open trace ${traceId}`} @click=${(event: MouseEvent) => this.traceSelected(event, activity, traceId)}>${activity.traceId ? shortId(traceId) : html`Linked ${shortId(traceId)}`}</a>`
       : html`${NOT_APPLICABLE}`;
+  }
+
+  private traceSelected(event: MouseEvent, activity: Activity, traceId: string) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.dispatchEvent(new CustomEvent("trace-selected", {
+      detail: {
+        traceId,
+        sourceId: activity.source,
+        conversationId: activity.runId,
+        spanId: activity.spanId || activity.relatedSpanId,
+      },
+      bubbles: true,
+      composed: true,
+    }));
   }
 }
 

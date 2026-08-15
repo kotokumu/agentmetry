@@ -27,7 +27,15 @@ export class ConversationWorkspace extends LitElement {
   @property() search = "";
   @property({ attribute: false }) sources: readonly TelemetrySource[] = [];
   @property({ attribute: false }) requestedConversation?: ConversationTarget;
+  @property() listHref = "/";
+  @property() returnHref = "";
+  @property() returnLabel = "";
+  @property() requestedAgentId = "";
   @property({ type: Boolean }) active = true;
+  @property({ attribute: false }) locationForSession: (sourceId: string, sessionId: string) => string =
+    (sourceId, sessionId) => `/conversations/${encodeURIComponent(sourceId)}/${encodeURIComponent(sessionId)}`;
+  @property({ attribute: false }) locationForTrace: (traceId: string) => string =
+    (traceId) => `/traces/${encodeURIComponent(traceId)}`;
   private readonly conversations = new ConversationsController(
     this,
     agentmetryClient,
@@ -35,16 +43,36 @@ export class ConversationWorkspace extends LitElement {
     () => this.active,
   );
   private lastSummaryKey = "";
+  private restoredAgentKey = "";
+  private lastReadyKey = "";
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
     .workspace { display: grid; grid-template-columns: 264px minmax(0, 1fr); gap: 12px; align-items: start; }
-    aside.panel { position: sticky; top: 16px; }
+    aside.panel {
+      position: sticky;
+      top: 16px;
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100dvh - 32px);
+      overflow: hidden;
+    }
+    aside.panel > h2, aside.panel > am-session-filter { flex: 0 0 auto; }
+    aside.panel > am-session-list {
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
+    }
     .detail { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; min-width: 0; }
     .session-head-panel, .operations-panel, .detail > .empty { grid-column: 1 / -1; }
     .traffic-panel { grid-column: span 5; padding-bottom: 12px; }
     .topology-panel { grid-column: span 7; padding-bottom: 12px; }
     .session-head-panel { padding-top: 12px; padding-bottom: 12px; }
+    .context-return, .list-return { display: inline-flex; margin-bottom: 11px; color: var(--am-accent); font: 700 .72rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-decoration: none; }
+    .context-return:hover, .context-return:focus-visible, .list-return:hover, .list-return:focus-visible { color: var(--am-text); outline: 2px solid var(--am-accent-soft); outline-offset: 4px; }
+    .list-return { display: none; }
     .session-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
     .session-id { margin: 2px 0 0; font: .78rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
     .session-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
@@ -57,7 +85,15 @@ export class ConversationWorkspace extends LitElement {
     .retry { margin-top: 10px; padding: 7px 11px; }
     .agent-filter button:hover, .agent-filter button:focus-visible, .retry:hover, .retry:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     @media (max-width: 1200px) { .workspace { grid-template-columns: 240px minmax(0, 1fr); } }
-    @media (max-width: 950px) { .workspace { grid-template-columns: 1fr; } aside.panel { position: static; } }
+    @media (max-width: 950px) {
+      .workspace { grid-template-columns: 1fr; }
+      aside.panel { position: static; display: block; max-height: none; overflow: visible; }
+      aside.panel > am-session-list { overflow-y: visible; }
+      .workspace[data-view="detail"] aside { display: none; }
+      .workspace[data-view="list"] .detail { display: none; }
+      .list-return { display: inline-flex; }
+      .context-return + .list-return { display: none; }
+    }
     @media (max-width: 640px) { .session-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail { gap: 12px; } .traffic-panel, .topology-panel { grid-column: 1 / -1; } }
     @media (max-width: 480px) { .session-head { display: block; } }
   `];
@@ -65,6 +101,8 @@ export class ConversationWorkspace extends LitElement {
   protected willUpdate(changed: PropertyValues<this>) {
     if (changed.has("range") || changed.has("sourceId") || changed.has("search")) this.conversations.filtersChanged();
     if (changed.has("requestedConversation")) {
+      this.restoredAgentKey = "";
+      this.lastReadyKey = "";
       if (this.requestedConversation) this.conversations.select(this.requestedConversation);
       else this.conversations.clearRoute();
     }
@@ -80,8 +118,8 @@ export class ConversationWorkspace extends LitElement {
           ? this.conversations.agentActivityPage.activities : []
         : selected.activities
       : [];
-    return html`<section class="workspace">
-      <aside class="panel"><h2>Conversations</h2><am-session-filter
+    return html`<section class="workspace" data-view=${this.requestedConversation ? "detail" : "list"}>
+      <aside class="panel"><h2 class="list-heading" tabindex="-1">Conversations</h2><am-session-filter
         .sources=${this.sources.length ? this.sources : this.conversations.sources}
         .selectedSource=${this.sourceId}
         .search=${this.search}
@@ -92,6 +130,7 @@ export class ConversationWorkspace extends LitElement {
         .filterActive=${Boolean(this.sourceId || this.search)}
         .selected=${this.conversations.target?.conversationId ?? ""}
         .selectedSource=${this.conversations.target?.sourceId ?? ""}
+        .locationForSession=${this.locationForSession}
       ></am-session-list></aside>
       <div class="detail">${selected ? this.renderSelected(selected, selectedAgentId, visibleActivities)
         : this.conversations.loadingList ? html`<section class="panel empty" role="status"><div><h2>Loading conversations</h2><p>Reading the latest bounded conversation list.</p></div></section>`
@@ -103,6 +142,8 @@ export class ConversationWorkspace extends LitElement {
   }
 
   protected updated() {
+    this.restoreRequestedAgent();
+    this.reportViewReady();
     const status = this.conversations.listFailed ? "failed" : this.conversations.loadingList ? "loading" : "ready";
     const sessions = this.conversations.sessions;
     const detail = {
@@ -118,7 +159,7 @@ export class ConversationWorkspace extends LitElement {
 
   private renderSelected(selected: Session, selectedAgentId: string, activities: Session["activities"]) {
     return html`
-      <section class="panel session-head-panel"><div class="session-head"><div><p class="eyebrow">Selected conversation</p><p class="session-id">${selected.id}</p></div></div><div class="session-metrics" aria-label="Selected conversation usage">
+      <section class="panel session-head-panel">${this.returnHref ? html`<a class="context-return" href=${this.returnHref} @click=${this.returnToOrigin}>← ${this.returnLabel}</a>` : null}<a class="list-return" href=${this.listHref} @click=${this.returnToList}>← Conversations</a><div class="session-head"><div><p class="eyebrow">Selected conversation</p><h2 class="session-id" tabindex="-1">${selected.id}</h2></div></div><div class="session-metrics" aria-label="Selected conversation usage">
         <am-kpi-card label="Total tokens" .value=${formatOptionalNumber(selected.tokens.total)} hint="Input + output"></am-kpi-card>
         <am-kpi-card label="Input tokens" .value=${formatOptionalNumber(selected.tokens.input)} hint="Reported by model calls"></am-kpi-card>
         <am-kpi-card label="Output tokens" .value=${formatOptionalNumber(selected.tokens.output)} hint="Reported by model calls"></am-kpi-card>
@@ -143,14 +184,65 @@ export class ConversationWorkspace extends LitElement {
       .loadError=${selectedAgentId ? agentPage?.error ?? "" : activityPage?.error ?? ""}
       .highlightedSpanId=${this.conversations.highlightedSpanId}
       .highlightedTraceId=${this.conversations.highlightedTraceId}
+      .locationForTrace=${this.locationForTrace}
       .pagingContext=${`${selected.sourceId}:${selected.id}:${selectedAgentId}`}
       @activities-needed=${this.activitiesNeeded}
     ></am-activity-table></section>`;
   }
 
-  private agentSelected(event: CustomEvent<{ agentId: string }>) { this.conversations.selectAgent(event.detail.agentId); }
-  private readonly clearAgentSelection = () => this.conversations.selectAgent("");
+  private agentSelected(event: CustomEvent<{ agentId: string }>) {
+    this.conversations.selectAgent(event.detail.agentId);
+    this.reportViewStateChanged();
+  }
+  private readonly clearAgentSelection = () => {
+    this.conversations.selectAgent("");
+    this.reportViewStateChanged();
+  };
   private readonly retryConversation = () => this.conversations.refreshSelected();
+  private readonly returnToOrigin = (event: MouseEvent) => this.requestReturn(event, "origin");
+  private readonly returnToList = (event: MouseEvent) => this.requestReturn(event, "list");
+  private requestReturn(event: MouseEvent, to: "origin" | "list") {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.dispatchEvent(new CustomEvent("conversation-return-requested", { detail: { to }, bubbles: true, composed: true }));
+  }
+
+  get navigationViewState() {
+    return { selectedAgentId: this.conversations.selectedAgentId } as const;
+  }
+
+  focusRouteHeading(view: "detail" | "list") {
+    if (view === "detail" && this.requestedConversation) {
+      const selected = this.conversations.selected;
+      if (!selected || selected.id !== this.requestedConversation.conversationId || selected.sourceId !== this.requestedConversation.sourceId) return false;
+    }
+    const selector = view === "detail" ? ".session-id, .detail h2" : ".list-heading";
+    const heading = this.shadowRoot?.querySelector<HTMLElement>(selector);
+    heading?.focus({ preventScroll: true });
+    return Boolean(heading);
+  }
+
+  private restoreRequestedAgent() {
+    const selected = this.conversations.selected;
+    if (!selected || !this.requestedAgentId || !selected.agents.some(({ agentId }) => agentId === this.requestedAgentId)) return;
+    const key = `${selected.sourceId}:${selected.id}:${this.requestedAgentId}`;
+    if (this.restoredAgentKey === key) return;
+    this.restoredAgentKey = key;
+    this.conversations.selectAgent(this.requestedAgentId);
+  }
+
+  private reportViewReady() {
+    const selected = this.conversations.selected;
+    if (!selected) return;
+    const key = `${selected.sourceId}:${selected.id}:${this.conversations.highlightedTraceId}:${this.conversations.highlightedSpanId}`;
+    if (this.lastReadyKey === key) return;
+    this.lastReadyKey = key;
+    this.dispatchEvent(new CustomEvent("conversation-view-ready", { bubbles: true, composed: true }));
+  }
+
+  private reportViewStateChanged() {
+    this.dispatchEvent(new CustomEvent("conversation-view-state-changed", { bubbles: true, composed: true }));
+  }
   private activitiesNeeded(event: CustomEvent<{ direction: ActivityDirection }>) {
     if (this.conversations.selectedAgentId) void this.conversations.loadAgentActivities(event.detail.direction);
     else void this.conversations.loadActivities(event.detail.direction);

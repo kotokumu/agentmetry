@@ -10,6 +10,7 @@ export class SessionList extends LitElement {
   @property({ type: Boolean }) loading = false;
   @property({ type: Boolean }) filterActive = false;
   @property({ type: Boolean }) unavailable = false;
+  @property({ attribute: false }) locationForSession: (sourceId: string, sessionId: string) => string = conversationPath;
 
   static styles = css`
     :host { display: block; }
@@ -31,7 +32,7 @@ export class SessionList extends LitElement {
     if (this.sessions.length === 0) return html`<p class="empty">${this.filterActive ? "No matching conversations." : "No conversations yet."}</p>`;
     return html`<nav aria-label="Agent conversations">${this.sessions.map((session) => html`
       <a
-        href=${conversationPath(session.sourceId, session.id)}
+        href=${this.locationForSession(session.sourceId, session.id)}
         aria-current=${session.id === this.selected && session.sourceId === this.selectedSource ? "page" : "false"}
         @click=${(event: MouseEvent) => this.select(event, session.sourceId, session.id)}
       >

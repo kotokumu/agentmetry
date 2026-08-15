@@ -1,7 +1,7 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/telemetry";
-import { conversationHref, tokenEvidence } from "../model/trace-analysis";
+import { conversationHref, type ConversationTarget, tokenEvidence } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";
@@ -20,6 +20,7 @@ export class TraceWaterfall extends LitElement {
   @property({ type: Boolean }) hasMore = false;
   @property({ type: Boolean }) loading = false;
   @property({ attribute: false }) onLoadMore?: () => void;
+  @property({ attribute: false }) locationForConversation?: (target: ConversationTarget) => string;
   private loadMoreObserver?: IntersectionObserver;
 
   static styles = css`
@@ -70,7 +71,7 @@ export class TraceWaterfall extends LitElement {
           : html`<span class="event" style=${`left:${row.offsetPercent}%`}></span>`}
         </div>
         </summary>
-        ${activityEvidence(activity)}
+        ${this.activityEvidence(activity)}
       </details>`;})}
     </div>${this.hasMore ? html`<div class="load-status" role="status" aria-live="polite">${this.loading ? "Loading more trace data…" : ""}</div>` : null}`;
   }
@@ -103,6 +104,31 @@ export class TraceWaterfall extends LitElement {
       return;
     }
     this.dispatchEvent(new CustomEvent("trace-activities-needed", { bubbles: true, composed: true }));
+  }
+
+  private activityEvidence(activity: Activity) {
+    const target = conversationTarget(activity);
+    const href = target && this.locationForConversation
+      ? this.locationForConversation(target)
+      : conversationHref(activity);
+    return activityEvidence(activity, href
+      ? (event: MouseEvent) => this.conversationSelected(event, activity)
+      : undefined, href);
+  }
+
+  private conversationSelected(event: MouseEvent, activity: Activity) {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    this.dispatchEvent(new CustomEvent("conversation-selected-from-trace", {
+      detail: {
+        sourceId: activity.source,
+        conversationId: activity.runId,
+        traceId: activity.traceId || activity.relatedTraceId,
+        spanId: activity.spanId || activity.relatedSpanId,
+      },
+      bubbles: true,
+      composed: true,
+    }));
   }
 }
 
@@ -157,8 +183,7 @@ const durationLabel = (activity: Activity) => {
   const milliseconds = Math.max(0, end - start);
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 2 : 1)} s`;
 };
-const activityEvidence = (activity: Activity) => {
-  const href = conversationHref(activity);
+const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => void, href = conversationHref(activity)) => {
   const facts = [
     ["Kind", activity.kind],
     ["Tool name", activity.toolName || NOT_APPLICABLE],
@@ -185,8 +210,18 @@ const activityEvidence = (activity: Activity) => {
   ];
   return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>Token breakdown</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
     <pre class="message">${activity.content || NOT_APPLICABLE}</pre>
-    ${href ? html`<a class="conversation" href=${href}>Open ${activity.spanId ? "span in" : ""} conversation</a>` : null}
+    ${href ? html`<a class="conversation" href=${href} @click=${navigate}>Open ${activity.spanId ? "span in" : ""} conversation</a>` : null}
   </div>`;
+};
+
+const conversationTarget = (activity: Activity): ConversationTarget | undefined => {
+  if (!conversationHref(activity)) return undefined;
+  return {
+    sourceId: activity.source,
+    conversationId: activity.runId,
+    traceId: activity.traceId || activity.relatedTraceId,
+    spanId: activity.spanId || activity.relatedSpanId,
+  };
 };
 
 const operationName = (activity: Activity) => activity.toolName || activity.name;

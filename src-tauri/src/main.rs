@@ -8,7 +8,7 @@ use std::{
 };
 
 use tauri::{
-    menu::MenuBuilder,
+    menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
     Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WindowEvent,
@@ -29,6 +29,19 @@ const DASHBOARD_ADDRESS: &str = "127.0.0.1:17890";
 const OTLP_HTTP_ADDRESS: &str = "127.0.0.1:4318";
 const OTLP_GRPC_ADDRESS: &str = "127.0.0.1:4317";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(10);
+const DESKTOP_NAVIGATION_SCRIPT: &str = r#"
+  if (window.location.origin === 'http://127.0.0.1:17890') {
+    window.addEventListener('mouseup', (event) => {
+      if (event.button === 3) {
+        event.preventDefault();
+        window.history.back();
+      } else if (event.button === 4) {
+        event.preventDefault();
+        window.history.forward();
+      }
+    }, true);
+  }
+"#;
 
 struct SidecarController {
     child: Option<CommandChild>,
@@ -131,6 +144,7 @@ fn main() {
             app.manage(SidecarState(Mutex::new(controller)));
 
             let window = build_main_window(app)?;
+            build_navigation_menu(app)?;
             build_tray(app)?;
             window
                 .show()
@@ -151,6 +165,8 @@ fn main() {
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => show_main_window(app),
             "hide" => hide_main_window(app),
+            "navigate-back" => navigate_history(app, "window.history.back()"),
+            "navigate-forward" => navigate_history(app, "window.history.forward()"),
             "quit" => {
                 let _ = with_controller(app, |controller, _| {
                     controller.shutdown();
@@ -343,8 +359,53 @@ fn build_main_window(app: &tauri::App) -> Result<WebviewWindow, Box<dyn std::err
         .title("Agentmetry")
         .inner_size(1440.0, 960.0)
         .min_inner_size(960.0, 640.0)
+        .initialization_script(DESKTOP_NAVIGATION_SCRIPT)
         .build()?;
+    enable_native_navigation_gestures(&window)?;
     Ok(window)
+}
+
+fn build_navigation_menu(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    let (back_accelerator, forward_accelerator) = ("Cmd+[", "Cmd+]");
+    #[cfg(not(target_os = "macos"))]
+    let (back_accelerator, forward_accelerator) = ("Alt+Left", "Alt+Right");
+
+    let back = MenuItemBuilder::with_id("navigate-back", "Back")
+        .accelerator(back_accelerator)
+        .build(app)?;
+    let forward = MenuItemBuilder::with_id("navigate-forward", "Forward")
+        .accelerator(forward_accelerator)
+        .build(app)?;
+    let navigation = SubmenuBuilder::new(app, "Go")
+        .item(&back)
+        .item(&forward)
+        .build()?;
+    if let Some(menu) = app.menu() {
+        menu.append(&navigation)?;
+    } else {
+        app.set_menu(MenuBuilder::new(app).item(&navigation).build()?)?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn enable_native_navigation_gestures(window: &WebviewWindow) -> tauri::Result<()> {
+    window.with_webview(|webview| unsafe {
+        let view: &objc2_web_kit::WKWebView = &*webview.inner().cast();
+        view.setAllowsBackForwardNavigationGestures(true);
+    })
+}
+
+#[cfg(not(target_os = "macos"))]
+fn enable_native_navigation_gestures(_window: &WebviewWindow) -> tauri::Result<()> {
+    Ok(())
+}
+
+fn navigate_history(app: &tauri::AppHandle, script: &str) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.eval(script);
+    }
 }
 
 fn build_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {

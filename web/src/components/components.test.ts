@@ -222,6 +222,30 @@ describe("dashboard components", () => {
     expect(traceLink?.getAttribute("href")).toBe("/traces/trace-123456789");
   });
 
+  it("emits the conversation context when a trace link is followed in place", async () => {
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = [{
+      source: "example", signal: "trace", traceId: "trace-123456789", spanId: "span-1",
+      name: "operation", kind: "tool", agentId: "main", runId: "conversation-1", model: "",
+      observedAt: "2026-08-11T00:00:01Z", contributesToTotal: false,
+      tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null },
+    }];
+    const listener = vi.fn();
+    table.addEventListener("trace-selected", listener);
+    document.body.append(table);
+    await table.updateComplete;
+
+    table.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace")?.click();
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      traceId: "trace-123456789",
+      sourceId: "example",
+      conversationId: "conversation-1",
+      spanId: "span-1",
+    });
+  });
+
   it("shows prompt and usage correlation next to a linked trace", async () => {
     const table = document.createElement("am-activity-table") as ActivityTable;
     table.activities = [{
@@ -609,6 +633,38 @@ describe("dashboard components", () => {
     expect(logEvidence).not.toContain("N/A");
     expect(logEvidence).not.toContain("corroborating");
     expect(waterfall.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/conversations/codex/conversation-b?traceId=trace-123456789&spanId=child"]')).not.toBeNull();
+  });
+
+  it("emits a span-qualified conversation target from trace evidence", async () => {
+    const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
+    waterfall.trace = traceFixture;
+    const listener = vi.fn();
+    waterfall.addEventListener("conversation-selected-from-trace", listener);
+    document.body.append(waterfall);
+    await waterfall.updateComplete;
+
+    waterfall.shadowRoot?.querySelectorAll<HTMLAnchorElement>("a.conversation")[1]?.click();
+
+    expect(listener).toHaveBeenCalledOnce();
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toEqual({
+      sourceId: "codex",
+      conversationId: "conversation-b",
+      traceId: "trace-123456789",
+      spanId: "child",
+    });
+  });
+
+  it("uses the shared navigation location for reload-safe trace evidence links", async () => {
+    const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
+    waterfall.trace = traceFixture;
+    waterfall.locationForConversation = (target) =>
+      `/filtered/${encodeURIComponent(target.conversationId)}?traceId=${encodeURIComponent(target.traceId ?? "")}`;
+    document.body.append(waterfall);
+    await waterfall.updateComplete;
+
+    expect(waterfall.shadowRoot?.querySelectorAll<HTMLAnchorElement>("a.conversation")[1]?.getAttribute("href")).toBe(
+      "/filtered/conversation-b?traceId=trace-123456789",
+    );
   });
 
   it("shows partial token evidence without inventing a total or topology edge", async () => {
