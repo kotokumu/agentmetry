@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { Activity, Trace } from "../model/update";
+import type { Activity, Trace } from "../model/telemetry";
 import { conversationHref, tokenEvidence } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";

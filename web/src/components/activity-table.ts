@@ -1,6 +1,6 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { Activity, ActivityDirection } from "../model/update";
+import type { Activity, ActivityDirection } from "../model/telemetry";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";

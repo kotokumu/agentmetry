@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { Trace } from "../model/update";
+import type { Trace } from "../model/telemetry";
 import { aggregateTraceAgentUsage } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_REPORTED } from "../presentation/missing-data";

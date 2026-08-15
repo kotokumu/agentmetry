@@ -1,6 +1,7 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { TelemetrySource } from "../model/update";
+import { live } from "lit/directives/live.js";
+import type { TelemetrySource } from "../model/telemetry";
 
 @customElement("am-session-filter")
 export class SessionFilter extends LitElement {
@@ -21,14 +22,21 @@ export class SessionFilter extends LitElement {
 
   render() {
     return html`<div class="filters">
-      <label>Source<select .value=${this.selectedSource} @change=${this.selectSource}>
+      <label>Source<select .value=${live(this.selectedSource)} @change=${this.selectSource}>
         <option value="">All sources</option>
         ${this.sources.map((source) => html`<option value=${source.id}>${source.label}</option>`)}
       </select></label>
       <label>Search
-        <input type="search" .value=${this.search} placeholder="Prompts, messages, tools…" aria-label="Search conversations" @input=${this.searchChanged}>
+        <input type="search" .value=${live(this.search)} placeholder="Prompts, messages, tools…" aria-label="Search conversations" @input=${this.searchChanged}>
       </label>
     </div>`;
+  }
+
+  protected updated(changed: PropertyValues<this>) {
+    if (changed.has("selectedSource") || changed.has("sources")) {
+      const select = this.shadowRoot?.querySelector<HTMLSelectElement>("select");
+      if (select && select.value !== this.selectedSource) select.value = this.selectedSource;
+    }
   }
 
   private selectSource(event: Event) {

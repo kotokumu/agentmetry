@@ -5,7 +5,10 @@ import type { TimeRangeFilter } from "../components/time-range-filter";
 import type { SessionList } from "../components/session-list";
 import type { ActivityTable } from "../components/activity-table";
 import type { KpiCard } from "../components/kpi-card";
-import type { TokenUsage } from "../model/update";
+import type { ConversationWorkspace } from "../components/conversation-workspace";
+import type { TraceExplorer } from "../components/trace-explorer";
+import type { DashboardSummary } from "../components/dashboard-summary";
+import type { TokenUsage } from "../model/telemetry";
 
 const emptyOverview = {
   sources: [],
@@ -81,6 +84,11 @@ const activitiesResponse = (session: TestSession, agentId = "") => ({
 
 const connectPath = (url: string) => new URL(url, "http://localhost").pathname;
 const connectBody = (call: readonly unknown[]) => JSON.parse(new TextDecoder().decode((call[1] as { body: Uint8Array }).body));
+const workspaceOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<ConversationWorkspace>("am-conversation-workspace");
+const workspaceRootOf = (app: AgentmetryApp) => workspaceOf(app)?.shadowRoot;
+const traceExplorerOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer");
+const traceRootOf = (app: AgentmetryApp) => traceExplorerOf(app)?.shadowRoot;
+const dashboardOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<DashboardSummary>("am-dashboard-summary");
 
 const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
   const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { agentId?: string } : {};
@@ -116,13 +124,77 @@ describe("Agentmetry app composition", () => {
 
     await app.updateComplete;
 
-    const content = app.shadowRoot?.textContent ?? "";
+    const content = `${app.shadowRoot?.textContent ?? ""} ${workspaceRootOf(app)?.textContent ?? ""}`;
     expect(content).toContain("AGENTMETRY");
     expect(content).toContain("Agent conversations");
     expect(content).toContain("Receiving OTLP locally");
     expect(content).toContain("Loading conversations");
     expect(app.shadowRoot?.querySelector("main")?.getAttribute("data-density")).toBe("operator");
     expect(app.shadowRoot?.querySelector<HTMLAnchorElement>("a.brand")?.getAttribute("href")).toBe("/");
+  });
+
+  it("composes feature components instead of rendering feature internals in the app shell", async () => {
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await app.updateComplete;
+
+    expect(app.shadowRoot?.querySelector("am-dashboard-summary")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector("am-conversation-workspace")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector("am-trace-explorer")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector(".kpis")).toBeNull();
+    expect(app.shadowRoot?.querySelector(".workspace")).toBeNull();
+  });
+
+  it("renders conversations without waiting for the dashboard task", async () => {
+    const overview = {
+      ...emptyOverview,
+      sessions: [{
+        id: "session-fast",
+        sourceId: "codex",
+        sources: [{ id: "codex", label: "Codex" }],
+        startedAt: "2026-08-11T00:00:00Z",
+        endedAt: "2026-08-11T00:01:00Z",
+        activityCount: 0,
+        tokens: emptyOverview.tokens,
+        agents: [],
+        activities: [],
+      }],
+    } as TestOverview;
+    const dashboardNeverCompletes = new Promise<ReturnType<typeof connectResponse>>(() => undefined);
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
+      switch (connectPath(url).split("/").at(-1)) {
+        case "GetDashboard": return dashboardNeverCompletes;
+        case "ListSessions": return connectResponse(sessionsResponse(overview));
+        case "GetSession": return connectResponse({ session: sessionSummary(overview.sessions[0]), traceIds: [] });
+        case "ListSessionActivities": return connectResponse(activitiesResponse(overview.sessions[0]));
+        default: return connectResponse({});
+      }
+    }));
+
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("session-fast"));
+    expect(workspaceRootOf(app)?.textContent).toContain("Selected conversation");
+    expect(app.shadowRoot?.querySelector(".status")?.textContent).toContain("Refreshing dashboard");
+  });
+
+  it("shows unavailable conversation KPIs when the conversation list fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
+      switch (connectPath(url).split("/").at(-1)) {
+        case "GetDashboard": return connectResponse(dashboardResponse(emptyOverview));
+        case "ListSessions": throw new Error("list unavailable");
+        default: return connectResponse({});
+      }
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(dashboardOf(app)?.conversationStatus).toBe("failed"));
+    const cards = Array.from(dashboardOf(app)?.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? []);
+    expect(cards[0]?.value).toBe("Unavailable");
+    expect(cards[2]?.value).toBe("Unavailable");
   });
 
   it("returns from a conversation route to the dashboard through the brand", async () => {
@@ -179,14 +251,14 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
-    await vi.waitFor(() => expect(app.shadowRoot?.textContent).toContain("Selected conversation"));
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("Selected conversation"));
 
-    const content = app.shadowRoot?.textContent ?? "";
+    const content = workspaceRootOf(app)?.textContent ?? "";
     expect(content).not.toContain("2 traces");
     expect(content).not.toContain("raw-trace-id-one");
     expect(content).not.toContain("raw-trace-id-two");
-    expect(app.shadowRoot?.querySelector(".workspace .detail > .operations-panel am-activity-table")).not.toBeNull();
-    const detail = app.shadowRoot?.querySelector(".workspace .detail");
+    expect(workspaceRootOf(app)?.querySelector(".workspace .detail > .operations-panel am-activity-table")).not.toBeNull();
+    const detail = workspaceRootOf(app)?.querySelector(".workspace .detail");
     const children = Array.from(detail?.children ?? []);
     expect(children.findIndex((child) => child.classList.contains("split"))).toBeLessThan(children.findIndex((child) => child.classList.contains("operations-panel")));
   });
@@ -211,9 +283,9 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector(".session-metrics")).toBeTruthy());
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-metrics")).toBeTruthy());
 
-    const metricCards = Array.from(app.shadowRoot?.querySelectorAll<KpiCard>(".session-metrics am-kpi-card") ?? []);
+    const metricCards = Array.from(workspaceRootOf(app)?.querySelectorAll<KpiCard>(".session-metrics am-kpi-card") ?? []);
     await Promise.all(metricCards.map((card) => card.updateComplete));
     const metrics = metricCards.map((card) => card.shadowRoot?.textContent ?? "").join(" ");
     expect(metrics).toContain("Total tokens");
@@ -249,22 +321,22 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-agent-tree")).toBeTruthy());
-    const tree = app.shadowRoot?.querySelector("am-agent-tree");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-agent-tree")).toBeTruthy());
+    const tree = workspaceRootOf(app)?.querySelector("am-agent-tree");
     await tree?.updateComplete;
     tree?.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='reviewer']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
-    await app.updateComplete;
+    await workspaceOf(app)?.updateComplete;
 
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(1));
-    const table = app.shadowRoot?.querySelector<ActivityTable>("am-activity-table");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(1));
+    const table = workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table");
     expect(table?.activities).toHaveLength(1);
     expect(table?.activities[0]?.agentId).toBe("reviewer");
-    expect(app.shadowRoot?.textContent).toContain("Filtered by");
+    expect(workspaceRootOf(app)?.textContent).toContain("Filtered by");
 
-    app.shadowRoot?.querySelector<HTMLButtonElement>(".agent-filter button")?.click();
-    await app.updateComplete;
-    expect(app.shadowRoot?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(2);
-    expect(app.shadowRoot?.textContent).not.toContain("Filtered by");
+    workspaceRootOf(app)?.querySelector<HTMLButtonElement>(".agent-filter button")?.click();
+    await workspaceOf(app)?.updateComplete;
+    expect(workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(2);
+    expect(workspaceRootOf(app)?.textContent).not.toContain("Filtered by");
   });
 
   it("restores a source-qualified conversation and highlighted span from its URL", async () => {
@@ -294,10 +366,10 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-activity-table")).toBeTruthy());
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-activity-table")).toBeTruthy());
 
-    const list = app.shadowRoot?.querySelector<SessionList>("am-session-list");
-    const table = app.shadowRoot?.querySelector<ActivityTable>("am-activity-table");
+    const list = workspaceRootOf(app)?.querySelector<SessionList>("am-session-list");
+    const table = workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table");
     expect(list?.selected).toBe("conversation-1");
     expect(list?.selectedSource).toBe("codex");
     expect(table?.highlightedTraceId).toBe(traceId);
@@ -364,29 +436,36 @@ describe("Agentmetry app composition", () => {
     vi.stubGlobal("fetch", fetchStub);
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-activity-table")?.shadowRoot?.querySelector("a.trace")).toBeTruthy());
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-activity-table")?.shadowRoot?.querySelector("a.trace")).toBeTruthy());
 
-    const activityTable = app.shadowRoot?.querySelector("am-activity-table");
+    const activityTable = workspaceRootOf(app)?.querySelector("am-activity-table");
     expect(activityTable?.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace")?.getAttribute("href")).toBe("/traces/trace-123456789");
     history.pushState({}, "", "/traces/trace-123456789");
     window.dispatchEvent(new PopStateEvent("popstate"));
 
     await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetTrace"))).toBe(true));
-    await vi.waitFor(() => expect(app.shadowRoot?.textContent).toContain("Trace explorer"));
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-summary")).not.toBeNull());
-    expect(app.shadowRoot?.querySelector("am-trace-waterfall")).not.toBeNull();
+    await vi.waitFor(() => expect(traceRootOf(app)?.textContent).toContain("Trace explorer"));
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-summary")).not.toBeNull());
+    expect(traceRootOf(app)?.querySelector("am-trace-waterfall")).not.toBeNull();
     expect(location.pathname).toBe("/traces/trace-123456789");
 
-    const closeLink = app.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace-close");
+    const closeLink = traceRootOf(app)?.querySelector<HTMLAnchorElement>("a.trace-close");
     expect(closeLink?.getAttribute("href")).toBe("/");
     closeLink?.click();
-    await app.updateComplete;
-    expect(app.shadowRoot?.textContent).toContain("Selected conversation");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("Selected conversation"));
     expect(location.pathname).toBe("/");
   });
 
   it("loads a trace from a reload-safe deep link", async () => {
     history.replaceState({}, "", "/traces/direct-trace");
+    const overview = {
+      ...emptyOverview,
+      sessions: [{
+        id: "background-conversation", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+        startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z", activityCount: 3,
+        tokens: emptyOverview.tokens, agents: [], activities: [],
+      }],
+    } as TestOverview;
     const trace = {
       traceId: "direct-trace",
       startedAt: "2026-08-11T00:00:00Z",
@@ -400,8 +479,8 @@ describe("Agentmetry app composition", () => {
     };
     const fetchStub = vi.fn().mockImplementation(async (url: string) => {
       switch (connectPath(url).split("/").at(-1)) {
-        case "GetDashboard": return connectResponse(dashboardResponse(emptyOverview as TestOverview));
-        case "ListSessions": return connectResponse(sessionsResponse(emptyOverview as TestOverview));
+        case "GetDashboard": return connectResponse(dashboardResponse(overview));
+        case "ListSessions": return connectResponse(sessionsResponse(overview));
         case "GetTrace": return connectResponse(trace);
         default: return connectResponse({});
       }
@@ -411,6 +490,9 @@ describe("Agentmetry app composition", () => {
     document.body.append(app);
 
     await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetTrace"))).toBe(true));
-    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-summary")?.shadowRoot?.textContent).toContain("direct-trace"));
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-summary")?.shadowRoot?.textContent).toContain("direct-trace"));
+    await vi.waitFor(() => expect(dashboardOf(app)?.conversationCount).toBe(1));
+    expect(dashboardOf(app)?.activityCount).toBe(3);
+    expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetSession"))).toBe(false);
   });
 });

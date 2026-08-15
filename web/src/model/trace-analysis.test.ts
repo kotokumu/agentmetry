@@ -5,7 +5,7 @@ import {
   conversationTargetFromLocation,
   tokenEvidence,
 } from "./trace-analysis";
-import type { Activity, Trace } from "./update";
+import type { Activity, Trace } from "./telemetry";
 
 const activity = (overrides: Partial<Activity>): Activity => ({
   source: "example",

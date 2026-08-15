@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { Trace } from "../model/update";
+import type { Trace } from "../model/telemetry";
 
 @customElement("am-trace-summary")
 export class TraceSummary extends LitElement {

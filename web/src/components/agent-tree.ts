@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { AgentSession } from "../model/update";
+import type { AgentSession } from "../model/telemetry";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";

@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { PlanUsageSnapshot } from "../model/update";
+import type { PlanUsageSnapshot } from "../model/telemetry";
 import { NOT_CONNECTED, NOT_REPORTED } from "../presentation/missing-data";
 
 @customElement("am-plan-usage")

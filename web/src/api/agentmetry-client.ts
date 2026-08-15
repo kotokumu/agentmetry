@@ -16,13 +16,13 @@ import type {
   Activity,
   ActivityDirection,
   AgentSession,
-  Overview,
+  DashboardSummary,
   PlanUsageSnapshot as PlanUsage,
   Session,
   TimeRange as UiTimeRange,
   TokenUsage,
   Trace,
-} from "../model/update";
+} from "../model/telemetry";
 
 const transport = createConnectTransport({ baseUrl: "" });
 const client = createClient(AgentmetryQueryService, transport);
@@ -38,31 +38,32 @@ export type ActivityPage = Readonly<{
 }>;
 
 export const agentmetryClient = {
-  async loadOverview(range: UiTimeRange, sourceId: string, search: string): Promise<Overview> {
-    const filter = { range: toTimeRange(range), sourceId, search };
-    const [dashboardResponse, sessionsResponse] = await Promise.all([
-      client.getDashboard({ filter }),
-      client.listSessions({ filter, page: { pageSize: 100 } }),
-    ]);
-    const dashboard = dashboardResponse.dashboard;
-    if (!dashboard) throw new Error("Dashboard response was empty");
-    const sessions = sessionsResponse.sessions.map((session) => mapSession(session));
-    const first = sessions[0];
-    if (first) {
-      sessions[0] = await this.getSession(first.sourceId, first.id);
-    }
-    return mapOverview(dashboard, sessions);
+  async getDashboard(range: UiTimeRange, sourceId: string, search: string, signal?: AbortSignal): Promise<DashboardSummary> {
+    const response = await client.getDashboard(
+      { filter: { range: toTimeRange(range), sourceId, search } },
+      signal ? { signal } : undefined,
+    );
+    if (!response.dashboard) throw new Error("Dashboard response was empty");
+    return mapDashboard(response.dashboard);
   },
 
-  async getSession(sourceId: string, sessionId: string, traceId?: string, spanId?: string): Promise<Session> {
-    const response = await client.getSession({ sourceId, sessionId });
+  async listSessions(range: UiTimeRange, sourceId: string, search: string, signal?: AbortSignal): Promise<readonly Session[]> {
+    const response = await client.listSessions(
+      { filter: { range: toTimeRange(range), sourceId, search }, page: { pageSize: 100 } },
+      signal ? { signal } : undefined,
+    );
+    return response.sessions.map((session) => mapSession(session));
+  },
+
+  async getSession(sourceId: string, sessionId: string, traceId?: string, spanId?: string, signal?: AbortSignal): Promise<Session> {
+    const response = await client.getSession({ sourceId, sessionId }, signal ? { signal } : undefined);
     if (!response.session) throw new Error("Session response was empty");
     const session = mapSession(response.session, response.traceIds);
-    const page = await this.listSessionActivities(sourceId, sessionId, "older", 0, 100, "", traceId, spanId);
+    const page = await this.listSessionActivities(sourceId, sessionId, "older", 0, 100, "", traceId, spanId, undefined, signal);
     return { ...session, activities: page.activities, activityOffset: page.offset, hasEarlier: page.hasEarlier, hasMore: page.hasMore, nextPageToken: page.nextPageToken, previousPageToken: page.previousPageToken };
   },
 
-  async listSessionActivities(sourceId: string, sessionId: string, direction: ActivityDirection, offset: number, limit: number, pageToken = "", traceId?: string, spanId?: string, agentId?: string): Promise<ActivityPage> {
+  async listSessionActivities(sourceId: string, sessionId: string, direction: ActivityDirection, offset: number, limit: number, pageToken = "", traceId?: string, spanId?: string, agentId?: string, signal?: AbortSignal): Promise<ActivityPage> {
     const response = await client.listSessionActivities({
       sourceId,
       sessionId,
@@ -70,7 +71,7 @@ export const agentmetryClient = {
       direction: direction === "newer" ? PageDirection.NEWER : PageDirection.OLDER,
       anchor: traceId && spanId ? { traceId, spanId } : undefined,
       agentId: agentId || "",
-    });
+    }, signal ? { signal } : undefined);
     const page = response.page;
     const actualOffset = Number(page?.startOffset ?? offset);
     return {
@@ -84,8 +85,8 @@ export const agentmetryClient = {
     };
   },
 
-  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = ""): Promise<Trace> {
-    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken } });
+  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = "", signal?: AbortSignal): Promise<Trace> {
+    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken } }, signal ? { signal } : undefined);
     const page = response.page;
     const actualOffset = Number(page?.startOffset ?? offset);
     return {
@@ -115,7 +116,9 @@ export const agentmetryClient = {
   },
 };
 
-function mapOverview(value: Dashboard, sessions: readonly Session[]): Overview {
+export type AgentmetryClient = typeof agentmetryClient;
+
+function mapDashboard(value: Dashboard): DashboardSummary {
   return {
     sources: value.sources.map((source) => ({ id: source.id, label: source.label })),
     signalCounts: {
@@ -127,7 +130,6 @@ function mapOverview(value: Dashboard, sessions: readonly Session[]): Overview {
     agentCount: Number(value.agentCount),
     tokens: mapTokens(value.tokens),
     recentActivity: value.recentActivity.map(mapActivity),
-    sessions,
     planUsage: value.planUsage.map(mapPlanUsage),
   };
 }

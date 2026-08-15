@@ -1,4 +1,4 @@
-import type { Activity, TokenUsage, Trace, TraceAgent } from "./update";
+import type { Activity, TokenUsage, Trace, TraceAgent } from "./telemetry";
 
 export type ConversationTarget = Readonly<{
   sourceId: string;

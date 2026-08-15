@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { Session } from "../model/update";
+import type { Session } from "../model/telemetry";
 
 @customElement("am-session-list")
 export class SessionList extends LitElement {

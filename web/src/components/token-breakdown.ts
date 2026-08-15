@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { TokenUsage } from "../model/update";
+import type { TokenUsage } from "../model/telemetry";
 import { NOT_REPORTED } from "../presentation/missing-data";
 
 const emptyUsage: TokenUsage = {

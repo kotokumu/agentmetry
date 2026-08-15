@@ -21,7 +21,7 @@ import type { SessionList } from "./session-list";
 import type { TraceSummary } from "./trace-summary";
 import type { TraceParticipants } from "./trace-participants";
 import type { TraceWaterfall } from "./trace-waterfall";
-import type { Trace } from "../model/update";
+import type { Trace } from "../model/telemetry";
 
 afterEach(() => vi.useRealTimers());
 
@@ -486,6 +486,23 @@ describe("dashboard components", () => {
     expect(sourceListener.mock.calls[0][0].detail).toEqual({ sourceId: "claude" });
     expect(searchListener.mock.calls[0][0].detail).toEqual({ search: "repository review" });
 	vi.useRealTimers();
+  });
+
+  it("restores the controlled source value when options return after loading", async () => {
+    const filter = document.createElement("am-session-filter") as SessionFilter;
+    filter.selectedSource = "claude";
+    filter.sources = [{ id: "claude", label: "Claude Code" }];
+    document.body.append(filter);
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.querySelector<HTMLSelectElement>("select")?.value).toBe("claude");
+
+    filter.sources = [];
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.querySelector<HTMLSelectElement>("select")?.value).toBe("");
+
+    filter.sources = [{ id: "claude", label: "Claude Code" }];
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.querySelector<HTMLSelectElement>("select")?.value).toBe("claude");
   });
 
   it("labels each session with its observed telemetry source", async () => {

@@ -1,6 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
-import type { TimeRange } from "../model/update";
+import type { TimeRange } from "../model/telemetry";
 
 export type RangeSelectedDetail = Readonly<{ range: TimeRange }>;
 
