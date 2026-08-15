@@ -98,6 +98,8 @@ func Test_evaluateDesiredSchema(t *testing.T) {
 			want: schema.New("main").AddTables(
 				schema.NewTable("spans"),
 				schema.NewTable("session_rollups"),
+				schema.NewTable("session_links"),
+				schema.NewTable("session_memberships"),
 				schema.NewTable("logs"),
 				schema.NewTable("metrics"),
 				schema.NewTable("otlp_exports"),

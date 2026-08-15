@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-const normalizerVersion = 1
+const normalizerVersion = 2
 
 func BuildTraceObservations(traces ptrace.Traces, projection canonical.Batch) ([]observation.Observation, error) {
 	observations := make([]observation.Observation, 0, len(projection.Spans))

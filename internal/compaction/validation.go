@@ -28,6 +28,8 @@ type journalIdentity struct {
 type validationExpectation struct {
 	journals      []journalIdentity
 	spanKeys      map[string]struct{}
+	sessionLinks  map[string]struct{}
+	sessionNodes  map[string]struct{}
 	observations  int64
 	logs          int64
 	metrics       int64
@@ -53,6 +55,22 @@ func (expected *validationExpectation) add(record storedExport, accepted ingest.
 		if canonical.IsSemanticSpan(span) {
 			expected.spanKeys[span.TraceID+"\x00"+span.SpanID] = struct{}{}
 		}
+	}
+	if expected.sessionLinks == nil {
+		expected.sessionLinks = make(map[string]struct{})
+		expected.sessionNodes = make(map[string]struct{})
+	}
+	for _, link := range accepted.Projection.SessionLinks {
+		if link.ParentSessionID == "" || link.ChildSessionID == "" || link.ParentSessionID == link.ChildSessionID {
+			continue
+		}
+		sourceID := link.Source
+		if sourceID == "" {
+			sourceID = "unknown"
+		}
+		expected.sessionLinks[sourceID+"\x00"+link.ParentSessionID+"\x00"+link.ChildSessionID] = struct{}{}
+		expected.sessionNodes[sourceID+"\x00"+link.ParentSessionID] = struct{}{}
+		expected.sessionNodes[sourceID+"\x00"+link.ChildSessionID] = struct{}{}
 	}
 }
 
@@ -119,6 +137,8 @@ FROM otlp_exports ORDER BY id`)
 		"spans":                int64(len(expected.spanKeys)),
 		"logs":                 expected.logs,
 		"metrics":              expected.metrics,
+		"session_links":        int64(len(expected.sessionLinks)),
+		"session_memberships":  int64(len(expected.sessionNodes)),
 		"plan_usage_snapshots": expected.planSnapshots,
 	}
 	for table, want := range wantCounts {

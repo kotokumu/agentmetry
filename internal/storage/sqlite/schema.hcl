@@ -123,6 +123,34 @@ table "session_rollups" {
   }
 }
 
+table "session_links" {
+  schema = schema.main
+  column "source"            { type = text }
+  column "parent_session_id" { type = text }
+  column "child_session_id"  { type = text }
+  column "observed_at"       { type = text }
+  primary_key {
+    columns = [table.session_links.column.source, table.session_links.column.parent_session_id, table.session_links.column.child_session_id]
+  }
+  index "session_links_source_child_idx" {
+    columns = [table.session_links.column.source, table.session_links.column.child_session_id]
+  }
+}
+
+table "session_memberships" {
+  schema = schema.main
+  column "source"            { type = text }
+  column "session_id"        { type = text }
+  column "root_session_id"   { type = text }
+  column "parent_session_id" { type = text }
+  primary_key {
+    columns = [table.session_memberships.column.source, table.session_memberships.column.session_id]
+  }
+  index "session_memberships_source_root_idx" {
+    columns = [table.session_memberships.column.source, table.session_memberships.column.root_session_id]
+  }
+}
+
 table "logs" {
   schema = schema.main
 

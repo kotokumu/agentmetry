@@ -32,11 +32,16 @@ func (Plugin) Normalize(input source.Event) source.Event {
 	if name == "codex.sse_event" && stringValue(normalized["event.kind"]) == "response.completed" {
 		name = "gen_ai.response.completed"
 	} else if name == "codex.agent_communication" {
-		switch stringValue(normalized["kind"]) {
+		communicationKind := stringValue(normalized["kind"])
+		switch communicationKind {
 		case "spawn", "followup":
 			name = "gen_ai.agent.delegation"
 		default:
 			name = "gen_ai.agent.message"
+		}
+		if communicationKind == "spawn" && stringValue(normalized["state"]) == "send" {
+			copyAlias(normalized, "agentmetry.session.parent.id", "sender_thread_id")
+			copyAlias(normalized, "agentmetry.session.child.id", "receiver_thread_id")
 		}
 	} else if strings.HasPrefix(name, "codex.") {
 		name = "gen_ai." + strings.TrimPrefix(name, "codex.")

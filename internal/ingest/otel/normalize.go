@@ -106,6 +106,13 @@ func (normalizer Normalizer) NormalizeLogs(logs plog.Logs) (canonical.Batch, err
 					Attributes:      attributes,
 					Agent:           agent,
 				})
+				if parentID := firstAttributeString(attributes, "agentmetry.session.parent.id"); parentID != "" {
+					if childID := firstAttributeString(attributes, "agentmetry.session.child.id"); childID != "" && childID != parentID {
+						batch.SessionLinks = append(batch.SessionLinks, canonical.SessionLink{
+							Source: profiled.Source, ParentSessionID: parentID, ChildSessionID: childID, ObservedAt: observedAt,
+						})
+					}
+				}
 			}
 		}
 	}

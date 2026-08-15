@@ -12,7 +12,17 @@ import (
 func (store *Store) GetConversation(ctx context.Context, filter query.ConversationFilter) (query.Session, error) {
 	sourceID := filter.Identity.SourceID()
 	conversationID := filter.Identity.ConversationID()
-	activities, err := store.activities(ctx, formatTime(time.Time{}), -1, sourceID, conversationID)
+	graph, err := store.loadSessionGroup(ctx, sessionRef{sourceID: sourceID, sessionID: conversationID})
+	if err != nil {
+		return query.Session{}, err
+	}
+	root := graph.root(sessionRef{sourceID: sourceID, sessionID: conversationID})
+	members := graph.members(root)
+	memberIDs := make([]string, len(members))
+	for index, member := range members {
+		memberIDs[index] = member.sessionID
+	}
+	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Time{}), -1, 0, sourceID, memberIDs, false, "")
 	if err != nil {
 		return query.Session{}, err
 	}
@@ -35,14 +45,14 @@ func (store *Store) GetConversation(ctx context.Context, filter query.Conversati
 			return query.Session{}, query.ErrConversationTargetNotFound
 		}
 	}
-	sessions := buildSessions(activities, query.OverviewFilter{
+	sessions := buildSessions(activities, graph, query.OverviewFilter{
 		SourceID:      sourceID,
 		ActivityLimit: len(activities),
 	}, store.describeSource, func(activity query.Activity) bool {
 		return meaningful(activity) || (targetRequested && targetMatches(activity))
 	})
 	for _, session := range sessions {
-		if session.SourceID == sourceID && session.ID == conversationID {
+		if session.SourceID == sourceID && session.ID == root.sessionID {
 			limit := filter.Page.Size()
 			offset := boundedOffset(len(session.Activities), filter.Page.Offset())
 			if targetRequested && filter.PageMode == query.ConversationPageAroundAnchor {

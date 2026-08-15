@@ -115,6 +115,9 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 	if err := commitProjection(ctx, transaction, batch); err != nil {
 		return err
 	}
+	if err := rebuildAffectedSessionMemberships(ctx, transaction, batch); err != nil {
+		return err
+	}
 	if err := rebuildAffectedSessionRollups(ctx, transaction, batch); err != nil {
 		return err
 	}
@@ -148,6 +151,9 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 		if err := commitProjection(ctx, transaction, accepted.Projection); err != nil {
 			return err
 		}
+		if err := rebuildAffectedSessionMemberships(ctx, transaction, accepted.Projection); err != nil {
+			return err
+		}
 		if err := rebuildAffectedSessionRollups(ctx, transaction, accepted.Projection); err != nil {
 			return err
 		}
@@ -175,6 +181,17 @@ func commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.
 	for _, metric := range batch.Metrics {
 		if err := appendMetric(ctx, transaction, metric); err != nil {
 			return err
+		}
+	}
+	for _, link := range batch.SessionLinks {
+		if link.ParentSessionID == "" || link.ChildSessionID == "" || link.ParentSessionID == link.ChildSessionID {
+			continue
+		}
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO session_links (source, parent_session_id, child_session_id, observed_at)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(source, parent_session_id, child_session_id) DO UPDATE SET observed_at = excluded.observed_at`,
+			normalizeSource(link.Source), link.ParentSessionID, link.ChildSessionID, formatTime(link.ObservedAt)); err != nil {
+			return fmt.Errorf("store session link: %w", err)
 		}
 	}
 	return nil

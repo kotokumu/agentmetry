@@ -69,6 +69,15 @@ func TestNormalizeUsageAndAgentCommunicationAliases(t *testing.T) {
 	}
 }
 
+func TestNormalizeSpawnSendDeclaresSessionLink(t *testing.T) {
+	event := codex.New().Normalize(source.Event{Name: "codex.agent_communication", Attributes: map[string]any{
+		"kind": "spawn", "state": "send", "sender_thread_id": "parent", "receiver_thread_id": "child",
+	}})
+	if event.Attributes["agentmetry.session.parent.id"] != "parent" || event.Attributes["agentmetry.session.child.id"] != "child" {
+		t.Fatalf("session link aliases were not declared: %#v", event.Attributes)
+	}
+}
+
 func TestNormalizeNativeResponseUsageAliases(t *testing.T) {
 	event := codex.New().Normalize(source.Event{Name: "codex.sse_event", Attributes: map[string]any{
 		"event.kind":              "response.completed",

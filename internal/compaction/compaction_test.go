@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,8 +16,12 @@ import (
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/ingest"
 	"github.com/theoden9014/agentmetry/internal/ingest/otel"
+	"github.com/theoden9014/agentmetry/internal/query"
 	"github.com/theoden9014/agentmetry/internal/source/builtin"
 	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
+	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	_ "modernc.org/sqlite"
@@ -173,6 +178,86 @@ func TestMigrateIfNeededSupportsFreshCurrentAndNewerDatabases(t *testing.T) {
 			t.Fatalf("newer authoritative database changed: err=%v", err)
 		}
 	})
+}
+
+func TestGenerationThreeMigrationRebuildsCodexSessionMemberships(t *testing.T) {
+	path := createCurrentDatabase(t)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := plog.NewLogs()
+	records := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	parent := records.AppendEmpty()
+	parent.SetEventName("codex.sse_event")
+	parent.SetTimestamp(pcommon.NewTimestampFromTime(now))
+	parent.Attributes().PutStr("event.kind", "response.completed")
+	parent.Attributes().PutStr("conversation.id", "parent")
+	spawn := records.AppendEmpty()
+	spawn.SetEventName("codex.agent_communication")
+	spawn.SetTimestamp(pcommon.NewTimestampFromTime(now.Add(time.Second)))
+	spawn.Attributes().PutStr("kind", "spawn")
+	spawn.Attributes().PutStr("state", "send")
+	spawn.Attributes().PutStr("sender_thread_id", "parent")
+	spawn.Attributes().PutStr("receiver_thread_id", "child")
+	child := records.AppendEmpty()
+	child.SetEventName("codex.sse_event")
+	child.SetTimestamp(pcommon.NewTimestampFromTime(now.Add(2 * time.Second)))
+	child.Attributes().PutStr("event.kind", "response.completed")
+	child.Attributes().PutStr("conversation.id", "child")
+	raw, err := plogotlp.NewExportRequestFromLogs(logs).MarshalProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	accepted, err := otel.ReplayExport(canonical.SignalLog, ingest.TransportGRPC, now, raw, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CommitExport(context.Background(), accepted); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`DELETE FROM session_memberships; DELETE FROM session_links; PRAGMA user_version=2`); err != nil {
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+	result, err := MigrateIfNeeded(context.Background(), path, builtin.Registry(), nil)
+	if err != nil || !result.Migrated {
+		t.Fatalf("migration result=%#v err=%v", result, err)
+	}
+	upgraded, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upgraded.Close()
+	page, err := query.NewPage(0, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions, err := upgraded.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: page})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(sessions.Sessions) != 1 || sessions.Sessions[0].ID != "parent" || sessions.Sessions[0].AgentCount != 2 {
+		t.Fatalf("migrated sessions = %#v", sessions.Sessions)
+	}
+	identity, err := query.NewConversationIdentity("codex", "child")
+	if err != nil {
+		t.Fatal(err)
+	}
+	summary, err := upgraded.GetSessionSummary(context.Background(), identity)
+	if err != nil || summary.ID != "parent" || summary.AgentCount != 2 {
+		t.Fatalf("migrated summary=%#v err=%v", summary, err)
+	}
 }
 
 func TestMigrateIfNeededRebuildsAnOlderStorageGenerationDirectlyIntoCurrent(t *testing.T) {
@@ -646,7 +731,7 @@ func createCurrentDatabaseAt(t *testing.T, path string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = sqlDB.Exec(`PRAGMA user_version=2`)
+	_, err = sqlDB.Exec(fmt.Sprintf(`PRAGMA user_version=%d`, CurrentStorageGeneration))
 	_ = sqlDB.Close()
 	if err != nil {
 		t.Fatal(err)

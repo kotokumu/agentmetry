@@ -12,6 +12,7 @@ import (
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	adapter "github.com/theoden9014/agentmetry/internal/ingest/otel"
+	"github.com/theoden9014/agentmetry/internal/source/codex"
 	source "github.com/theoden9014/agentmetry/sourceplugin"
 )
 
@@ -110,6 +111,25 @@ func TestNormalizeLogsUsesEventNameAndBody(t *testing.T) {
 	}
 	if got.Kind != canonical.ActivityDelegation || got.TargetAgentID != "agent-7" {
 		t.Fatalf("delegation was not classified: %#v", got)
+	}
+}
+
+func TestNormalizeCodexSpawnCreatesSessionLink(t *testing.T) {
+	logs := plog.NewLogs()
+	record := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	record.SetEventName("codex.agent_communication")
+	record.SetTimestamp(pcommon.NewTimestampFromTime(time.Unix(20, 0)))
+	record.Attributes().PutStr("kind", "spawn")
+	record.Attributes().PutStr("state", "send")
+	record.Attributes().PutStr("sender_thread_id", "parent")
+	record.Attributes().PutStr("receiver_thread_id", "child")
+
+	batch, err := adapter.NewNormalizer(source.NewRegistry(codex.New())).NormalizeLogs(logs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(batch.SessionLinks) != 1 || batch.SessionLinks[0].Source != "codex" || batch.SessionLinks[0].ParentSessionID != "parent" || batch.SessionLinks[0].ChildSessionID != "child" {
+		t.Fatalf("unexpected session links: %#v", batch.SessionLinks)
 	}
 }
 

@@ -28,12 +28,24 @@ func (store *Store) GetOverview(ctx context.Context, filter query.OverviewFilter
 		return query.Overview{}, fmt.Errorf("query signal counts: %w", err)
 	}
 
-	activities, err := store.activities(ctx, since, -1, "", "")
+	recentActivities, err := store.activities(ctx, since, -1, "", "")
 	if err != nil {
 		return query.Overview{}, err
 	}
-	overview.Sources = store.sourceCatalog(activities)
-	overview.Sessions = buildSessions(activities, filter, store.describeSource, meaningful)
+	graph, err := store.loadSessionGraph(ctx, filter.SourceID)
+	if err != nil {
+		return query.Overview{}, err
+	}
+	overview.Sources = store.sourceCatalog(recentActivities)
+	activities, err := store.expandActiveSessionGroups(ctx, recentActivities, graph)
+	if err != nil {
+		return query.Overview{}, err
+	}
+	for _, session := range buildSessions(activities, graph, filter, store.describeSource, meaningful) {
+		if !session.EndedAt.Before(filter.Since) {
+			overview.Sessions = append(overview.Sessions, session)
+		}
+	}
 	for _, session := range overview.Sessions {
 		overview.RunCount++
 		overview.AgentCount += int64(len(session.Agents))
@@ -53,18 +65,63 @@ func (store *Store) GetOverview(ctx context.Context, filter query.OverviewFilter
 	return overview, nil
 }
 
+func (store *Store) expandActiveSessionGroups(ctx context.Context, recent []query.Activity, graph sessionGraph) ([]query.Activity, error) {
+	membersBySource := make(map[string]map[string]struct{})
+	activeRoots := make(map[sessionRef]struct{})
+	for _, activity := range recent {
+		ref := sessionRef{sourceID: activity.Source, sessionID: activity.RunID}
+		if activity.RunID == "" || !graph.grouped(ref) {
+			continue
+		}
+		root := graph.root(ref)
+		activeRoots[root] = struct{}{}
+		if membersBySource[root.sourceID] == nil {
+			membersBySource[root.sourceID] = make(map[string]struct{})
+		}
+		for _, member := range graph.members(root) {
+			membersBySource[root.sourceID][member.sessionID] = struct{}{}
+		}
+	}
+	if len(activeRoots) == 0 {
+		return recent, nil
+	}
+	result := make([]query.Activity, 0, len(recent))
+	for _, activity := range recent {
+		root := graph.root(sessionRef{sourceID: activity.Source, sessionID: activity.RunID})
+		if _, replaced := activeRoots[root]; !replaced {
+			result = append(result, activity)
+		}
+	}
+	for sourceID, memberSet := range membersBySource {
+		memberIDs := make([]string, 0, len(memberSet))
+		for memberID := range memberSet {
+			memberIDs = append(memberIDs, memberID)
+		}
+		groupActivities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, sourceID, memberIDs, false, "")
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, groupActivities...)
+	}
+	return result, nil
+}
+
 func (store *Store) activities(ctx context.Context, since string, limit int, sourceID, conversationID string) ([]query.Activity, error) {
 	return store.activitiesWindow(ctx, since, limit, 0, sourceID, conversationID)
 }
 
 func (store *Store) activitiesWindow(ctx context.Context, since string, limit, offset int, sourceID, conversationID string) ([]query.Activity, error) {
-	return store.activitiesWindowWithMeaningful(ctx, since, limit, offset, sourceID, conversationID, false, "")
+	var conversationIDs []string
+	if conversationID != "" {
+		conversationIDs = []string{conversationID}
+	}
+	return store.activitiesWindowWithMeaningful(ctx, since, limit, offset, sourceID, conversationIDs, false, "")
 }
 
-func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since string, limit, offset int, sourceID, conversationID string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
-	spanWhere, spanArgs := activityWhere("ended_at", since, sourceID, conversationID, agentID)
-	logWhere, logArgs := activityWhere("observed_at", since, sourceID, conversationID, agentID)
-	metricWhere, metricArgs := activityWhere("observed_at", since, sourceID, conversationID, agentID)
+func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since string, limit, offset int, sourceID string, conversationIDs []string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
+	spanWhere, spanArgs := activityWhereSessions("ended_at", since, sourceID, conversationIDs, agentID)
+	logWhere, logArgs := activityWhereSessions("observed_at", since, sourceID, conversationIDs, agentID)
+	metricWhere, metricArgs := activityWhereSessions("observed_at", since, sourceID, conversationIDs, agentID)
 	if meaningfulOnly {
 		spanWhere += " AND activity_kind <> 'unknown'"
 		logWhere += " AND activity_kind <> 'unknown'"
@@ -152,16 +209,21 @@ LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 // activityWhere only interpolates trusted SQL fragments while keeping all
 // values parameterized. Omitting optional OR predicates lets SQLite select the
 // conversation indexes for exact-route lookups.
-func activityWhere(timeColumn, since, sourceID, conversationID, agentID string) (string, []any) {
+func activityWhereSessions(timeColumn, since, sourceID string, conversationIDs []string, agentID string) (string, []any) {
 	where := timeColumn + " >= ? AND run_id <> ''"
 	args := []any{since}
 	if sourceID != "" {
 		where += " AND source = ?"
 		args = append(args, sourceID)
 	}
-	if conversationID != "" {
-		where += " AND run_id = ?"
-		args = append(args, conversationID)
+	if len(conversationIDs) > 0 {
+		members := make([]sessionRef, len(conversationIDs))
+		for index, conversationID := range conversationIDs {
+			members[index] = sessionRef{sourceID: sourceID, sessionID: conversationID}
+		}
+		predicate, memberArgs := sessionMembershipPredicate("run_id", members)
+		where += " AND " + predicate
+		args = append(args, memberArgs...)
 	}
 	if agentID != "" {
 		where += " AND CASE WHEN agent_id = '' THEN 'main' ELSE agent_id END = ?"
@@ -220,7 +282,7 @@ func (store *Store) scanActivity(row rowScanner) (query.Activity, error) {
 	return activity, nil
 }
 
-func buildSessions(activities []query.Activity, filter query.OverviewFilter, describeSource func(string) query.TelemetrySource, include func(query.Activity) bool) []query.Session {
+func buildSessions(activities []query.Activity, graph sessionGraph, filter query.OverviewFilter, describeSource func(string) query.TelemetrySource, include func(query.Activity) bool) []query.Session {
 	type conversationKey struct {
 		sourceID string
 		runID    string
@@ -234,7 +296,8 @@ func buildSessions(activities []query.Activity, filter query.OverviewFilter, des
 		if activity.RunID == "" {
 			continue
 		}
-		key := conversationKey{sourceID: activity.Source, runID: activity.RunID}
+		root := graph.root(sessionRef{sourceID: activity.Source, sessionID: activity.RunID})
+		key := conversationKey{sourceID: root.sourceID, runID: root.sessionID}
 		state := states[key]
 		if state == nil {
 			state = &sessionState{key: key}
@@ -257,6 +320,7 @@ func buildSessions(activities []query.Activity, filter query.OverviewFilter, des
 		sourceIDs := make(map[string]struct{})
 		normalizedActivities := make([]query.Activity, 0, len(state.allActivities))
 		for _, activity := range enrichAgentEvidence(state.allActivities) {
+			activity = graph.normalizeActivityAgent(activity)
 			if session.StartedAt.IsZero() || activity.ObservedAt.Before(session.StartedAt) {
 				session.StartedAt = activity.ObservedAt
 			}
@@ -325,6 +389,7 @@ func buildSessions(activities []query.Activity, filter query.OverviewFilter, des
 			session.Agents = append(session.Agents, *agent)
 		}
 		sort.Slice(session.Agents, func(i, j int) bool { return session.Agents[i].AgentID < session.Agents[j].AgentID })
+		session.AgentCount = int64(len(session.Agents))
 		sort.Slice(session.Activities, func(i, j int) bool { return session.Activities[i].ObservedAt.After(session.Activities[j].ObservedAt) })
 		session.ActivityOffset = boundedOffset(len(session.Activities), filter.ActivityOffset)
 		session.Activities = activityPage(session.Activities, session.ActivityOffset, filter.ActivityLimit)
