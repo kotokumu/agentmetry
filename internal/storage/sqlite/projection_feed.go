@@ -175,7 +175,7 @@ func rollupCanApplyIncrementally(batch canonical.Batch, previous map[storedSpanK
 			continue
 		}
 		newTokens := span.Agent.Tokens
-		if old.source != normalizeSource(span.Source) || old.session != span.Agent.RunID ||
+		if old.activityKind != string(span.Kind) || old.source != normalizeSource(span.Source) || old.session != span.Agent.RunID ||
 			normalizedAgentID(old.agentID) != normalizedAgentID(span.Agent.AgentID) ||
 			formatTime(span.EndedAt) < old.endedAt ||
 			(old.inputReported && !newTokens.InputReported()) ||

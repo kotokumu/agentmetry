@@ -143,7 +143,7 @@ func traceRollupCanApplyIncrementally(batch canonical.Batch, previous map[stored
 		if !exists {
 			continue
 		}
-		if old.source != normalizeSource(span.Source) || old.session != span.Agent.RunID ||
+		if old.activityKind != string(span.Kind) || old.source != normalizeSource(span.Source) || old.session != span.Agent.RunID ||
 			old.agentID != span.Agent.AgentID || old.parentSpanID != span.ParentSpanID ||
 			formatTime(span.StartedAt) > old.startedAt ||
 			formatTime(span.EndedAt) < old.endedAt || traceStatusRank(span.Status) < traceStatusRank(old.status) {

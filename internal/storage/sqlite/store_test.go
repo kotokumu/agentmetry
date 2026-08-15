@@ -164,6 +164,34 @@ func TestSpanRevisionRepairsSessionTimeExtrema(t *testing.T) {
 	}
 }
 
+func TestSpanRevisionToUnknownRemovesEmptySessionAndTraceRollups(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef",
+		Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now,
+		Agent: canonical.AgentContext{RunID: "kind-session", AgentID: "main"},
+	}
+	ctx := context.Background()
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.Kind = canonical.ActivityUnknown
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "kind-session")); !errors.Is(err, query.ErrConversationNotFound) {
+		t.Fatalf("session error = %v, want not found", err)
+	}
+	if _, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, span.TraceID), Page: mustPage(t, 0, 100)}); !errors.Is(err, query.ErrTraceNotFound) {
+		t.Fatalf("trace error = %v, want not found", err)
+	}
+}
+
 func TestListSessionsSearchesSessionID(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

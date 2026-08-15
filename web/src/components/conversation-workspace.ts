@@ -120,7 +120,6 @@ export class ConversationWorkspace extends LitElement {
   }
 
   private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
-    if (!this.active) return;
     event.detail.waitUntil(this.conversations.applyLiveUpdate(event.detail).then(() => {
       const removed = this.conversations.takeRemovedSession();
       if (removed) this.dispatchEvent(new CustomEvent("conversation-removed", { detail: removed, bubbles: true, composed: true }));
