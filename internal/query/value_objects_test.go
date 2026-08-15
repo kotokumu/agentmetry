@@ -128,7 +128,10 @@ func TestTimelineDirectionUsesQueryVocabulary(t *testing.T) {
 			t.Fatalf("direction = %q", direction)
 		}
 	}
-	if _, err := ParseTimelineDirection("newer"); !errors.Is(err, ErrInvalidTimelineDirection) {
+	if direction, err := ParseTimelineDirection("newer"); err != nil || direction != TimelineNewer {
+		t.Fatalf("newer direction = %q, %v", direction, err)
+	}
+	if _, err := ParseTimelineDirection("sideways"); !errors.Is(err, ErrInvalidTimelineDirection) {
 		t.Fatalf("error = %v, want ErrInvalidTimelineDirection", err)
 	}
 }

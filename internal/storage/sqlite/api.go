@@ -14,14 +14,14 @@ import (
 func (store *Store) GetDashboard(ctx context.Context, filter query.DashboardFilter) (query.Overview, error) {
 	since := formatTime(filter.Since)
 	var dashboard query.Overview
-	if err := store.db.QueryRowContext(ctx, `SELECT
+	if err := store.readDB.QueryRowContext(ctx, `SELECT
   COALESCE(SUM(trace_count), 0), COALESCE(SUM(log_count), 0)
 FROM session_rollups WHERE ended_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(
 		&dashboard.SignalCounts.Traces, &dashboard.SignalCounts.Logs,
 	); err != nil {
 		return query.Overview{}, fmt.Errorf("query dashboard signal counts: %w", err)
 	}
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM metrics WHERE observed_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(&dashboard.SignalCounts.Metrics); err != nil {
+	if err := store.readDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM metrics WHERE observed_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(&dashboard.SignalCounts.Metrics); err != nil {
 		return query.Overview{}, fmt.Errorf("query dashboard metric count: %w", err)
 	}
 
@@ -62,7 +62,7 @@ GROUP BY source, run_id
 ORDER BY MAX(observed_at) DESC, source ASC, run_id ASC
 LIMIT ? OFFSET ?`, branches)
 	args = append(args, pageSize+1, offset)
-	rows, err := store.db.QueryContext(ctx, statement, args...)
+	rows, err := store.readDB.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return query.SessionPage{}, fmt.Errorf("query session summaries: %w", err)
 	}
@@ -100,7 +100,7 @@ LIMIT ? OFFSET ?`, branches)
 func (store *Store) listSessionsFromRollups(ctx context.Context, filter query.SessionListFilter) (query.SessionPage, error) {
 	pageSize := filter.Page.Size()
 	offset := filter.Page.Offset()
-	rows, err := store.db.QueryContext(ctx, `SELECT source, run_id, started_at, ended_at, activity_count, agent_count
+	rows, err := store.readDB.QueryContext(ctx, `SELECT source, run_id, started_at, ended_at, activity_count, agent_count
 FROM session_rollups
 WHERE ended_at >= ? AND (? = '' OR source = ?) AND (? = '' OR run_id = ?)
 ORDER BY ended_at DESC, source ASC, run_id ASC
@@ -162,7 +162,7 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 	logWhere += " AND activity_kind <> 'unknown'"
 	var total int64
 	countArgs := append(spanArgs, logArgs...)
-	if err := store.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT
+	if err := store.readDB.QueryRowContext(ctx, fmt.Sprintf(`SELECT
 	  (SELECT COUNT(*) FROM spans WHERE %s) +
 	  (SELECT COUNT(*) FROM logs WHERE %s)`, spanWhere, logWhere), countArgs...).Scan(&total); err != nil {
 		return query.ActivityPage{}, fmt.Errorf("count session activities: %w", err)
@@ -170,22 +170,21 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 	if total == 0 {
 		return query.ActivityPage{}, query.ErrConversationNotFound
 	}
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, sourceID, conversationID, true, filter.AgentID)
+	offset = boundedOffset(int(total), offset)
+	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), filter.Page.Size(), offset, sourceID, conversationID, true, filter.AgentID)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}
 	activities = enrichActivityRelationships(activities)
-	offset = boundedOffset(len(activities), offset)
-	pageEnd := min(len(activities), filter.Page.WindowEnd(offset))
 	return query.ActivityPage{
-		Activities: activities[offset:pageEnd], Total: int64(len(activities)), Offset: offset,
-		HasEarlier: offset > 0, HasMore: int64(pageEnd) < int64(len(activities)),
+		Activities: activities, Total: total, Offset: offset,
+		HasEarlier: offset > 0, HasMore: int64(offset+len(activities)) < total,
 	}, nil
 }
 
 func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, traceID, spanID string, page query.Page) (int, error) {
 	var observedAt string
-	if err := store.db.QueryRowContext(ctx, `SELECT observed_at FROM (
+	if err := store.readDB.QueryRowContext(ctx, `SELECT observed_at FROM (
   SELECT ended_at AS observed_at FROM spans WHERE source = ? AND run_id = ? AND trace_id = ? AND span_id = ? AND activity_kind <> 'unknown'
   UNION ALL
   SELECT observed_at FROM logs WHERE source = ? AND run_id = ? AND trace_id = ? AND span_id = ? AND activity_kind <> 'unknown'
@@ -196,7 +195,7 @@ func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, trace
 		return 0, fmt.Errorf("query activity anchor: %w", err)
 	}
 	var before int64
-	if err := store.db.QueryRowContext(ctx, `SELECT
+	if err := store.readDB.QueryRowContext(ctx, `SELECT
   (SELECT COUNT(*) FROM spans WHERE ended_at >= ? AND ended_at > ? AND run_id = ? AND source = ? AND activity_kind <> 'unknown') +
   (SELECT COUNT(*) FROM logs WHERE observed_at >= ? AND observed_at > ? AND run_id = ? AND source = ? AND activity_kind <> 'unknown')`,
 		formatTime(time.Unix(0, 0)), observedAt, sessionID, sourceID,
@@ -207,7 +206,7 @@ func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, trace
 }
 
 func (store *Store) dashboardSources(ctx context.Context, since, sourceID string) ([]query.TelemetrySource, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT source FROM (
+	rows, err := store.readDB.QueryContext(ctx, `SELECT source FROM (
   SELECT DISTINCT source FROM spans WHERE ended_at >= ? AND (? = '' OR source = ?)
   UNION
   SELECT DISTINCT source FROM logs WHERE observed_at >= ? AND (? = '' OR source = ?)
@@ -233,7 +232,7 @@ func (store *Store) dashboardAggregates(ctx context.Context, since, sourceID, se
 	if strings.TrimSpace(search) == "" {
 		var input, output, cacheRead, cacheWrite, reasoning int64
 		var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported int
-		err = store.db.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(agent_count), 0),
+		err = store.readDB.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(agent_count), 0),
   COALESCE(SUM(input_tokens), 0), COALESCE(SUM(output_tokens), 0),
   COALESCE(SUM(cache_read_tokens), 0), COALESCE(SUM(cache_write_tokens), 0), COALESCE(SUM(reasoning_tokens), 0),
   COALESCE(MAX(input_reported), 0), COALESCE(MAX(output_reported), 0),
@@ -259,7 +258,7 @@ SELECT COUNT(DISTINCT source || char(0) || run_id),
 FROM activity`, branches)
 	var input, output, cacheRead, cacheWrite, reasoning int64
 	var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported int
-	err = store.db.QueryRowContext(ctx, statement, args...).Scan(&runCount, &agentCount, &input, &output, &cacheRead, &cacheWrite, &reasoning, &inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported)
+	err = store.readDB.QueryRowContext(ctx, statement, args...).Scan(&runCount, &agentCount, &input, &output, &cacheRead, &cacheWrite, &reasoning, &inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported)
 	if err != nil {
 		return 0, 0, canonical.TokenUsage{}, fmt.Errorf("query dashboard aggregates: %w", err)
 	}

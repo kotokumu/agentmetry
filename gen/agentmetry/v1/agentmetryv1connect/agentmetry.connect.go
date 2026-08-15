@@ -48,6 +48,15 @@ const (
 	// AgentmetryQueryServiceGetTraceProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's GetTrace RPC.
 	AgentmetryQueryServiceGetTraceProcedure = "/agentmetry.v1.AgentmetryQueryService/GetTrace"
+	// AgentmetryQueryServiceWatchProjectionChangesProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's WatchProjectionChanges RPC.
+	AgentmetryQueryServiceWatchProjectionChangesProcedure = "/agentmetry.v1.AgentmetryQueryService/WatchProjectionChanges"
+	// AgentmetryQueryServiceSyncSessionActivitiesProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's SyncSessionActivities RPC.
+	AgentmetryQueryServiceSyncSessionActivitiesProcedure = "/agentmetry.v1.AgentmetryQueryService/SyncSessionActivities"
+	// AgentmetryQueryServiceSyncTraceActivitiesProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's SyncTraceActivities RPC.
+	AgentmetryQueryServiceSyncTraceActivitiesProcedure = "/agentmetry.v1.AgentmetryQueryService/SyncTraceActivities"
 )
 
 // AgentmetryQueryServiceClient is a client for the agentmetry.v1.AgentmetryQueryService service.
@@ -63,6 +72,12 @@ type AgentmetryQueryServiceClient interface {
 	ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error)
 	// Returns the bounded trace evidence for one trace ID.
 	GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error)
+	// Streams bounded invalidation windows for committed read-model changes.
+	WatchProjectionChanges(context.Context, *connect.Request[v1.WatchProjectionChangesRequest]) (*connect.ServerStreamForClient[v1.WatchProjectionChangesResponse], error)
+	// Returns a bounded commit-ordered mutation page for one session.
+	SyncSessionActivities(context.Context, *connect.Request[v1.SyncSessionActivitiesRequest]) (*connect.Response[v1.SyncSessionActivitiesResponse], error)
+	// Returns a bounded commit-ordered mutation page for one trace.
+	SyncTraceActivities(context.Context, *connect.Request[v1.SyncTraceActivitiesRequest]) (*connect.Response[v1.SyncTraceActivitiesResponse], error)
 }
 
 // NewAgentmetryQueryServiceClient constructs a client for the agentmetry.v1.AgentmetryQueryService
@@ -106,16 +121,37 @@ func NewAgentmetryQueryServiceClient(httpClient connect.HTTPClient, baseURL stri
 			connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTrace")),
 			connect.WithClientOptions(opts...),
 		),
+		watchProjectionChanges: connect.NewClient[v1.WatchProjectionChangesRequest, v1.WatchProjectionChangesResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceWatchProjectionChangesProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("WatchProjectionChanges")),
+			connect.WithClientOptions(opts...),
+		),
+		syncSessionActivities: connect.NewClient[v1.SyncSessionActivitiesRequest, v1.SyncSessionActivitiesResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceSyncSessionActivitiesProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("SyncSessionActivities")),
+			connect.WithClientOptions(opts...),
+		),
+		syncTraceActivities: connect.NewClient[v1.SyncTraceActivitiesRequest, v1.SyncTraceActivitiesResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceSyncTraceActivitiesProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("SyncTraceActivities")),
+			connect.WithClientOptions(opts...),
+		),
 	}
 }
 
 // agentmetryQueryServiceClient implements AgentmetryQueryServiceClient.
 type agentmetryQueryServiceClient struct {
-	getDashboard          *connect.Client[v1.GetDashboardRequest, v1.GetDashboardResponse]
-	listSessions          *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
-	getSession            *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
-	listSessionActivities *connect.Client[v1.ListSessionActivitiesRequest, v1.ListSessionActivitiesResponse]
-	getTrace              *connect.Client[v1.GetTraceRequest, v1.GetTraceResponse]
+	getDashboard           *connect.Client[v1.GetDashboardRequest, v1.GetDashboardResponse]
+	listSessions           *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	getSession             *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
+	listSessionActivities  *connect.Client[v1.ListSessionActivitiesRequest, v1.ListSessionActivitiesResponse]
+	getTrace               *connect.Client[v1.GetTraceRequest, v1.GetTraceResponse]
+	watchProjectionChanges *connect.Client[v1.WatchProjectionChangesRequest, v1.WatchProjectionChangesResponse]
+	syncSessionActivities  *connect.Client[v1.SyncSessionActivitiesRequest, v1.SyncSessionActivitiesResponse]
+	syncTraceActivities    *connect.Client[v1.SyncTraceActivitiesRequest, v1.SyncTraceActivitiesResponse]
 }
 
 // GetDashboard calls agentmetry.v1.AgentmetryQueryService.GetDashboard.
@@ -143,6 +179,21 @@ func (c *agentmetryQueryServiceClient) GetTrace(ctx context.Context, req *connec
 	return c.getTrace.CallUnary(ctx, req)
 }
 
+// WatchProjectionChanges calls agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges.
+func (c *agentmetryQueryServiceClient) WatchProjectionChanges(ctx context.Context, req *connect.Request[v1.WatchProjectionChangesRequest]) (*connect.ServerStreamForClient[v1.WatchProjectionChangesResponse], error) {
+	return c.watchProjectionChanges.CallServerStream(ctx, req)
+}
+
+// SyncSessionActivities calls agentmetry.v1.AgentmetryQueryService.SyncSessionActivities.
+func (c *agentmetryQueryServiceClient) SyncSessionActivities(ctx context.Context, req *connect.Request[v1.SyncSessionActivitiesRequest]) (*connect.Response[v1.SyncSessionActivitiesResponse], error) {
+	return c.syncSessionActivities.CallUnary(ctx, req)
+}
+
+// SyncTraceActivities calls agentmetry.v1.AgentmetryQueryService.SyncTraceActivities.
+func (c *agentmetryQueryServiceClient) SyncTraceActivities(ctx context.Context, req *connect.Request[v1.SyncTraceActivitiesRequest]) (*connect.Response[v1.SyncTraceActivitiesResponse], error) {
+	return c.syncTraceActivities.CallUnary(ctx, req)
+}
+
 // AgentmetryQueryServiceHandler is an implementation of the agentmetry.v1.AgentmetryQueryService
 // service.
 type AgentmetryQueryServiceHandler interface {
@@ -157,6 +208,12 @@ type AgentmetryQueryServiceHandler interface {
 	ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error)
 	// Returns the bounded trace evidence for one trace ID.
 	GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error)
+	// Streams bounded invalidation windows for committed read-model changes.
+	WatchProjectionChanges(context.Context, *connect.Request[v1.WatchProjectionChangesRequest], *connect.ServerStream[v1.WatchProjectionChangesResponse]) error
+	// Returns a bounded commit-ordered mutation page for one session.
+	SyncSessionActivities(context.Context, *connect.Request[v1.SyncSessionActivitiesRequest]) (*connect.Response[v1.SyncSessionActivitiesResponse], error)
+	// Returns a bounded commit-ordered mutation page for one trace.
+	SyncTraceActivities(context.Context, *connect.Request[v1.SyncTraceActivitiesRequest]) (*connect.Response[v1.SyncTraceActivitiesResponse], error)
 }
 
 // NewAgentmetryQueryServiceHandler builds an HTTP handler from the service implementation. It
@@ -196,6 +253,24 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 		connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTrace")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentmetryQueryServiceWatchProjectionChangesHandler := connect.NewServerStreamHandler(
+		AgentmetryQueryServiceWatchProjectionChangesProcedure,
+		svc.WatchProjectionChanges,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("WatchProjectionChanges")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryQueryServiceSyncSessionActivitiesHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceSyncSessionActivitiesProcedure,
+		svc.SyncSessionActivities,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("SyncSessionActivities")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryQueryServiceSyncTraceActivitiesHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceSyncTraceActivitiesProcedure,
+		svc.SyncTraceActivities,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("SyncTraceActivities")),
+		connect.WithHandlerOptions(opts...),
+	)
 	return "/agentmetry.v1.AgentmetryQueryService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case AgentmetryQueryServiceGetDashboardProcedure:
@@ -208,6 +283,12 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 			agentmetryQueryServiceListSessionActivitiesHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetTraceProcedure:
 			agentmetryQueryServiceGetTraceHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceWatchProjectionChangesProcedure:
+			agentmetryQueryServiceWatchProjectionChangesHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceSyncSessionActivitiesProcedure:
+			agentmetryQueryServiceSyncSessionActivitiesHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceSyncTraceActivitiesProcedure:
+			agentmetryQueryServiceSyncTraceActivitiesHandler.ServeHTTP(w, r)
 		default:
 			http.NotFound(w, r)
 		}
@@ -235,4 +316,16 @@ func (UnimplementedAgentmetryQueryServiceHandler) ListSessionActivities(context.
 
 func (UnimplementedAgentmetryQueryServiceHandler) GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.GetTrace is not implemented"))
+}
+
+func (UnimplementedAgentmetryQueryServiceHandler) WatchProjectionChanges(context.Context, *connect.Request[v1.WatchProjectionChangesRequest], *connect.ServerStream[v1.WatchProjectionChangesResponse]) error {
+	return connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges is not implemented"))
+}
+
+func (UnimplementedAgentmetryQueryServiceHandler) SyncSessionActivities(context.Context, *connect.Request[v1.SyncSessionActivitiesRequest]) (*connect.Response[v1.SyncSessionActivitiesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.SyncSessionActivities is not implemented"))
+}
+
+func (UnimplementedAgentmetryQueryServiceHandler) SyncTraceActivities(context.Context, *connect.Request[v1.SyncTraceActivitiesRequest]) (*connect.Response[v1.SyncTraceActivitiesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.SyncTraceActivities is not implemented"))
 }

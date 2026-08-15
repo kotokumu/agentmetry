@@ -28,6 +28,7 @@ type SignalCounts struct {
 }
 
 type Activity struct {
+	ID                 string                 `json:"id"`
 	Source             string                 `json:"source"`
 	Signal             canonical.Signal       `json:"signal"`
 	TraceID            string                 `json:"traceId,omitempty"`

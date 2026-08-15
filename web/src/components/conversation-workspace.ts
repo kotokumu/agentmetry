@@ -13,6 +13,7 @@ import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../model/telemetry";
 import { NOT_REPORTED } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
+import { LIVE_UPDATE_EVENT, type LiveUpdateWindow } from "../controllers/live-update-controller";
 
 export type ConversationSummaryDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -45,6 +46,16 @@ export class ConversationWorkspace extends LitElement {
   private lastSummaryKey = "";
   private restoredAgentKey = "";
   private lastReadyKey = "";
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+    super.disconnectedCallback();
+  }
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
@@ -107,6 +118,8 @@ export class ConversationWorkspace extends LitElement {
       else this.conversations.clearRoute();
     }
   }
+
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateWindow>) => { if (this.active) void this.conversations.applyLiveUpdate(event.detail); };
 
   render() {
     const sessions = this.conversations.sessions;

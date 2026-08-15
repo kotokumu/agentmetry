@@ -1,7 +1,8 @@
 import { Task, TaskStatus } from "@lit/task";
 import type { ReactiveControllerHost } from "lit";
-import type { AgentmetryClient } from "../api/agentmetry-client";
+import type { ActivityMutation, AgentmetryClient } from "../api/agentmetry-client";
 import type { Trace } from "../model/telemetry";
+import { affectsTrace, type LiveUpdateWindow } from "./live-update-controller";
 
 export class TraceController {
   private readonly host: ReactiveControllerHost;
@@ -11,6 +12,10 @@ export class TraceController {
   private pageRequest = 0;
   private pageAbort?: AbortController;
   private wasDisconnected = false;
+  private liveRequest = 0;
+  private liveAbort?: AbortController;
+  private liveLoading = false;
+  private syncCursor = "";
   traceId = "";
   loadingPage = false;
   pageError?: string;
@@ -39,6 +44,8 @@ export class TraceController {
     this.traceOverride = undefined;
     this.pageError = undefined;
     this.pageAbort?.abort();
+	this.liveAbort?.abort();
+	this.syncCursor = "";
     this.loadingPage = false;
     this.pageRequest += 1;
     this.host.requestUpdate();
@@ -50,10 +57,65 @@ export class TraceController {
     void this.task.run();
   }
 
+  async applyLiveUpdate(window: LiveUpdateWindow) {
+    const current = this.value;
+    if (!current || (!window.resyncRequired && !affectsTrace(window.targets, current.traceId))) return;
+    const request = ++this.liveRequest;
+    this.pageRequest += 1;
+    this.pageAbort?.abort();
+    this.loadingPage = false;
+    this.liveAbort?.abort();
+    const abort = new AbortController();
+    this.liveAbort = abort;
+    this.liveLoading = true;
+    try {
+      const mutations: ActivityMutation[] = [];
+      let incremental = !window.resyncRequired && Boolean(this.syncCursor) && Boolean(window.throughCursor);
+      let convergedCursor = window.throughCursor;
+      if (incremental) {
+        let pageToken = "";
+        for (let pageIndex = 0; pageIndex < 10; pageIndex += 1) {
+          const page = await this.client.syncTraceActivities(current.traceId, this.syncCursor, window.throughCursor, pageToken, abort.signal);
+          if (page.resyncRequired) {
+            mutations.length = 0;
+            incremental = false;
+            convergedCursor = page.throughCursor;
+            break;
+          }
+          mutations.push(...page.mutations);
+          if (!page.nextPageToken) break;
+          if (pageIndex === 9) {
+            mutations.length = 0;
+            incremental = false;
+            break;
+          }
+          pageToken = page.nextPageToken;
+        }
+      }
+      // Reset the offset token from a bounded head window, then layer the
+      // mutation set on top so a live tail remains visible without a full
+      // trace reload.
+      const head = await this.client.getTrace(current.traceId, 0, 100, "", abort.signal);
+      if (request !== this.liveRequest || abort.signal.aborted || this.traceId !== current.traceId) return;
+      const activities = incremental
+        ? applyTraceMutations([...current.activities, ...head.activities], mutations)
+        : head.activities;
+      this.traceOverride = { ...head, activities, hasMore: activities.length < head.activityCount };
+      this.syncCursor = convergedCursor;
+      this.host.requestUpdate();
+    } catch {
+      // Keep current trace visible until the next durable invalidation/reconnect.
+    } finally {
+      if (request === this.liveRequest) this.liveLoading = false;
+    }
+  }
+
   hostDisconnected() {
     this.wasDisconnected = true;
     this.pageRequest += 1;
     this.pageAbort?.abort();
+    this.liveAbort?.abort();
+	this.syncCursor = "";
     this.traceOverride = undefined;
     this.loadingPage = false;
     this.pageError = undefined;
@@ -68,7 +130,7 @@ export class TraceController {
 
   async loadMore() {
     const trace = this.value;
-    if (!trace || !trace.hasMore || this.loadingPage || !trace.nextPageToken) return;
+    if (!trace || !trace.hasMore || this.loadingPage || this.liveLoading || !trace.nextPageToken) return;
     const request = ++this.pageRequest;
     this.pageAbort?.abort();
     const abort = new AbortController();
@@ -79,7 +141,9 @@ export class TraceController {
     try {
       const next = await this.client.getTrace(trace.traceId, trace.activityOffset + trace.activities.length, 100, trace.nextPageToken, abort.signal);
       if (request !== this.pageRequest || this.traceId !== trace.traceId) return;
-      this.traceOverride = { ...next, activities: [...trace.activities, ...next.activities] };
+	  const combined = deduplicateActivities([...trace.activities, ...next.activities]);
+	  const evicted = Math.max(0, combined.length - 2000);
+	  this.traceOverride = { ...next, activities: combined.slice(evicted), activityOffset: trace.activityOffset + evicted, previousPageToken: trace.previousPageToken };
     } catch (error) {
       if (request !== this.pageRequest || abort.signal.aborted) return;
       this.pageError = error instanceof Error ? error.message : "Trace unavailable";
@@ -90,3 +154,18 @@ export class TraceController {
     }
   }
 }
+
+const activityIdentity = (activity: Trace["activities"][number]) => activity.id ?? `${activity.signal}\u0000${activity.traceId ?? ""}\u0000${activity.spanId ?? ""}\u0000${activity.observedAt}\u0000${activity.name}`;
+
+const applyTraceMutations = (current: Trace["activities"], mutations: readonly ActivityMutation[]) => {
+	const values = new Map(current.map((activity) => [activityIdentity(activity), activity]));
+	for (const mutation of mutations) {
+		if (mutation.operation === "remove") values.delete(mutation.activityId);
+		else if (mutation.activity) values.set(mutation.activityId, mutation.activity);
+	}
+	return [...values.values()].sort((left, right) => left.observedAt.localeCompare(right.observedAt) || activityIdentity(left).localeCompare(activityIdentity(right))).slice(-2000);
+};
+
+const deduplicateActivities = (activities: readonly Trace["activities"][number][]) =>
+  [...new Map(activities.map((activity) => [activityIdentity(activity), activity])).values()]
+    .sort((left, right) => left.observedAt.localeCompare(right.observedAt) || activityIdentity(left).localeCompare(activityIdentity(right)));

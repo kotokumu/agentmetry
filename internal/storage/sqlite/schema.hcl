@@ -62,6 +62,14 @@ table "spans" {
     default = 0
   }
   column "attributes_json"   { type = text }
+  column "activity_id" {
+    type = text
+    null = true
+  }
+  column "projection_sequence" {
+    type    = integer
+    default = 0
+  }
 
   primary_key {
     columns = [table.spans.column.trace_id, table.spans.column.span_id]
@@ -78,8 +86,21 @@ table "spans" {
   index "spans_source_run_ended_at_idx" {
     columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.ended_at]
   }
+  index "spans_source_run_agent_idx" {
+    columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.agent_id]
+  }
   index "spans_trace_started_at_idx" {
     columns = [table.spans.column.trace_id, table.spans.column.started_at, table.spans.column.ended_at]
+  }
+  index "spans_trace_parent_idx" {
+    columns = [table.spans.column.trace_id, table.spans.column.parent_span_id]
+  }
+  index "spans_projection_sequence_idx" {
+    columns = [table.spans.column.projection_sequence]
+  }
+  index "spans_activity_id_idx" {
+    unique  = true
+    columns = [table.spans.column.activity_id]
   }
 }
 
@@ -111,6 +132,12 @@ table "session_rollups" {
   column "cache_write_reported" { type = integer }
   column "reasoning_reported" { type = integer }
   column "cost_usd" { type = real }
+  column "cost_reported" {
+    type    = integer
+    # -1 marks rows upgraded from a schema that did not track cost presence.
+    # Open() replaces the marker once, while new rollups always write 0 or 1.
+    default = -1
+  }
 
   primary_key {
     columns = [table.session_rollups.column.source, table.session_rollups.column.run_id]
@@ -120,6 +147,147 @@ table "session_rollups" {
   }
   index "session_rollups_source_ended_at_idx" {
     columns = [table.session_rollups.column.source, table.session_rollups.column.ended_at]
+  }
+}
+
+table "session_agents" {
+  schema = schema.main
+
+  column "source"   { type = text }
+  column "run_id"   { type = text }
+  column "agent_id" { type = text }
+  column "agent_definition" {
+    type = text
+    default = ""
+  }
+  column "agent_type" {
+    type = text
+    default = ""
+  }
+  column "parent_agent_id" {
+    type = text
+    default = ""
+  }
+  column "model" {
+    type = text
+    default = ""
+  }
+  column "activity_count" {
+    type = integer
+    default = 0
+  }
+  column "input_tokens" {
+    type = integer
+    default = 0
+  }
+  column "output_tokens" {
+    type = integer
+    default = 0
+  }
+  column "cache_read_tokens" {
+    type = integer
+    default = 0
+  }
+  column "cache_write_tokens" {
+    type = integer
+    default = 0
+  }
+  column "reasoning_tokens" {
+    type = integer
+    default = 0
+  }
+  column "input_reported" {
+    type = integer
+    default = 0
+  }
+  column "output_reported" {
+    type = integer
+    default = 0
+  }
+  column "cache_read_reported" {
+    type = integer
+    default = 0
+  }
+  column "cache_write_reported" {
+    type = integer
+    default = 0
+  }
+  column "reasoning_reported" {
+    type = integer
+    default = 0
+  }
+
+  primary_key {
+    columns = [table.session_agents.column.source, table.session_agents.column.run_id, table.session_agents.column.agent_id]
+  }
+}
+
+table "session_traces" {
+  schema = schema.main
+
+  column "source" { type = text }
+  column "run_id" { type = text }
+  column "trace_id" { type = text }
+
+  primary_key {
+    columns = [table.session_traces.column.source, table.session_traces.column.run_id, table.session_traces.column.trace_id]
+  }
+}
+
+table "trace_rollups" {
+  schema = schema.main
+
+  column "trace_id" { type = text }
+  column "started_at" { type = text }
+  column "ended_at" { type = text }
+  column "status_rank" { type = integer }
+  column "activity_count" { type = integer }
+  column "root_span_count" { type = integer }
+  column "missing_parent_count" { type = integer }
+
+  primary_key {
+    columns = [table.trace_rollups.column.trace_id]
+  }
+}
+
+table "trace_conversations" {
+  schema = schema.main
+
+  column "trace_id" { type = text }
+  column "source" { type = text }
+  column "run_id" { type = text }
+
+  primary_key {
+    columns = [table.trace_conversations.column.trace_id, table.trace_conversations.column.source, table.trace_conversations.column.run_id]
+  }
+}
+
+table "trace_agents" {
+  schema = schema.main
+
+  column "trace_id" { type = text }
+  column "source" { type = text }
+  column "run_id" { type = text }
+  column "agent_id" { type = text }
+  column "agent_definition" {
+    type = text
+    default = ""
+  }
+  column "agent_type" {
+    type = text
+    default = ""
+  }
+  column "parent_agent_id" {
+    type = text
+    default = ""
+  }
+  column "model" {
+    type = text
+    default = ""
+  }
+
+  primary_key {
+    columns = [table.trace_agents.column.trace_id, table.trace_agents.column.source, table.trace_agents.column.run_id, table.trace_agents.column.agent_id]
   }
 }
 
@@ -203,6 +371,14 @@ table "logs" {
     default = 0
   }
   column "attributes_json"    { type = text }
+  column "activity_id" {
+    type = text
+    null = true
+  }
+  column "projection_sequence" {
+    type    = integer
+    default = 0
+  }
 
   primary_key {
     columns = [table.logs.column.id]
@@ -213,8 +389,18 @@ table "logs" {
   index "logs_source_run_observed_at_idx" {
     columns = [table.logs.column.source, table.logs.column.run_id, table.logs.column.observed_at]
   }
+  index "logs_source_run_agent_idx" {
+    columns = [table.logs.column.source, table.logs.column.run_id, table.logs.column.agent_id]
+  }
   index "logs_trace_observed_at_idx" {
     columns = [table.logs.column.trace_id, table.logs.column.observed_at]
+  }
+  index "logs_projection_sequence_idx" {
+    columns = [table.logs.column.projection_sequence]
+  }
+  index "logs_activity_id_idx" {
+    unique  = true
+    columns = [table.logs.column.activity_id]
   }
 }
 
@@ -249,12 +435,87 @@ table "metrics" {
     null = true
   }
   column "attributes_json" { type = text }
+  column "projection_sequence" {
+    type    = integer
+    default = 0
+  }
 
   primary_key {
     columns = [table.metrics.column.id]
   }
   index "metrics_observed_at_idx" {
     columns = [table.metrics.column.observed_at]
+  }
+}
+
+table "projection_feed_state" {
+  schema = schema.main
+
+  column "id"         { type = integer }
+  column "generation" { type = text }
+
+  primary_key {
+    columns = [table.projection_feed_state.column.id]
+  }
+}
+
+table "projection_changes" {
+  schema = schema.main
+
+  column "sequence" {
+    type           = integer
+    null           = true
+    auto_increment = true
+  }
+  column "committed_at" { type = text }
+  column "targets_json" { type = text }
+  column "target_bytes" { type = integer }
+  column "mutation_bytes" {
+    type    = integer
+    default = 0
+  }
+
+  primary_key {
+    columns = [table.projection_changes.column.sequence]
+  }
+  index "projection_changes_committed_at_idx" {
+    columns = [table.projection_changes.column.committed_at]
+  }
+}
+
+table "activity_changes" {
+  schema = schema.main
+
+  column "id" {
+    type           = integer
+    null           = true
+    auto_increment = true
+  }
+  column "sequence"    { type = integer }
+  column "scope_kind"  { type = text }
+  column "source"      { type = text }
+  column "scope_id"    { type = text }
+  column "activity_id" { type = text }
+  column "operation"   { type = text }
+
+  primary_key {
+    columns = [table.activity_changes.column.id]
+  }
+  foreign_key "activity_changes_projection" {
+    columns     = [table.activity_changes.column.sequence]
+    ref_columns = [table.projection_changes.column.sequence]
+    on_delete   = CASCADE
+  }
+  index "activity_changes_scope_sequence_idx" {
+    columns = [
+      table.activity_changes.column.scope_kind,
+      table.activity_changes.column.source,
+      table.activity_changes.column.scope_id,
+      table.activity_changes.column.sequence,
+    ]
+  }
+  index "activity_changes_sequence_idx" {
+    columns = [table.activity_changes.column.sequence]
   }
 }
 

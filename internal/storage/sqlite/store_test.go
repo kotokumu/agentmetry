@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -439,6 +440,53 @@ func TestListSessionActivitiesKeepsAnchorInsideSmallPage(t *testing.T) {
 		}
 	}
 	t.Fatal("anchor fell outside the bounded activity page")
+}
+
+func TestSessionActivityPagesHaveStableTotalOrderForEqualTimestamps(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC()
+	logs := make([]canonical.Log, 205)
+	for index := range logs {
+		logs[index] = canonical.Log{
+			Source: "example", ObservedAt: now, Name: fmt.Sprintf("equal-%03d", index),
+			Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "equal-time"},
+		}
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+	identity := mustConversationIdentity(t, "example", "equal-time")
+	readIDs := func() []string {
+		result := make([]string, 0, len(logs))
+		for offset := 0; offset < len(logs); offset += 100 {
+			page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+				Identity: identity,
+				Page:     mustPage(t, offset, min(100, len(logs)-offset)),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, activity := range page.Activities {
+				result = append(result, activity.ID)
+			}
+		}
+		return result
+	}
+	first, second := readIDs(), readIDs()
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("equal-time order changed: first=%v second=%v", first, second)
+	}
+	unique := make(map[string]struct{}, len(first))
+	for _, id := range first {
+		unique[id] = struct{}{}
+	}
+	if len(first) != len(logs) || len(unique) != len(logs) {
+		t.Fatalf("equal-time page identities: total=%d unique=%d", len(first), len(unique))
+	}
 }
 
 func TestOverviewCountsOneAuthoritativeUsageContribution(t *testing.T) {

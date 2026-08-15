@@ -11,6 +11,8 @@ import type { TraceExplorer } from "../components/trace-explorer";
 import type { RangeSelectedDetail } from "../components/time-range-filter";
 import { conversationTargetFromLocation, type ConversationTarget } from "../model/trace-analysis";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
+import { agentmetryClient } from "../api/agentmetry-client";
+import { LIVE_UPDATE_EVENT, LiveUpdateController } from "../controllers/live-update-controller";
 import {
   conversationLocation,
   dashboardLocation,
@@ -44,6 +46,7 @@ export class AgentmetryApp extends LitElement {
   private scrollSaveGeneration = 0;
   private scrollSaveScheduled = false;
   private previousScrollRestoration: ScrollRestoration = "auto";
+  private readonly liveUpdates = new LiveUpdateController(agentmetryClient, (detail) => window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail })));
 
   connectedCallback() {
     super.connectedCallback();
@@ -52,12 +55,14 @@ export class AgentmetryApp extends LitElement {
     window.addEventListener("popstate", this.popState);
     window.addEventListener("scroll", this.scrollChanged, { passive: true });
     this.readRoute();
+    this.liveUpdates.start();
   }
 
   disconnectedCallback() {
     window.removeEventListener("popstate", this.popState);
     window.removeEventListener("scroll", this.scrollChanged);
     history.scrollRestoration = this.previousScrollRestoration;
+    this.liveUpdates.stop();
     super.disconnectedCallback();
   }
 
@@ -158,6 +163,7 @@ export class AgentmetryApp extends LitElement {
         .returnHref=${this.conversationReturn?.href ?? ""}
         .returnLabel=${this.conversationReturn?.label ?? ""}
         .requestedAgentId=${this.requestedAgentId}
+        .active=${!traceActive}
         ?hidden=${traceActive}
         .locationForSession=${(sourceId: string, sessionId: string) =>
           conversationLocation({ sourceId, conversationId: sessionId }, this.filters)}

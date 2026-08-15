@@ -7,6 +7,7 @@ import { agentmetryClient } from "../api/agentmetry-client";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
 import { NOT_REPORTED, UNAVAILABLE } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
+import { affectsOverview, LIVE_UPDATE_EVENT, type LiveUpdateWindow } from "../controllers/live-update-controller";
 
 export type DashboardStateDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -23,6 +24,16 @@ export class DashboardSummary extends LitElement {
   @property({ type: Number }) activityCount?: number;
   private readonly dashboard = new DashboardController(this, agentmetryClient, () => ({ range: this.range, sourceId: this.sourceId, search: this.search }));
   private lastStateKey = "";
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+    super.disconnectedCallback();
+  }
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
@@ -56,6 +67,10 @@ export class DashboardSummary extends LitElement {
     this.lastStateKey = key;
     this.dispatchEvent(new CustomEvent<DashboardStateDetail>("dashboard-state-changed", { detail: { status, sources }, bubbles: true, composed: true }));
   }
+
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateWindow>) => {
+    if (event.detail.resyncRequired || affectsOverview(event.detail.targets)) this.dashboard.refresh();
+  };
 }
 
 const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? NOT_REPORTED : value.toLocaleString();

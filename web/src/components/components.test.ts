@@ -93,6 +93,54 @@ describe("dashboard components", () => {
     expect(table.shadowRoot?.querySelector("a.trace")).toBeNull();
   });
 
+  it("keeps the activity DOM window bounded when thousands are resident", async () => {
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = Array.from({ length: 2_000 }, (_, index) => ({
+      id: `activity-${index}`,
+      source: "example",
+      signal: "log" as const,
+      name: `activity ${index}`,
+      kind: "message" as const,
+      agentId: "main",
+      runId: "run-1",
+      model: "",
+      observedAt: new Date(1_700_000_000_000 + index).toISOString(),
+      contributesToTotal: false,
+      tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null },
+    }));
+    document.body.append(table);
+
+    await table.updateComplete;
+
+    expect(table.shadowRoot?.querySelectorAll("tbody tr")).toHaveLength(200);
+    expect(table.shadowRoot?.textContent).toContain("Show older loaded activities");
+  });
+
+  it("navigates every loaded trace activity while keeping the DOM at 200 rows", async () => {
+    const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
+    waterfall.trace = {
+      ...traceFixture,
+      activities: Array.from({ length: 300 }, (_, index) => ({
+        ...traceFixture.activities[0],
+        id: `trace-activity-${index}`,
+        name: `trace activity ${index}`,
+        spanId: `span-${index}`,
+        observedAt: new Date(Date.UTC(2026, 7, 11, 0, 0, 0, index)).toISOString(),
+      })),
+      activityCount: 300,
+    };
+    document.body.append(waterfall);
+    await waterfall.updateComplete;
+
+    expect(waterfall.shadowRoot?.querySelectorAll("details.row")).toHaveLength(200);
+    waterfall.shadowRoot?.querySelector<HTMLButtonElement>(".window-nav button")?.click();
+    await waterfall.updateComplete;
+
+    expect(waterfall.shadowRoot?.querySelectorAll("details.row")).toHaveLength(100);
+    expect(waterfall.shadowRoot?.textContent).toContain("trace activity 299");
+    expect(waterfall.shadowRoot?.textContent).toContain("Show previous loaded trace activities");
+  });
+
   it("emits an activity-page intent when scrolling near the end", async () => {
     const table = document.createElement("am-activity-table") as ActivityTable;
     table.hasMore = true;
