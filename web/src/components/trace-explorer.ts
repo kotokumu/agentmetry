@@ -76,7 +76,12 @@ export class TraceExplorer extends LitElement {
   }
 
   private readonly traceActivitiesNeeded = () => { void this.trace.loadMore(); };
-  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => { event.detail.waitUntil(this.trace.applyLiveUpdate(event.detail)); };
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
+    event.detail.waitUntil(this.trace.applyLiveUpdate(event.detail).then(() => {
+      const traceId = this.trace.takeRemovedTrace();
+      if (traceId) this.dispatchEvent(new CustomEvent("trace-removed", { detail: { traceId }, bubbles: true, composed: true }));
+    }));
+  };
 
   focusRouteHeading() {
     this.shadowRoot?.querySelector<HTMLElement>(".trace-title")?.focus({ preventScroll: true });

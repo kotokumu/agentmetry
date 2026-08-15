@@ -472,6 +472,28 @@ describe("Lit data controllers", () => {
     expect(host.trace.value?.activities.map(({ id }) => id)).toEqual(["fresh"]);
   });
 
+  it("clears a trace removed during a live update without retrying the acknowledged window", async () => {
+    const current: Trace = { traceId: "trace-a", startedAt: "", endedAt: "", status: "ok", rootSpanCount: 1, missingParentCount: 0, conversations: [], agents: [], activities: [activity("current")], activityOffset: 0, activityCount: 1, hasMore: false };
+    const getTrace = vi.fn()
+      .mockResolvedValueOnce(current)
+      .mockRejectedValueOnce(new ConnectError("gone", Code.NotFound));
+    traceClient = { getTrace } as unknown as AgentmetryClient;
+    const host = document.createElement("test-trace-host") as TraceHost;
+    document.body.append(host);
+    host.trace.open("trace-a");
+    await vi.waitFor(() => expect(host.trace.value?.traceId).toBe("trace-a"));
+
+    await expect(host.trace.applyLiveUpdate({
+      resyncRequired: true,
+      throughCursor: "cursor-after-removal",
+      targets: [{ kind: ProjectionTargetKind.TRACE, sourceId: "", sessionId: "", traceId: "trace-a" }],
+    })).resolves.toBeUndefined();
+
+    expect(host.trace.value).toBeUndefined();
+    expect(host.trace.takeRemovedTrace()).toBe("trace-a");
+    expect(host.trace.takeRemovedTrace()).toBeUndefined();
+  });
+
   it("falls back to an authoritative trace snapshot when mutation catch-up exceeds ten pages", async () => {
     const stale: Trace = { traceId: "trace-a", startedAt: "", endedAt: "", status: "ok", rootSpanCount: 1, missingParentCount: 0, conversations: [], agents: [], activities: [{ ...activity("stale"), id: "stale" }], activityOffset: 0, activityCount: 1, hasMore: false };
     const fresh: Trace = { ...stale, activities: [{ ...activity("fresh"), id: "fresh" }] };

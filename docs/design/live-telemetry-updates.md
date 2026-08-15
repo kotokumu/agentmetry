@@ -140,6 +140,10 @@ non-OTLP projections can participate in the same ordered stream.
   produces `ResyncRequired`; it never silently starts from “now”.
 - A stream failure keeps the last good data visible and retries from the last
   cursor with bounded exponential backoff.
+- If a live session or trace becomes empty and its bounded snapshot returns
+  `NotFound`, the view clears the stale projection, acknowledges the window,
+  and returns to the filtered list. Removing only the conversation that opened
+  a still-valid trace clears that return origin without closing the trace.
 - Activity pagination and live synchronization are serialized per view. A live
   update cancels an in-flight page and obtains a new bounded head/token before
   paging resumes, so stale offsets are never continued after a mutation window.
@@ -425,9 +429,10 @@ stream cancellation, sync paging cancellation, and unavailable reconnects.
    Revised session time extrema are repaired with indexed scope/time lookups.
 16. Session summaries infer omitted parent-agent links only for non-root agents
    still missing an explicit parent. A covering scope/agent/parent index serves
-   at most eight evidence spans per agent, 256 per summary, with at most 64
-   indexed ancestor steps per candidate. Summary/member/activity reads share one
-   read snapshot.
+   at most eight evidence spans per agent and reserves those attempts from a
+   256-slot summary budget before querying. This caps evidence queries at 32
+   even when every agent has zero candidates, with at most 64 indexed ancestor
+   steps per candidate. Summary/member/activity reads share one read snapshot.
 
 ## TDD Construction Plan
 

@@ -127,6 +127,10 @@ func (store *Store) inferAgentParents(ctx context.Context, reader sqlReader, sou
 			continue
 		}
 		limit := min(evidenceLimitPerAgent, remainingEvidence)
+		// Reserve the attempt before querying. Agents without parent evidence
+		// must still consume the global budget; otherwise a session with many
+		// evidence-free agents can issue one query per agent.
+		remainingEvidence -= limit
 		rows, err := reader.QueryContext(ctx, `SELECT trace_id, parent_span_id FROM spans
 WHERE source = ? AND run_id = ? AND agent_id = ? AND parent_span_id > ''
 LIMIT ?`, sourceID, sessionID, agent.AgentID, limit)
@@ -150,7 +154,6 @@ LIMIT ?`, sourceID, sessionID, agent.AgentID, limit)
 		if err := rows.Close(); err != nil {
 			return nil, fmt.Errorf("close agent parent evidence: %w", err)
 		}
-		remainingEvidence -= len(candidates)
 		for _, candidate := range candidates {
 			parentID, err := nearestAncestorAgent(ctx, reader, sourceID, sessionID, candidate.traceID, candidate.parentSpanID, agent.AgentID)
 			if err != nil {

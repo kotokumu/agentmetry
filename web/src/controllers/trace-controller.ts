@@ -1,4 +1,5 @@
 import { Task, TaskStatus } from "@lit/task";
+import { Code, ConnectError } from "@connectrpc/connect";
 import type { ReactiveControllerHost } from "lit";
 import type { ActivityMutation, AgentmetryClient } from "../api/agentmetry-client";
 import type { Trace } from "../model/telemetry";
@@ -16,6 +17,7 @@ export class TraceController {
   private liveAbort?: AbortController;
   private liveLoading = false;
   private syncCursor = "";
+  private removedTraceId?: string;
   traceId = "";
   loadingPage = false;
   pageError?: string;
@@ -42,6 +44,7 @@ export class TraceController {
     if (traceId === this.traceId) return;
     this.traceId = traceId;
     this.traceOverride = undefined;
+    this.removedTraceId = undefined;
     this.pageError = undefined;
     this.pageAbort?.abort();
 	this.liveAbort?.abort();
@@ -52,6 +55,12 @@ export class TraceController {
   }
 
   close() { this.open(""); }
+
+  takeRemovedTrace() {
+    const traceId = this.removedTraceId;
+    this.removedTraceId = undefined;
+    return traceId;
+  }
   refresh() {
     this.traceOverride = undefined;
     void this.task.run();
@@ -111,6 +120,14 @@ export class TraceController {
       this.host.requestUpdate();
     } catch (error) {
       if (request !== this.liveRequest || abort.signal.aborted) return;
+      if (isNotFound(error)) {
+        this.traceId = "";
+        this.traceOverride = undefined;
+        this.removedTraceId = current.traceId;
+        this.syncCursor = window.throughCursor;
+        this.host.requestUpdate();
+        return;
+      }
       throw error;
     } finally {
       if (request === this.liveRequest) this.liveLoading = false;
@@ -176,3 +193,5 @@ const applyTraceMutations = (current: Trace["activities"], mutations: readonly A
 const deduplicateActivities = (activities: readonly Trace["activities"][number][]) =>
   [...new Map(activities.map((activity) => [activityIdentity(activity), activity])).values()]
     .sort((left, right) => left.observedAt.localeCompare(right.observedAt) || activityIdentity(left).localeCompare(activityIdentity(right)));
+
+const isNotFound = (error: unknown) => error instanceof ConnectError && error.code === Code.NotFound;

@@ -155,6 +155,7 @@ export class AgentmetryApp extends LitElement {
         .returnLabel=${this.traceReturn?.label ?? "Conversations"}
         .locationForConversation=${(target: ConversationTarget) => conversationLocation(target, this.filters)}
         @trace-close-requested=${this.closeTrace}
+        @trace-removed=${this.traceRemoved}
         @conversation-selected-from-trace=${this.conversationSelectedFromTrace}
         @trace-view-ready=${this.traceViewReady}
       ></am-trace-explorer>` : null}
@@ -279,6 +280,23 @@ export class AgentmetryApp extends LitElement {
 
   private readonly conversationRemoved = (event: CustomEvent<{ sourceId: string; conversationId: string }>) => {
     if (this.requestedConversation?.sourceId !== event.detail.sourceId || this.requestedConversation.conversationId !== event.detail.conversationId) return;
+    if (this.selectedTraceId) {
+      // The trace remains a valid standalone view even when its navigation
+      // origin disappears. Drop only the stale return target and keep the
+      // currently visible trace mounted.
+      this.requestedConversation = undefined;
+      this.traceReturn = undefined;
+      const state = history.state && typeof history.state === "object" ? history.state : {};
+      history.replaceState({ ...state, origin: undefined }, "", `${location.pathname}${location.search}`);
+      return;
+    }
+    this.beginNavigation();
+    history.replaceState({}, "", dashboardLocation(this.filters));
+    this.readRoute(true, true);
+  };
+
+  private readonly traceRemoved = (event: CustomEvent<{ traceId: string }>) => {
+    if (this.selectedTraceId !== event.detail.traceId) return;
     this.beginNavigation();
     history.replaceState({}, "", dashboardLocation(this.filters));
     this.readRoute(true, true);
