@@ -160,6 +160,12 @@ jobs:
           xcrun stapler validate "$app_path"
           spctl --assess --type execute --verbose=4 "$app_path"
 
+      - name: Verify signed macOS sidecar starts
+        if: runner.os == 'macOS'
+        run: |
+          sidecar_path="src-tauri/target/release/bundle/macos/Agentmetry.app/Contents/MacOS/agentmetry"
+          "$sidecar_path" -h >/dev/null
+
       - name: Package macOS DMG
         if: runner.os == 'macOS'
         run: node build/desktop/package-macos-dmg.mjs

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
+import { validateMacosEntitlements } from "./macos-signing.mjs";
 import { releaseVersion, validateUpdaterConfig } from "./updater-config.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
@@ -15,3 +16,10 @@ if (!tag) {
 
 releaseVersion(tag, config.version);
 validateUpdaterConfig(config);
+
+const entitlements = config.bundle?.macOS?.entitlements;
+validateMacosEntitlements(
+  entitlements === undefined
+    ? undefined
+    : readFileSync(resolve(root, "src-tauri", entitlements), "utf8"),
+);
