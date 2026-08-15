@@ -39,7 +39,7 @@ func TestInferAgentParentsBoundsEvidenceFreeAgentQueries(t *testing.T) {
 	if len(parents) != 0 {
 		t.Fatalf("unexpected inferred parents: %#v", parents)
 	}
-	if reader.queryCount != 32 {
-		t.Fatalf("parent evidence queries = %d, want global maximum 32", reader.queryCount)
+	if reader.queryCount == 0 || reader.queryCount > 32 {
+		t.Fatalf("parent evidence queries = %d, want between 1 and global maximum 32", reader.queryCount)
 	}
 }

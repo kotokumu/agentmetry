@@ -25,9 +25,10 @@ let traceClient: AgentmetryClient;
 class ConversationsHost extends LitElement {
   readonly conversations: ConversationsController;
   filters: TelemetryFilters = { range: "24h", sourceId: "", search: "" };
+  active = true;
   constructor() {
     super();
-    this.conversations = new ConversationsController(this, conversationsClient, () => this.filters);
+    this.conversations = new ConversationsController(this, conversationsClient, () => this.filters, () => this.active);
   }
 }
 
@@ -306,6 +307,33 @@ describe("Lit data controllers", () => {
 
     expect(host.conversations.sessions.map(({ id }) => id)).toEqual(["session-2"]);
     await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-2"));
+  });
+
+  it("detects removal of an affected requested session while its workspace is inactive", async () => {
+    const current = session();
+    const getSession = vi.fn()
+      .mockResolvedValueOnce(current)
+      .mockRejectedValueOnce(new ConnectError("gone", Code.NotFound));
+    conversationsClient = {
+      listSessions: vi.fn().mockResolvedValue([current]),
+      getSession,
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+    host.conversations.select({ sourceId: "codex", conversationId: "session-1" });
+    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-1"));
+    host.active = false;
+    host.requestUpdate();
+    await host.updateComplete;
+
+    await host.conversations.applyLiveUpdate({
+      resyncRequired: false,
+      throughCursor: "cursor-after-removal",
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "session-1", traceId: "" }],
+    });
+
+    expect(getSession).toHaveBeenLastCalledWith("codex", "session-1", undefined, undefined, expect.any(AbortSignal));
+    expect(host.conversations.takeRemovedSession()).toEqual({ sourceId: "codex", conversationId: "session-1" });
   });
 
   it("appends trace pages without replacing the first page", async () => {

@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Code, ConnectError } from "@connectrpc/connect";
 import "./agentmetry-app";
+import { agentmetryClient } from "../api/agentmetry-client";
+import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
+import { ProjectionTargetKind } from "../gen/agentmetry/v1/agentmetry_pb";
 import type { AgentmetryApp } from "./agentmetry-app";
 import type { TimeRangeFilter } from "../components/time-range-filter";
 import type { SessionList } from "../components/session-list";
@@ -103,6 +107,7 @@ const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(asy
 
 afterEach(() => {
   document.body.replaceChildren();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   history.replaceState({}, "", "/");
 });
@@ -171,9 +176,16 @@ describe("Agentmetry app composition", () => {
     await vi.waitFor(() => expect(location.pathname).toBe("/traces/trace-a"));
     await vi.waitFor(() => expect(traceExplorerOf(app)).toBeTruthy());
 
-    workspaceOf(app)?.dispatchEvent(new CustomEvent("conversation-removed", {
-      detail: { sourceId: "codex", conversationId: "conversation-1" }, bubbles: true, composed: true,
-    }));
+    vi.spyOn(agentmetryClient, "getSession").mockRejectedValueOnce(new ConnectError("gone", Code.NotFound));
+    const pending: Promise<unknown>[] = [];
+    const detail: LiveUpdateDelivery = {
+      resyncRequired: false,
+      throughCursor: "cursor-after-removal",
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "conversation-1", traceId: "" }],
+      waitUntil: (promise) => pending.push(promise),
+    };
+    window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail }));
+    await Promise.all(pending);
     await app.updateComplete;
 
     expect(location.pathname).toBe("/traces/trace-a");

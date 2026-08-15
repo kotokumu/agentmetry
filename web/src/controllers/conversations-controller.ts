@@ -173,6 +173,10 @@ export class ConversationsController {
   }
 
   private async applySelectedLiveUpdate(window: LiveUpdateWindow) {
+    if (!this.isActive()) {
+      await this.verifyInactiveRequestedSession(window);
+      return;
+    }
     const session = this.selected;
     if (!session || (!window.resyncRequired && !affectsSession(window.targets, session.sourceId, session.id))) return;
     const request = ++this.liveRequest;
@@ -218,14 +222,7 @@ export class ConversationsController {
       } catch (error) {
         if (!isNotFound(error)) throw error;
         if (request !== this.liveRequest || abort.signal.aborted) return;
-        this.requested = undefined;
-        this.selectedRef = undefined;
-        this.sessionOverride = undefined;
-        this.agentActivityPage = undefined;
-        this.removedSessionKey = sessionKey(session.sourceId, session.id);
-        this.removedSession = { sourceId: session.sourceId, conversationId: session.id };
-        this.syncCursor = convergedCursor;
-        this.host.requestUpdate();
+        this.markSessionRemoved({ sourceId: session.sourceId, conversationId: session.id }, convergedCursor);
         return;
       }
       if (request !== this.liveRequest || abort.signal.aborted || this.target?.sourceId !== session.sourceId || this.target.conversationId !== session.id) return;
@@ -255,6 +252,40 @@ export class ConversationsController {
     } finally {
       if (request === this.liveRequest) this.liveLoading = false;
     }
+  }
+
+  private async verifyInactiveRequestedSession(window: LiveUpdateWindow) {
+    const requested = this.requested;
+    if (!requested || (!window.resyncRequired && !affectsSession(window.targets, requested.sourceId, requested.conversationId))) return;
+    const request = ++this.liveRequest;
+    this.liveAbort?.abort();
+    const abort = new AbortController();
+    this.liveAbort = abort;
+    this.liveLoading = true;
+    try {
+      // The hidden workspace owns only a navigation origin. Check existence
+      // without the previous trace/span activity filter and without syncing
+      // its inactive resident activity window.
+      await this.client.getSession(requested.sourceId, requested.conversationId, undefined, undefined, abort.signal);
+    } catch (error) {
+      if (request !== this.liveRequest || abort.signal.aborted) return;
+      if (!isNotFound(error)) throw error;
+      if (this.requested?.sourceId !== requested.sourceId || this.requested.conversationId !== requested.conversationId) return;
+      this.markSessionRemoved(requested, window.throughCursor);
+    } finally {
+      if (request === this.liveRequest) this.liveLoading = false;
+    }
+  }
+
+  private markSessionRemoved(session: ConversationRef, cursor: string) {
+    this.requested = undefined;
+    this.selectedRef = undefined;
+    this.sessionOverride = undefined;
+    this.agentActivityPage = undefined;
+    this.removedSessionKey = sessionKey(session.sourceId, session.conversationId);
+    this.removedSession = session;
+    this.syncCursor = cursor;
+    this.host.requestUpdate();
   }
 
   select(target: ConversationTarget) {
