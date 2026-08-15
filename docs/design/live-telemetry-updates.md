@@ -424,8 +424,10 @@ stream cancellation, sync paging cancellation, and unavailable reconnects.
    scope moves or non-monotonic corrections use a conservative scoped rebuild.
    Revised session time extrema are repaired with indexed scope/time lookups.
 16. Session summaries infer omitted parent-agent links only for non-root agents
-   still missing an explicit parent, using at most 64 evidence spans and 64
-   indexed ancestor steps. Summary/member/activity reads share one read snapshot.
+   still missing an explicit parent. A covering scope/agent/parent index serves
+   at most eight evidence spans per agent, 256 per summary, with at most 64
+   indexed ancestor steps per candidate. Summary/member/activity reads share one
+   read snapshot.
 
 ## TDD Construction Plan
 
@@ -481,7 +483,8 @@ level.
 
 The implementation was reviewed against these gates before release. Targeted
 benchmarks on an Apple M5 Pro measured an existing-span revision in a
-100,000-activity hot session at about 0.71 ms, a 100,000-span session summary at
-about 0.16 ms, a 100,000-activity trace head read at about 1.01 ms, and a single
+100,000-activity hot session at about 0.71 ms, a 100,000-span main-agent session
+summary at about 0.16 ms, a 100,000-span child-agent session summary at about
+0.29 ms, a 100,000-activity trace head read at about 1.01 ms, and a single
 10,000-span commit at about 0.85 s. These numbers
 are regression baselines, not cross-machine latency guarantees.

@@ -89,6 +89,9 @@ table "spans" {
   index "spans_source_run_agent_idx" {
     columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.agent_id]
   }
+  index "spans_source_run_agent_parent_idx" {
+    columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.agent_id, table.spans.column.parent_span_id, table.spans.column.trace_id, table.spans.column.span_id]
+  }
   index "spans_trace_started_at_idx" {
     columns = [table.spans.column.trace_id, table.spans.column.started_at, table.spans.column.ended_at]
   }

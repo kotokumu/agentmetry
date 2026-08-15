@@ -119,20 +119,22 @@ FROM session_agents WHERE source = ? AND run_id = ? ORDER BY agent_id`, sourceID
 // still lack an explicit parent are inspected, with bounded evidence and
 // ancestry depth. Both lookups use composite/primary-key indexes.
 func (store *Store) inferAgentParents(ctx context.Context, reader sqlReader, sourceID, sessionID string, agents []query.AgentSession) (map[string]string, error) {
-	const evidenceLimit = 64
+	const evidenceLimitPerAgent = 8
+	remainingEvidence := 256
 	parents := make(map[string]string)
 	for _, agent := range agents {
-		if agent.AgentID == "main" || agent.ParentAgentID != "" {
+		if agent.AgentID == "main" || agent.ParentAgentID != "" || remainingEvidence == 0 {
 			continue
 		}
+		limit := min(evidenceLimitPerAgent, remainingEvidence)
 		rows, err := reader.QueryContext(ctx, `SELECT trace_id, parent_span_id FROM spans
-WHERE source = ? AND run_id = ? AND agent_id = ? AND parent_span_id <> ''
-ORDER BY trace_id, span_id LIMIT ?`, sourceID, sessionID, agent.AgentID, evidenceLimit)
+WHERE source = ? AND run_id = ? AND agent_id = ? AND parent_span_id > ''
+LIMIT ?`, sourceID, sessionID, agent.AgentID, limit)
 		if err != nil {
 			return nil, fmt.Errorf("query bounded agent parent evidence: %w", err)
 		}
 		type candidate struct{ traceID, parentSpanID string }
-		candidates := make([]candidate, 0, evidenceLimit)
+		candidates := make([]candidate, 0, limit)
 		for rows.Next() {
 			var value candidate
 			if err := rows.Scan(&value.traceID, &value.parentSpanID); err != nil {
@@ -148,6 +150,7 @@ ORDER BY trace_id, span_id LIMIT ?`, sourceID, sessionID, agent.AgentID, evidenc
 		if err := rows.Close(); err != nil {
 			return nil, fmt.Errorf("close agent parent evidence: %w", err)
 		}
+		remainingEvidence -= len(candidates)
 		for _, candidate := range candidates {
 			parentID, err := nearestAncestorAgent(ctx, reader, sourceID, sessionID, candidate.traceID, candidate.parentSpanID, agent.AgentID)
 			if err != nil {
