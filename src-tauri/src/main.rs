@@ -163,13 +163,19 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building Agentmetry desktop application");
 
-    app.run(|app, event| {
-        if let RunEvent::Exit = event {
+    app.run(|app, event| match event {
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen {
+            has_visible_windows,
+            ..
+        } => restore_main_window_on_reopen(app, has_visible_windows),
+        RunEvent::Exit => {
             let _ = with_controller(app, |controller, _| {
                 controller.shutdown();
                 Ok(())
             });
         }
+        _ => {}
     });
 }
 
@@ -382,6 +388,16 @@ fn with_controller<T>(
     operation(&mut controller, app)
 }
 
+fn restore_main_window_on_reopen(app: &tauri::AppHandle, has_visible_windows: bool) {
+    if should_restore_main_window_on_reopen(has_visible_windows) {
+        show_main_window(app);
+    }
+}
+
+fn should_restore_main_window_on_reopen(has_visible_windows: bool) -> bool {
+    !has_visible_windows
+}
+
 fn show_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -426,4 +442,19 @@ fn health_check(address: &str) -> bool {
         return false;
     }
     response.starts_with(b"HTTP/1.1 200 ") || response.starts_with(b"HTTP/1.0 200 ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_restore_main_window_on_reopen;
+
+    #[test]
+    fn reopen_restores_main_window_when_macos_reports_no_visible_windows() {
+        assert!(should_restore_main_window_on_reopen(false));
+    }
+
+    #[test]
+    fn reopen_does_not_restore_main_window_when_macos_reports_a_visible_window() {
+        assert!(!should_restore_main_window_on_reopen(true));
+    }
 }
