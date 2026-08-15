@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/remote-schema.json",
+  "identifier": "dashboard-updates",
+  "description": "Allow the embedded local Agentmetry dashboard to receive desktop update status events.",
+  "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:17890/*"]
+  },
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten"
+  ]
+}

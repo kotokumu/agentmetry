@@ -1,5 +1,6 @@
 import { LitElement, css, html } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import "../components/app-update-control";
 import "../components/conversation-workspace";
 import "../components/dashboard-summary";
 import "../components/time-range-filter";
@@ -95,7 +96,7 @@ export class AgentmetryApp extends LitElement {
     return html`<main data-density="operator">
       <header>
         <div><a class="brand" href="/" aria-label="Back to Agentmetry dashboard" @click=${this.goHome}><span class="brand-mark" aria-hidden="true"></span><span>AGENTMETRY</span></a><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
-        <div class="header-controls"><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
+        <div class="header-controls"><am-app-update-control></am-app-update-control><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
       </header>
 
       <am-dashboard-summary

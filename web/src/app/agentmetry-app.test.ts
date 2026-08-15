@@ -142,6 +142,7 @@ describe("Agentmetry app composition", () => {
     expect(app.shadowRoot?.querySelector("am-dashboard-summary")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-conversation-workspace")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-trace-explorer")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector("am-app-update-control")).not.toBeNull();
     expect(app.shadowRoot?.querySelector(".kpis")).toBeNull();
     expect(app.shadowRoot?.querySelector(".workspace")).toBeNull();
   });

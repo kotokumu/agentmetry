@@ -12,6 +12,7 @@
     "@connectrpc/connect": "^2.1.0",
     "@connectrpc/connect-web": "^2.1.0",
     "@lit/task": "^1.0.3",
+    "@tauri-apps/api": "^2.11.1",
     "lit": "^3.3.3"
   },
   "devDependencies": {

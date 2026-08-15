@@ -11,13 +11,19 @@ use tauri::{
     menu::MenuBuilder,
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     webview::WebviewWindowBuilder,
-    Manager, RunEvent, WebviewUrl, WebviewWindow, WindowEvent,
+    Emitter, Manager, RunEvent, State, WebviewUrl, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_shell::{
     process::{CommandChild, CommandEvent},
     ShellExt,
 };
 use tauri_plugin_updater::UpdaterExt;
+
+mod updates;
+
+use updates::{
+    UpdateCheckResponse, UpdateCoordinator, UpdatePhase, UpdateStatusEvent, UPDATE_STATUS_EVENT,
+};
 
 const DASHBOARD_ADDRESS: &str = "127.0.0.1:17890";
 const OTLP_HTTP_ADDRESS: &str = "127.0.0.1:4318";
@@ -106,6 +112,11 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(UpdateCoordinator::default())
+        .invoke_handler(tauri::generate_handler![
+            check_for_app_update,
+            install_app_update
+        ])
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -170,40 +181,154 @@ fn spawn_update_check(app: tauri::AppHandle) {
     });
 }
 
-async fn install_available_update(app: tauri::AppHandle) -> Result<(), String> {
-    let updater = app
-        .updater()
-        .map_err(|error| format!("initialize updater: {error}"))?;
-    let Some(update) = updater
-        .check()
-        .await
-        .map_err(|error| format!("check for update: {error}"))?
-    else {
-        return Ok(());
+#[tauri::command]
+async fn check_for_app_update(
+    app: tauri::AppHandle,
+    coordinator: State<'_, UpdateCoordinator>,
+) -> Result<UpdateCheckResponse, String> {
+    let coordinator = coordinator.inner().clone();
+    let _operation = coordinator.begin()?;
+    check_available_update(&app).await
+}
+
+#[tauri::command]
+async fn install_app_update(
+    app: tauri::AppHandle,
+    coordinator: State<'_, UpdateCoordinator>,
+) -> Result<UpdateCheckResponse, String> {
+    let coordinator = coordinator.inner().clone();
+    let _operation = coordinator.begin()?;
+    install_available_update_inner(app).await
+}
+
+async fn install_available_update(app: tauri::AppHandle) -> Result<UpdateCheckResponse, String> {
+    let coordinator = app.state::<UpdateCoordinator>().inner().clone();
+    let _operation = coordinator.begin()?;
+    install_available_update_inner(app).await
+}
+
+async fn check_available_update(app: &tauri::AppHandle) -> Result<UpdateCheckResponse, String> {
+    let current_version = app.package_info().version.to_string();
+    emit_update_status(app, UpdateStatusEvent::checking(&current_version));
+    match query_available_update(app).await {
+        Ok(Some(update)) => {
+            emit_update_status(
+                app,
+                UpdateStatusEvent::available(&update.current_version, &update.version),
+            );
+            Ok(UpdateCheckResponse::available(
+                update.current_version,
+                update.version,
+            ))
+        }
+        Ok(None) => {
+            emit_update_status(app, UpdateStatusEvent::up_to_date(&current_version));
+            Ok(UpdateCheckResponse::current(current_version))
+        }
+        Err(error) => {
+            emit_update_status(app, UpdateStatusEvent::failed(&error));
+            Err(error)
+        }
+    }
+}
+
+async fn install_available_update_inner(
+    app: tauri::AppHandle,
+) -> Result<UpdateCheckResponse, String> {
+    let current_version = app.package_info().version.to_string();
+    emit_update_status(&app, UpdateStatusEvent::checking(&current_version));
+    let update = match query_available_update(&app).await {
+        Ok(Some(update)) => update,
+        Ok(None) => {
+            emit_update_status(&app, UpdateStatusEvent::up_to_date(&current_version));
+            return Ok(UpdateCheckResponse::current(current_version));
+        }
+        Err(error) => {
+            emit_update_status(&app, UpdateStatusEvent::failed(&error));
+            return Err(error);
+        }
     };
 
-    eprintln!(
-        "Agentmetry update available: {} -> {}",
-        update.current_version, update.version
+    let next_version = update.version.clone();
+    emit_update_status(
+        &app,
+        UpdateStatusEvent::available(&update.current_version, &next_version),
     );
-    let package = update
-        .download(|_chunk_length, _content_length| {}, || {})
+    let progress_app = app.clone();
+    let progress_version = next_version.clone();
+    let mut downloaded = 0_u64;
+    let package = match update
+        .download(
+            move |chunk_length, content_length| {
+                downloaded += chunk_length as u64;
+                emit_update_status(
+                    &progress_app,
+                    UpdateStatusEvent::progress(
+                        UpdatePhase::Downloading,
+                        &progress_version,
+                        downloaded,
+                        content_length,
+                    ),
+                );
+            },
+            || {},
+        )
         .await
-        .map_err(|error| format!("download update {}: {error}", update.version))?;
-    with_controller(&app, |controller, _| {
+    {
+        Ok(package) => package,
+        Err(error) => {
+            let message = format!("download update {next_version}: {error}");
+            emit_update_status(&app, UpdateStatusEvent::failed(&message));
+            return Err(message);
+        }
+    };
+
+    emit_update_status(
+        &app,
+        UpdateStatusEvent::phase(UpdatePhase::Installing, &next_version),
+    );
+    if let Err(error) = with_controller(&app, |controller, _| {
         controller.shutdown();
         Ok(())
-    })?;
+    }) {
+        emit_update_status(&app, UpdateStatusEvent::failed(&error));
+        return Err(error);
+    }
     if let Err(error) = update.install(package) {
         if let Err(relaunch_error) =
             with_controller(&app, |controller, handle| controller.launch(handle))
         {
             eprintln!("restart Agentmetry sidecar after update failure: {relaunch_error}");
         }
-        return Err(format!("install update {}: {error}", update.version));
+        let message = format!("install update {next_version}: {error}");
+        emit_update_status(&app, UpdateStatusEvent::failed(&message));
+        return Err(message);
     }
 
+    emit_update_status(
+        &app,
+        UpdateStatusEvent::phase(UpdatePhase::Restarting, &next_version),
+    );
     app.restart();
+}
+
+async fn query_available_update(
+    app: &tauri::AppHandle,
+) -> Result<Option<tauri_plugin_updater::Update>, String> {
+    let updater = app
+        .updater()
+        .map_err(|error| format!("initialize updater: {error}"))?;
+    let update = updater
+        .check()
+        .await
+        .map_err(|error| format!("check for update: {error}"))?;
+    Ok(update)
+}
+
+fn emit_update_status(app: &tauri::AppHandle, status: UpdateStatusEvent) {
+    if let Err(error) = app.emit(UPDATE_STATUS_EVENT, status) {
+        eprintln!("emit Agentmetry update status: {error}");
+    }
 }
 
 fn build_main_window(app: &tauri::App) -> Result<WebviewWindow, Box<dyn std::error::Error>> {
