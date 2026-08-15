@@ -142,16 +142,32 @@ LIMIT ? OFFSET ?`, formatTime(filter.Since), filter.SourceID, filter.SourceID, f
 }
 
 func (store *Store) GetSessionSummary(ctx context.Context, identity query.ConversationIdentity) (query.Session, error) {
-	return store.loadSessionSummary(ctx, identity.SourceID(), identity.ConversationID())
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.Session{}, fmt.Errorf("begin session summary snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	session, err := store.loadSessionSummary(ctx, transaction, identity.SourceID(), identity.ConversationID())
+	if err != nil {
+		return query.Session{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.Session{}, fmt.Errorf("commit session summary snapshot: %w", err)
+	}
+	return session, nil
 }
 
 func (store *Store) ListSessionActivities(ctx context.Context, filter query.ActivityPageFilter) (query.ActivityPage, error) {
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.ActivityPage{}, fmt.Errorf("begin session activity snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
 	sourceID := filter.Identity.SourceID()
 	conversationID := filter.Identity.ConversationID()
 	offset := filter.Page.Offset()
 	if offset == 0 && filter.Anchor.Present() {
-		var err error
-		offset, err = store.anchorOffset(ctx, sourceID, conversationID, filter.Anchor.TraceID().String(), filter.Anchor.SpanID().String(), filter.Page)
+		offset, err = store.anchorOffset(ctx, transaction, sourceID, conversationID, filter.Anchor.TraceID().String(), filter.Anchor.SpanID().String(), filter.Page)
 		if err != nil {
 			return query.ActivityPage{}, err
 		}
@@ -162,7 +178,7 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 	logWhere += " AND activity_kind <> 'unknown'"
 	var total int64
 	countArgs := append(spanArgs, logArgs...)
-	if err := store.readDB.QueryRowContext(ctx, fmt.Sprintf(`SELECT
+	if err := transaction.QueryRowContext(ctx, fmt.Sprintf(`SELECT
 	  (SELECT COUNT(*) FROM spans WHERE %s) +
 	  (SELECT COUNT(*) FROM logs WHERE %s)`, spanWhere, logWhere), countArgs...).Scan(&total); err != nil {
 		return query.ActivityPage{}, fmt.Errorf("count session activities: %w", err)
@@ -171,20 +187,24 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 		return query.ActivityPage{}, query.ErrConversationNotFound
 	}
 	offset = boundedOffset(int(total), offset)
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), filter.Page.Size(), offset, sourceID, conversationID, true, filter.AgentID)
+	activities, err := store.activitiesWindowWithReader(ctx, transaction, formatTime(time.Unix(0, 0)), filter.Page.Size(), offset, sourceID, conversationID, true, filter.AgentID)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}
 	activities = enrichActivityRelationships(activities)
-	return query.ActivityPage{
+	result := query.ActivityPage{
 		Activities: activities, Total: total, Offset: offset,
 		HasEarlier: offset > 0, HasMore: int64(offset+len(activities)) < total,
-	}, nil
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.ActivityPage{}, fmt.Errorf("commit session activity snapshot: %w", err)
+	}
+	return result, nil
 }
 
-func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, traceID, spanID string, page query.Page) (int, error) {
+func (store *Store) anchorOffset(ctx context.Context, reader sqlReader, sourceID, sessionID, traceID, spanID string, page query.Page) (int, error) {
 	var observedAt string
-	if err := store.readDB.QueryRowContext(ctx, `SELECT observed_at FROM (
+	if err := reader.QueryRowContext(ctx, `SELECT observed_at FROM (
   SELECT ended_at AS observed_at FROM spans WHERE source = ? AND run_id = ? AND trace_id = ? AND span_id = ? AND activity_kind <> 'unknown'
   UNION ALL
   SELECT observed_at FROM logs WHERE source = ? AND run_id = ? AND trace_id = ? AND span_id = ? AND activity_kind <> 'unknown'
@@ -195,7 +215,7 @@ func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, trace
 		return 0, fmt.Errorf("query activity anchor: %w", err)
 	}
 	var before int64
-	if err := store.readDB.QueryRowContext(ctx, `SELECT
+	if err := reader.QueryRowContext(ctx, `SELECT
   (SELECT COUNT(*) FROM spans WHERE ended_at >= ? AND ended_at > ? AND run_id = ? AND source = ? AND activity_kind <> 'unknown') +
   (SELECT COUNT(*) FROM logs WHERE observed_at >= ? AND observed_at > ? AND run_id = ? AND source = ? AND activity_kind <> 'unknown')`,
 		formatTime(time.Unix(0, 0)), observedAt, sessionID, sourceID,

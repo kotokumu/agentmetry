@@ -7,7 +7,7 @@ import { agentmetryClient } from "../api/agentmetry-client";
 import { TraceController } from "../controllers/trace-controller";
 import type { ConversationTarget } from "../model/trace-analysis";
 import { featurePanelStyles } from "./feature-styles";
-import { LIVE_UPDATE_EVENT, type LiveUpdateWindow } from "../controllers/live-update-controller";
+import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
 @customElement("am-trace-explorer")
 export class TraceExplorer extends LitElement {
@@ -76,7 +76,7 @@ export class TraceExplorer extends LitElement {
   }
 
   private readonly traceActivitiesNeeded = () => { void this.trace.loadMore(); };
-  private readonly liveUpdate = (event: CustomEvent<LiveUpdateWindow>) => { void this.trace.applyLiveUpdate(event.detail); };
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => { event.detail.waitUntil(this.trace.applyLiveUpdate(event.detail)); };
 
   focusRouteHeading() {
     this.shadowRoot?.querySelector<HTMLElement>(".trace-title")?.focus({ preventScroll: true });

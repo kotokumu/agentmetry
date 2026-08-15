@@ -108,6 +108,21 @@ afterEach(() => {
 });
 
 describe("Agentmetry app composition", () => {
+  it("returns a removed conversation route to the filtered dashboard", async () => {
+    history.replaceState({}, "", "/conversations/codex/removed?range=7d");
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(workspaceOf(app)).toBeTruthy());
+
+    workspaceOf(app)?.dispatchEvent(new CustomEvent("conversation-removed", {
+      detail: { sourceId: "codex", conversationId: "removed" }, bubbles: true, composed: true,
+    }));
+
+    await vi.waitFor(() => expect(location.pathname).toBe("/"));
+    expect(location.search).toContain("range=7d");
+  });
+
   it("uses source-neutral product language", async () => {
     vi.stubGlobal("fetch", overviewFetch(emptyOverview));
     const app = document.createElement("am-app") as AgentmetryApp;

@@ -12,7 +12,7 @@ import type { RangeSelectedDetail } from "../components/time-range-filter";
 import { conversationTargetFromLocation, type ConversationTarget } from "../model/trace-analysis";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
 import { agentmetryClient } from "../api/agentmetry-client";
-import { LIVE_UPDATE_EVENT, LiveUpdateController } from "../controllers/live-update-controller";
+import { LIVE_UPDATE_EVENT, LiveUpdateController, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 import {
   conversationLocation,
   dashboardLocation,
@@ -46,7 +46,12 @@ export class AgentmetryApp extends LitElement {
   private scrollSaveGeneration = 0;
   private scrollSaveScheduled = false;
   private previousScrollRestoration: ScrollRestoration = "auto";
-  private readonly liveUpdates = new LiveUpdateController(agentmetryClient, (detail) => window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail })));
+  private readonly liveUpdates = new LiveUpdateController(agentmetryClient, async (windowValue) => {
+    const pending: Promise<unknown>[] = [];
+    const detail: LiveUpdateDelivery = { ...windowValue, waitUntil: (promise) => pending.push(promise) };
+    window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail }));
+    await Promise.all(pending);
+  });
 
   connectedCallback() {
     super.connectedCallback();
@@ -173,6 +178,7 @@ export class AgentmetryApp extends LitElement {
         @session-selected=${this.sessionSelected}
         @trace-selected=${this.traceSelected}
         @conversation-return-requested=${this.conversationReturnRequested}
+        @conversation-removed=${this.conversationRemoved}
         @conversation-view-ready=${this.conversationViewReady}
         @conversation-view-state-changed=${this.conversationViewStateChanged}
         @conversation-summary-changed=${this.conversationSummaryChanged}
@@ -269,6 +275,13 @@ export class AgentmetryApp extends LitElement {
       return;
     }
     this.showFilteredDashboard();
+  };
+
+  private readonly conversationRemoved = (event: CustomEvent<{ sourceId: string; conversationId: string }>) => {
+    if (this.requestedConversation?.sourceId !== event.detail.sourceId || this.requestedConversation.conversationId !== event.detail.conversationId) return;
+    this.beginNavigation();
+    history.replaceState({}, "", dashboardLocation(this.filters));
+    this.readRoute(true, true);
   };
 
   private readonly popState = () => this.readRoute(true);

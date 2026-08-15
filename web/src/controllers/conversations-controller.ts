@@ -45,6 +45,7 @@ export class ConversationsController {
   private liveLoading = false;
   private syncCursor = "";
   private removedSessionKey = "";
+  private removedSession?: ConversationRef;
 
   activityPage?: ActivityPageState;
   selectedAgentId = "";
@@ -160,7 +161,18 @@ export class ConversationsController {
 
   async applyLiveUpdate(window: LiveUpdateWindow) {
     const filter = this.filters();
-    if (window.resyncRequired || affectsSessionList(window.targets, filter.sourceId)) void this.sessionsTask.run();
+    const refreshList = window.resyncRequired || affectsSessionList(window.targets, filter.sourceId)
+      ? this.refreshListForLive()
+      : Promise.resolve();
+    await Promise.all([refreshList, this.applySelectedLiveUpdate(window)]);
+  }
+
+  private async refreshListForLive() {
+    await this.sessionsTask.run();
+    if (this.sessionsTask.status === TaskStatus.ERROR) throw this.sessionsTask.error;
+  }
+
+  private async applySelectedLiveUpdate(window: LiveUpdateWindow) {
     const session = this.selected;
     if (!session || (!window.resyncRequired && !affectsSession(window.targets, session.sourceId, session.id))) return;
     const request = ++this.liveRequest;
@@ -211,14 +223,21 @@ export class ConversationsController {
         this.sessionOverride = undefined;
         this.agentActivityPage = undefined;
         this.removedSessionKey = sessionKey(session.sourceId, session.id);
+        this.removedSession = { sourceId: session.sourceId, conversationId: session.id };
         this.syncCursor = convergedCursor;
         this.host.requestUpdate();
         return;
       }
       if (request !== this.liveRequest || abort.signal.aborted || this.target?.sourceId !== session.sourceId || this.target.conversationId !== session.id) return;
-      const activities = incremental
+      const mergedActivities = incremental
         ? applyActivityMutations([...session.activities, ...latest.activities], mutations)
         : latest.activities;
+      // Once the resident cap is reached, old pages can no longer share the
+      // bounded head's opaque continuation token. Replace with the contiguous
+      // authoritative head instead of publishing mismatched paging metadata.
+      const activities = incremental && (session.activities.length >= 2000 || mergedActivities.length >= 2000)
+        ? latest.activities
+        : mergedActivities;
       this.sessionOverride = {
         ...latest,
         activities,
@@ -230,8 +249,9 @@ export class ConversationsController {
       this.agentActivityPage = undefined;
       this.syncCursor = convergedCursor;
       this.host.requestUpdate();
-    } catch {
-      // The durable stream will cause a later window or reconnect to retry.
+    } catch (error) {
+      if (request !== this.liveRequest || abort.signal.aborted) return;
+      throw error;
     } finally {
       if (request === this.liveRequest) this.liveLoading = false;
     }
@@ -248,6 +268,12 @@ export class ConversationsController {
     if (retry) void this.conversationTask.run();
   }
 
+  takeRemovedSession() {
+    const removed = this.removedSession;
+    this.removedSession = undefined;
+    return removed;
+  }
+
   clearRoute() {
     this.requested = undefined;
     this.selectedRef = undefined;
@@ -258,6 +284,7 @@ export class ConversationsController {
     this.selectedRef = undefined;
     this.requested = undefined;
     this.removedSessionKey = "";
+    this.removedSession = undefined;
     this.resetDetailState();
   }
 

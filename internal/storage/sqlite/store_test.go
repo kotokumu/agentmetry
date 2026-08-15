@@ -135,6 +135,35 @@ func TestCommitBatchReplacesSpanRevisionAndBuildsOverview(t *testing.T) {
 	}
 }
 
+func TestSpanRevisionRepairsSessionTimeExtrema(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef",
+		Kind: canonical.ActivityResponse, StartedAt: now.Add(-time.Second), EndedAt: now,
+		Agent: canonical.AgentContext{RunID: "revised-session", AgentID: "main"},
+	}
+	ctx := context.Background()
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.EndedAt = now.Add(time.Minute)
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "revised-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.StartedAt.Equal(span.EndedAt) || !session.EndedAt.Equal(span.EndedAt) || session.ActivityCount != 1 {
+		t.Fatalf("revised session extrema = %s..%s count=%d, want %s", session.StartedAt, session.EndedAt, session.ActivityCount, span.EndedAt)
+	}
+}
+
 func TestListSessionsSearchesSessionID(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

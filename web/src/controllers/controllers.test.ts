@@ -260,6 +260,29 @@ describe("Lit data controllers", () => {
     expect(host.conversations.selected?.activities.map(({ id }) => id)).toEqual(["current", "fresh"]);
   });
 
+  it("replaces a capped session resident window with a contiguous authoritative head", async () => {
+    const resident = Array.from({ length: 2000 }, (_, index) => ({ ...activity(`old-${index}`), id: `old-${index}` }));
+    const current = { ...session(resident), activityCount: 2100 };
+    const fresh = { ...session([{ ...activity("fresh-head"), id: "fresh-head" }]), activityCount: 2101, nextPageToken: "head-next" };
+    const client = {
+      listSessions: vi.fn().mockResolvedValue([current]),
+      getSession: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(current).mockResolvedValue(fresh),
+      syncSessionActivities: vi.fn().mockResolvedValue({ mutations: [], throughCursor: "cursor-2", resyncRequired: false }),
+    } as unknown as AgentmetryClient;
+    conversationsClient = client;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+    await vi.waitFor(() => expect(host.conversations.selected?.activities).toHaveLength(2000));
+    const targets = [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "session-1", traceId: "" }];
+
+    await host.conversations.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-1", targets });
+    await host.conversations.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-2", targets });
+
+    expect(host.conversations.selected?.activities.map(({ id }) => id)).toEqual(["fresh-head"]);
+    expect(host.conversations.selected?.activityOffset).toBe(0);
+    expect(host.conversations.selected?.nextPageToken).toBe("head-next");
+  });
+
   it("removes a selected session immediately when its live refresh returns not found", async () => {
     const removed = session([{ ...activity("removed"), id: "removed" }]);
     const remaining = { ...session([{ ...activity("remaining"), id: "remaining" }]), id: "session-2" };
@@ -497,5 +520,28 @@ describe("Lit data controllers", () => {
     await paging;
 
     expect(host.trace.value?.activities.map(({ id }) => id)).toEqual(["current", "fresh"]);
+  });
+
+  it("replaces a capped trace resident window with a contiguous authoritative head", async () => {
+    const resident = Array.from({ length: 2000 }, (_, index) => ({ ...activity(`old-${index}`), id: `old-${index}` }));
+    const current: Trace = { traceId: "trace-a", startedAt: "", endedAt: "", status: "ok", rootSpanCount: 1, missingParentCount: 0, conversations: [], agents: [], activities: resident, activityOffset: 0, activityCount: 2100, hasMore: true, nextPageToken: "old-next" };
+    const head: Trace = { ...current, activities: [{ ...activity("fresh-head"), id: "fresh-head" }], activityCount: 2101, nextPageToken: "head-next" };
+    const getTrace = vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(current).mockResolvedValue(head);
+    traceClient = {
+      getTrace,
+      syncTraceActivities: vi.fn().mockResolvedValue({ mutations: [], throughCursor: "cursor-2", resyncRequired: false }),
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-trace-host") as TraceHost;
+    document.body.append(host);
+    host.trace.open("trace-a");
+    await vi.waitFor(() => expect(host.trace.value?.activities).toHaveLength(2000));
+    const targets = [{ kind: ProjectionTargetKind.TRACE, sourceId: "", sessionId: "", traceId: "trace-a" }];
+
+    await host.trace.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-1", targets });
+    await host.trace.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-2", targets });
+
+    expect(host.trace.value?.activities.map(({ id }) => id)).toEqual(["fresh-head"]);
+    expect(host.trace.value?.activityOffset).toBe(0);
+    expect(host.trace.value?.nextPageToken).toBe("head-next");
   });
 });

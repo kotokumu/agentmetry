@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/query"
@@ -13,14 +12,14 @@ import (
 // loadSessionSummary reads only aggregate columns and agent metadata. It does
 // not materialize operation content; operation evidence is owned by
 // ListSessionActivities.
-func (store *Store) loadSessionSummary(ctx context.Context, sourceID, sessionID string) (query.Session, error) {
+func (store *Store) loadSessionSummary(ctx context.Context, reader sqlReader, sourceID, sessionID string) (query.Session, error) {
 	var count int64
 	var startedAt, endedAt string
 	var input, output, cacheRead, cacheWrite, reasoning int64
 	var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported int
 	var costReported bool
 	var cost float64
-	if err := store.readDB.QueryRowContext(ctx, `SELECT activity_count, started_at, ended_at,
+	if err := reader.QueryRowContext(ctx, `SELECT activity_count, started_at, ended_at,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_reported, output_reported, cache_read_reported, cache_write_reported, reasoning_reported,
   cost_reported, cost_usd
@@ -53,7 +52,7 @@ FROM session_rollups WHERE source = ? AND run_id = ?`, sourceID, sessionID).Scan
 		session.CostUSD = &cost
 	}
 
-	agentRows, err := store.readDB.QueryContext(ctx, `SELECT agent_id, agent_definition, agent_type,
+	agentRows, err := reader.QueryContext(ctx, `SELECT agent_id, agent_definition, agent_type,
   parent_agent_id, model, activity_count, input_tokens, output_tokens, cache_read_tokens,
   cache_write_tokens, reasoning_tokens, input_reported, output_reported, cache_read_reported,
   cache_write_reported, reasoning_reported
@@ -81,7 +80,7 @@ FROM session_agents WHERE source = ? AND run_id = ? ORDER BY agent_id`, sourceID
 	if err := agentRows.Close(); err != nil {
 		return query.Session{}, fmt.Errorf("close session agents: %w", err)
 	}
-	parents, err := store.inferAgentParents(ctx, sourceID, sessionID)
+	parents, err := store.inferAgentParents(ctx, reader, sourceID, sessionID, session.Agents)
 	if err != nil {
 		return query.Session{}, err
 	}
@@ -92,7 +91,7 @@ FROM session_agents WHERE source = ? AND run_id = ? ORDER BY agent_id`, sourceID
 	}
 	session.AgentCount = int64(len(session.Agents))
 
-	traceRows, err := store.readDB.QueryContext(ctx, `SELECT trace_id FROM session_traces WHERE source = ? AND run_id = ? ORDER BY trace_id`, sourceID, sessionID)
+	traceRows, err := reader.QueryContext(ctx, `SELECT trace_id FROM session_traces WHERE source = ? AND run_id = ? ORDER BY trace_id`, sourceID, sessionID)
 	if err != nil {
 		return query.Session{}, fmt.Errorf("query session traces: %w", err)
 	}
@@ -107,72 +106,55 @@ FROM session_agents WHERE source = ? AND run_id = ? ORDER BY agent_id`, sourceID
 	if err := traceRows.Err(); err != nil {
 		return query.Session{}, fmt.Errorf("iterate session traces: %w", err)
 	}
+	if err := traceRows.Close(); err != nil {
+		return query.Session{}, fmt.Errorf("close session traces: %w", err)
+	}
 	return session, nil
-}
-
-type sessionSpanEvidence struct {
-	traceID       string
-	spanID        string
-	parentSpanID  string
-	agentID       string
-	parentAgentID string
 }
 
 // inferAgentParents reconstructs agent delegation when a producer omits
 // gen_ai.agent.parent.id. Span parentage still records which agent's span
 // contained the child agent's model/tool span, so the query projection can
-// expose a useful topology without materializing operation bodies.
-func (store *Store) inferAgentParents(ctx context.Context, sourceID, sessionID string) (map[string]string, error) {
-	rows, err := store.readDB.QueryContext(ctx, `SELECT trace_id, span_id, parent_span_id, agent_id, parent_agent_id
-FROM spans WHERE source = ? AND run_id = ? ORDER BY trace_id, span_id`, sourceID, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("query agent span relationships: %w", err)
-	}
-	defer rows.Close()
-
-	spans := make(map[string]sessionSpanEvidence)
-	explicitParents := make(map[string]string)
-	for rows.Next() {
-		var evidence sessionSpanEvidence
-		if err := rows.Scan(&evidence.traceID, &evidence.spanID, &evidence.parentSpanID, &evidence.agentID, &evidence.parentAgentID); err != nil {
-			return nil, fmt.Errorf("scan agent span relationship: %w", err)
-		}
-		if evidence.traceID == "" || evidence.spanID == "" {
+// expose a useful topology without loading the whole session. Only agents that
+// still lack an explicit parent are inspected, with bounded evidence and
+// ancestry depth. Both lookups use composite/primary-key indexes.
+func (store *Store) inferAgentParents(ctx context.Context, reader sqlReader, sourceID, sessionID string, agents []query.AgentSession) (map[string]string, error) {
+	const evidenceLimit = 64
+	parents := make(map[string]string)
+	for _, agent := range agents {
+		if agent.AgentID == "main" || agent.ParentAgentID != "" {
 			continue
 		}
-		spans[spanKey(evidence.traceID, evidence.spanID)] = evidence
-		child := sessionAgentID(evidence.agentID)
-		if evidence.parentAgentID != "" && evidence.parentAgentID != child {
-			explicitParents[child] = evidence.parentAgentID
+		rows, err := reader.QueryContext(ctx, `SELECT trace_id, parent_span_id FROM spans
+WHERE source = ? AND run_id = ? AND agent_id = ? AND parent_span_id <> ''
+ORDER BY trace_id, span_id LIMIT ?`, sourceID, sessionID, agent.AgentID, evidenceLimit)
+		if err != nil {
+			return nil, fmt.Errorf("query bounded agent parent evidence: %w", err)
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate agent span relationships: %w", err)
-	}
-
-	agentIDs := make([]string, 0, len(spans))
-	for _, evidence := range spans {
-		agentID := sessionAgentID(evidence.agentID)
-		if agentID != "main" {
-			agentIDs = append(agentIDs, agentID)
-		}
-	}
-	sort.Strings(agentIDs)
-	parents := make(map[string]string, len(explicitParents))
-	for agentID, parentID := range explicitParents {
-		parents[agentID] = parentID
-	}
-	for _, agentID := range agentIDs {
-		if parents[agentID] != "" {
-			continue
-		}
-		for _, evidence := range spans {
-			if sessionAgentID(evidence.agentID) != agentID {
-				continue
+		type candidate struct{ traceID, parentSpanID string }
+		candidates := make([]candidate, 0, evidenceLimit)
+		for rows.Next() {
+			var value candidate
+			if err := rows.Scan(&value.traceID, &value.parentSpanID); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan agent parent evidence: %w", err)
 			}
-			parentID := nearestAncestorAgent(spans, evidence.traceID, evidence.parentSpanID, agentID)
+			candidates = append(candidates, value)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("iterate agent parent evidence: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, fmt.Errorf("close agent parent evidence: %w", err)
+		}
+		for _, candidate := range candidates {
+			parentID, err := nearestAncestorAgent(ctx, reader, sourceID, sessionID, candidate.traceID, candidate.parentSpanID, agent.AgentID)
+			if err != nil {
+				return nil, err
+			}
 			if parentID != "" {
-				parents[agentID] = parentID
+				parents[agent.AgentID] = parentID
 				break
 			}
 		}
@@ -180,28 +162,30 @@ FROM spans WHERE source = ? AND run_id = ? ORDER BY trace_id, span_id`, sourceID
 	return parents, nil
 }
 
-func nearestAncestorAgent(spans map[string]sessionSpanEvidence, traceID, parentSpanID, childAgentID string) string {
-	visited := make(map[string]struct{})
-	for parentSpanID != "" {
-		key := spanKey(traceID, parentSpanID)
-		if _, ok := visited[key]; ok {
-			return ""
+func nearestAncestorAgent(ctx context.Context, reader sqlReader, sourceID, sessionID, traceID, parentSpanID, childAgentID string) (string, error) {
+	visited := make(map[string]struct{}, 8)
+	for depth := 0; parentSpanID != "" && depth < 64; depth++ {
+		if _, exists := visited[parentSpanID]; exists {
+			return "", nil
 		}
-		visited[key] = struct{}{}
-		parent, ok := spans[key]
-		if !ok {
-			return ""
+		visited[parentSpanID] = struct{}{}
+		var nextParentSpanID, parentAgentID string
+		err := reader.QueryRowContext(ctx, `SELECT parent_span_id, agent_id FROM spans
+WHERE trace_id = ? AND span_id = ? AND source = ? AND run_id = ?`, traceID, parentSpanID, sourceID, sessionID).Scan(&nextParentSpanID, &parentAgentID)
+		if err == sql.ErrNoRows {
+			return "", nil
 		}
-		parentAgentID := sessionAgentID(parent.agentID)
+		if err != nil {
+			return "", fmt.Errorf("query agent ancestor: %w", err)
+		}
+		parentAgentID = sessionAgentID(parentAgentID)
 		if parentAgentID != childAgentID {
-			return parentAgentID
+			return parentAgentID, nil
 		}
-		parentSpanID = parent.parentSpanID
+		parentSpanID = nextParentSpanID
 	}
-	return ""
+	return "", nil
 }
-
-func spanKey(traceID, spanID string) string { return traceID + "\x00" + spanID }
 
 func sessionAgentID(agentID string) string {
 	if agentID == "" {

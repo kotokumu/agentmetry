@@ -95,6 +95,12 @@ non-OTLP projections can participate in the same ordered stream.
   the snapshot interval cursor; it never advances a cursor over retained state.
 - Stream cancellation must follow the request and process contexts so application
   shutdown is not delayed by live clients.
+- A frontend cursor is acknowledged only after every mounted affected projection
+  applies the window successfully. Temporary query failures retain the targets
+  and retry with bounded backoff from the last acknowledged cursor.
+- Session summaries, session activity pages, and trace responses are each built
+  from one read-only SQLite snapshot so summary and page metadata cannot cross
+  commit boundaries.
 - Public cursors are opaque strings. Clients must not parse storage positions.
 
 ## Inputs and Outputs
@@ -137,6 +143,9 @@ non-OTLP projections can participate in the same ordered stream.
 - Activity pagination and live synchronization are serialized per view. A live
   update cancels an in-flight page and obtains a new bounded head/token before
   paging resumes, so stale offsets are never continued after a mutation window.
+- When a resident activity set has reached 2,000 items, the next live update
+  replaces it with the contiguous authoritative head. This keeps opaque paging
+  tokens aligned with the represented window.
 
 ## Acceptance Criteria
 
@@ -367,7 +376,8 @@ stream cancellation, sync paging cancellation, and unavailable reconnects.
    upserted spans. Failed normalization has no visible projection commit.
 5. Retain approximately the latest 50,000 commits and 128 MiB of accounted
    change payload. Cleanup runs only at a 512-commit boundary and deletes up to
-   1,000 expired commits. It never runs
+   1,000 expired commits per chunk until both bounds converge. Mutation bytes
+   are accounted before the final cleanup check. It never runs
    `VACUUM` on the write path. Expired cursors produce `ResyncRequired`, and
    activity mutations follow the same boundary through a foreign key cascade.
 6. After a successful commit, rotate a store-owned notification channel. Watch
@@ -396,19 +406,26 @@ stream cancellation, sync paging cancellation, and unavailable reconnects.
 11. A single frontend controller reconnects and forms 300 ms render windows over
    incoming change windows with a capped target set. Feature controllers
    serialize pagination and sync work, apply mutations through keyed state, and
-   refresh one bounded head window to renew paging continuation.
+   refresh one bounded head window to renew paging continuation. The coordinator
+   advances its replay cursor only after all mounted consumers resolve; failed
+   applications are retried from the prior acknowledged cursor.
 12. Each feature catch-up is limited to 10 pages and 1,000 mutations. Crossing a
    limit replaces the scoped resident state with an authoritative bounded head
    snapshot and adopts the server-provided through cursor.
 13. Keyed state keeps at most 2,000 activities and ActivityTable renders at most
    200 rows. Loaded sub-windows are navigated without mounting the entire
-   resident collection.
+   resident collection. At capacity, a live mutation replaces resident state
+   with a contiguous head window so its opaque continuation remains valid.
 14. The store uses a single writer connection and a four-connection read pool.
    Live streams are capped at eight. Notification queue memory is O(1), while the
    explicitly bounded subscriber state is O(N).
 15. Session and trace summaries use materialized rollups and membership tables.
    Append-only commits and monotonic existing-span revisions apply deltas;
    scope moves or non-monotonic corrections use a conservative scoped rebuild.
+   Revised session time extrema are repaired with indexed scope/time lookups.
+16. Session summaries infer omitted parent-agent links only for non-root agents
+   still missing an explicit parent, using at most 64 evidence spans and 64
+   indexed ancestor steps. Summary/member/activity reads share one read snapshot.
 
 ## TDD Construction Plan
 
@@ -464,6 +481,7 @@ level.
 
 The implementation was reviewed against these gates before release. Targeted
 benchmarks on an Apple M5 Pro measured an existing-span revision in a
-100,000-activity hot session at about 0.69 ms, a 100,000-activity trace head read
-at about 1.28 ms, and a single 10,000-span commit at about 0.85 s. These numbers
+100,000-activity hot session at about 0.71 ms, a 100,000-span session summary at
+about 0.16 ms, a 100,000-activity trace head read at about 1.01 ms, and a single
+10,000-span commit at about 0.85 s. These numbers
 are regression baselines, not cross-machine latency guarantees.

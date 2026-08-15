@@ -281,47 +281,52 @@ func appendProjectionChange(ctx context.Context, transaction *sql.Tx, targets []
 }
 
 func retainProjectionChanges(ctx context.Context, transaction *sql.Tx) error {
-	var count, bytes int64
-	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(target_bytes + mutation_bytes), 0) FROM projection_changes`).Scan(&count, &bytes); err != nil {
-		return fmt.Errorf("inspect projection retention: %w", err)
-	}
-	excessRows := max(int64(0), count-projectionFeedRetention)
-	excessBytes := max(int64(0), bytes-projectionFeedByteLimit)
-	if excessRows == 0 && excessBytes == 0 {
-		return nil
-	}
-	rows, err := transaction.QueryContext(ctx, `SELECT sequence, target_bytes + mutation_bytes FROM projection_changes ORDER BY sequence LIMIT 1000`)
-	if err != nil {
-		return fmt.Errorf("select projection retention chunk: %w", err)
-	}
-	var cutoff, removedRows, removedBytes int64
-	for rows.Next() {
-		var sequence, rowBytes int64
-		if err := rows.Scan(&sequence, &rowBytes); err != nil {
+	for {
+		var count, bytes int64
+		if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*), COALESCE(SUM(target_bytes + mutation_bytes), 0) FROM projection_changes`).Scan(&count, &bytes); err != nil {
+			return fmt.Errorf("inspect projection retention: %w", err)
+		}
+		excessRows := max(int64(0), count-projectionFeedRetention)
+		excessBytes := max(int64(0), bytes-projectionFeedByteLimit)
+		if excessRows == 0 && excessBytes == 0 {
+			return nil
+		}
+		rows, err := transaction.QueryContext(ctx, `SELECT sequence, target_bytes + mutation_bytes
+FROM projection_changes WHERE sequence < (SELECT MAX(sequence) FROM projection_changes)
+ORDER BY sequence LIMIT 1000`)
+		if err != nil {
+			return fmt.Errorf("select projection retention chunk: %w", err)
+		}
+		var cutoff, removedRows, removedBytes int64
+		for rows.Next() {
+			var sequence, rowBytes int64
+			if err := rows.Scan(&sequence, &rowBytes); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan projection retention chunk: %w", err)
+			}
+			cutoff = sequence
+			removedRows++
+			removedBytes += rowBytes
+			if removedRows >= excessRows && removedBytes >= excessBytes {
+				break
+			}
+		}
+		if err := rows.Err(); err != nil {
 			_ = rows.Close()
-			return fmt.Errorf("scan projection retention chunk: %w", err)
+			return fmt.Errorf("iterate projection retention chunk: %w", err)
 		}
-		cutoff = sequence
-		removedRows++
-		removedBytes += rowBytes
-		if removedRows >= excessRows && removedBytes >= excessBytes {
-			break
+		if err := rows.Close(); err != nil {
+			return fmt.Errorf("close projection retention chunk: %w", err)
+		}
+		if cutoff == 0 {
+			// One retained commit may itself exceed the byte budget. Keeping the
+			// newest cursor is safer than deleting the only observable change.
+			return nil
+		}
+		if _, err := transaction.ExecContext(ctx, `DELETE FROM projection_changes WHERE sequence <= ?`, cutoff); err != nil {
+			return fmt.Errorf("retain projection changes: %w", err)
 		}
 	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("iterate projection retention chunk: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("close projection retention chunk: %w", err)
-	}
-	if cutoff == 0 {
-		return nil
-	}
-	if _, err := transaction.ExecContext(ctx, `DELETE FROM projection_changes WHERE sequence <= ?`, cutoff); err != nil {
-		return fmt.Errorf("retain projection changes: %w", err)
-	}
-	return nil
 }
 
 func (store *Store) CurrentProjectionPosition(ctx context.Context) (query.ProjectionPosition, error) {

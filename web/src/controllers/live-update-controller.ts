@@ -7,11 +7,15 @@ export type LiveUpdateWindow = Readonly<{
   throughCursor: string;
 }>;
 
+export type LiveUpdateDelivery = LiveUpdateWindow & Readonly<{
+  waitUntil(promise: Promise<unknown>): void;
+}>;
+
 export const LIVE_UPDATE_EVENT = "agentmetry-live-update";
 
 export class LiveUpdateController {
   private readonly client: AgentmetryClient;
-  private readonly apply: (window: LiveUpdateWindow) => void;
+  private readonly apply: (window: LiveUpdateWindow) => void | Promise<void>;
   private abort?: AbortController;
   private cursor = "";
   private pending = new Map<string, ProjectionChangeTarget>();
@@ -19,8 +23,10 @@ export class LiveUpdateController {
   private throughCursor = "";
   private renderTimer?: ReturnType<typeof setTimeout>;
   private reconnectTimer?: ReturnType<typeof setTimeout>;
+  private applying?: AbortSignal;
+  private applyRetryDelay = 250;
 
-  constructor(client: AgentmetryClient, apply: (window: LiveUpdateWindow) => void) {
+  constructor(client: AgentmetryClient, apply: (window: LiveUpdateWindow) => void | Promise<void>) {
     this.client = client;
     this.apply = apply;
   }
@@ -39,15 +45,19 @@ export class LiveUpdateController {
     this.renderTimer = undefined;
     this.reconnectTimer = undefined;
     this.pending.clear();
+    this.resyncRequired = false;
+    this.throughCursor = this.cursor;
   }
 
   private async consume(signal: AbortSignal, retryDelay: number): Promise<void> {
     try {
       for await (const window of this.client.watchProjectionChanges(this.cursor, signal)) {
         if (signal.aborted) return;
-        this.cursor = window.throughCursor || this.cursor;
-		this.throughCursor = this.cursor;
-        if (window.targets.length === 0 && !window.resyncRequired) continue;
+        this.throughCursor = window.throughCursor || this.throughCursor || this.cursor;
+        if (window.targets.length === 0 && !window.resyncRequired && this.pending.size === 0 && this.applying !== signal) {
+          this.cursor = this.throughCursor;
+          continue;
+        }
         this.resyncRequired ||= window.resyncRequired;
         for (const target of window.targets) this.addTarget(target);
         if (window.resyncRequired) {
@@ -65,17 +75,48 @@ export class LiveUpdateController {
     this.reconnectTimer = setTimeout(() => void this.consume(signal, Math.min(retryDelay * 2, 5000)), retryDelay);
   }
 
-  private scheduleRender() {
+  private scheduleRender(delay = 300) {
     if (this.renderTimer) return;
     this.renderTimer = setTimeout(() => {
       this.renderTimer = undefined;
-      const targets = [...this.pending.values()];
-      const resyncRequired = this.resyncRequired;
-	  const throughCursor = this.throughCursor;
-      this.pending.clear();
-      this.resyncRequired = false;
-	  this.apply({ targets, resyncRequired, throughCursor });
-    }, 300);
+      void this.flush();
+    }, delay);
+  }
+
+  private async flush() {
+    const signal = this.abort?.signal;
+    if (!signal || signal.aborted || this.applying === signal) return;
+    const targets = [...this.pending.values()];
+    const resyncRequired = this.resyncRequired;
+    const throughCursor = this.throughCursor;
+    if (targets.length === 0 && !resyncRequired) {
+      this.cursor = throughCursor || this.cursor;
+      return;
+    }
+    this.pending.clear();
+    this.resyncRequired = false;
+    this.applying = signal;
+    let retry = false;
+    try {
+      await this.apply({ targets, resyncRequired, throughCursor });
+      if (!signal.aborted && this.abort?.signal === signal) {
+        this.cursor = throughCursor || this.cursor;
+        this.applyRetryDelay = 250;
+      }
+    } catch {
+      if (!signal.aborted && this.abort?.signal === signal) {
+        for (const target of targets) this.addTarget(target);
+        this.resyncRequired ||= resyncRequired;
+        retry = true;
+      }
+    } finally {
+      if (this.applying === signal) this.applying = undefined;
+      if (!signal.aborted && this.abort?.signal === signal && (this.pending.size > 0 || this.resyncRequired || this.throughCursor !== this.cursor)) {
+        const delay = retry ? this.applyRetryDelay : 300;
+        if (retry) this.applyRetryDelay = Math.min(this.applyRetryDelay * 2, 5000);
+        this.scheduleRender(delay);
+      }
+    }
   }
 
   private addTarget(target: ProjectionChangeTarget) {

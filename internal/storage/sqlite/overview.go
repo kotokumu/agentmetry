@@ -62,6 +62,10 @@ func (store *Store) activitiesWindow(ctx context.Context, since string, limit, o
 }
 
 func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since string, limit, offset int, sourceID, conversationID string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
+	return store.activitiesWindowWithReader(ctx, store.readDB, since, limit, offset, sourceID, conversationID, meaningfulOnly, agentID)
+}
+
+func (store *Store) activitiesWindowWithReader(ctx context.Context, reader sqlReader, since string, limit, offset int, sourceID, conversationID string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
 	spanWhere, spanArgs := activityWhere("ended_at", since, sourceID, conversationID, agentID)
 	logWhere, logArgs := activityWhere("observed_at", since, sourceID, conversationID, agentID)
 	metricWhere, metricArgs := activityWhere("observed_at", since, sourceID, conversationID, agentID)
@@ -129,7 +133,7 @@ LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 		branchLimit = offset + limit
 	}
 	args := append(append(append(append(append(append(spanArgs, branchLimit), logArgs...), branchLimit), metricArgs...), branchLimit), limit, offset)
-	rows, err := store.readDB.QueryContext(ctx, statement, args...)
+	rows, err := reader.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query recent activity: %w", err)
 	}

@@ -97,14 +97,21 @@ export class TraceController {
       // trace reload.
       const head = await this.client.getTrace(current.traceId, 0, 100, "", abort.signal);
       if (request !== this.liveRequest || abort.signal.aborted || this.traceId !== current.traceId) return;
-      const activities = incremental
+      const mergedActivities = incremental
         ? applyTraceMutations([...current.activities, ...head.activities], mutations)
         : head.activities;
+      // Opaque head paging tokens describe a contiguous head window. At the
+      // resident cap, retain that authoritative window instead of combining it
+      // with an evicted/non-contiguous historical tail.
+      const activities = incremental && (current.activities.length >= 2000 || mergedActivities.length >= 2000)
+        ? head.activities
+        : mergedActivities;
       this.traceOverride = { ...head, activities, hasMore: activities.length < head.activityCount };
       this.syncCursor = convergedCursor;
       this.host.requestUpdate();
-    } catch {
-      // Keep current trace visible until the next durable invalidation/reconnect.
+    } catch (error) {
+      if (request !== this.liveRequest || abort.signal.aborted) return;
+      throw error;
     } finally {
       if (request === this.liveRequest) this.liveLoading = false;
     }

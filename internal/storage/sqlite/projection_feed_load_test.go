@@ -197,6 +197,39 @@ func BenchmarkHotSessionSummaryAfterOneHundredThousandActivities(b *testing.B) {
 	}
 }
 
+func BenchmarkHotSessionSummaryAfterOneHundredThousandSpans(b *testing.B) {
+	store, err := Open(filepath.Join(b.TempDir(), "agentmetry.db"))
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.Cleanup(func() { _ = store.Close() })
+	now := time.Now().UTC()
+	for chunk := 0; chunk < 100; chunk++ {
+		spans := make([]canonical.Span, 1000)
+		for index := range spans {
+			ordinal := chunk*1000 + index
+			spans[index] = canonical.Span{
+				Source: "codex", TraceID: fmt.Sprintf("%032x", ordinal/1000+1), SpanID: fmt.Sprintf("%016x", ordinal+1),
+				Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now.Add(time.Duration(ordinal) * time.Nanosecond),
+				Agent: canonical.AgentContext{RunID: "hot-spans", AgentID: "main"},
+			}
+		}
+		if err := store.CommitBatch(context.Background(), canonical.Batch{Spans: spans}); err != nil {
+			b.Fatal(err)
+		}
+	}
+	identity, err := query.NewConversationIdentity("codex", "hot-spans")
+	if err != nil {
+		b.Fatal(err)
+	}
+	b.ResetTimer()
+	for index := 0; index < b.N; index++ {
+		if _, err := store.GetSessionSummary(context.Background(), identity); err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkHotTraceHeadAfterOneHundredThousandActivities(b *testing.B) {
 	store, err := Open(filepath.Join(b.TempDir(), "agentmetry.db"))
 	if err != nil {

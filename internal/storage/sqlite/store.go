@@ -32,6 +32,11 @@ type Store struct {
 	generation string
 }
 
+type sqlReader interface {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
 func Open(path string, profiles ...sourceplugin.Registry) (*Store, error) {
 	ownershipContext, cancelOwnership := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelOwnership()
@@ -195,6 +200,11 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 	if err := updateAffectedTraceRollups(ctx, transaction, batch, plan.previousSpans, sequence); err != nil {
 		return err
 	}
+	if sequence > 0 && sequence%512 == 0 {
+		if err := retainProjectionChanges(ctx, transaction); err != nil {
+			return err
+		}
+	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit telemetry batch: %w", err)
 	}
@@ -243,6 +253,11 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 		}
 		if err := updateAffectedTraceRollups(ctx, transaction, accepted.Projection, plan.previousSpans, sequence); err != nil {
 			return err
+		}
+		if sequence > 0 && sequence%512 == 0 {
+			if err := retainProjectionChanges(ctx, transaction); err != nil {
+				return err
+			}
 		}
 		if err := transaction.Commit(); err != nil {
 			return fmt.Errorf("commit OTLP export: %w", err)

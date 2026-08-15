@@ -33,7 +33,10 @@ export class DashboardController {
   get loading() { return this.task.status === TaskStatus.PENDING && this.value === undefined; }
   get failed() { return this.task.status === TaskStatus.ERROR && this.value === undefined; }
   get error() { return this.task.error; }
-  refresh() { void this.task.run(); }
+  async refresh() {
+    await this.task.run();
+    if (this.task.status === TaskStatus.ERROR) throw this.task.error;
+  }
   hostConnected() {
     if (!this.wasDisconnected) return;
     this.wasDisconnected = false;

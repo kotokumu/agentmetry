@@ -13,7 +13,7 @@ import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../model/telemetry";
 import { NOT_REPORTED } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
-import { LIVE_UPDATE_EVENT, type LiveUpdateWindow } from "../controllers/live-update-controller";
+import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
 export type ConversationSummaryDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -119,7 +119,13 @@ export class ConversationWorkspace extends LitElement {
     }
   }
 
-  private readonly liveUpdate = (event: CustomEvent<LiveUpdateWindow>) => { if (this.active) void this.conversations.applyLiveUpdate(event.detail); };
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
+    if (!this.active) return;
+    event.detail.waitUntil(this.conversations.applyLiveUpdate(event.detail).then(() => {
+      const removed = this.conversations.takeRemovedSession();
+      if (removed) this.dispatchEvent(new CustomEvent("conversation-removed", { detail: removed, bubbles: true, composed: true }));
+    }));
+  };
 
   render() {
     const sessions = this.conversations.sessions;

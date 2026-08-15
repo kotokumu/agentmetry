@@ -54,4 +54,33 @@ describe("LiveUpdateController", () => {
 	expect(apply.mock.calls[0]?.[0].targets.length).toBeLessThanOrEqual(1024);
 	controller.stop();
   });
+
+  it("retries a failed projection application before acknowledging its cursor", async () => {
+    vi.useFakeTimers();
+    const target = { kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "s-1", traceId: "" };
+    const afterCursors: string[] = [];
+    const client = {
+      async *watchProjectionChanges(afterCursor: string, signal: AbortSignal) {
+        afterCursors.push(afterCursor);
+        yield { throughCursor: "one", targets: [target], resyncRequired: false };
+        await new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      },
+    } as unknown as AgentmetryClient;
+    const apply = vi.fn()
+      .mockRejectedValueOnce(new Error("temporary query failure"))
+      .mockResolvedValue(undefined);
+    const controller = new LiveUpdateController(client, apply);
+
+    controller.start();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(apply).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(250);
+    expect(apply).toHaveBeenCalledTimes(2);
+    controller.stop();
+    controller.start();
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(afterCursors).toEqual(["", "one"]);
+    controller.stop();
+  });
 });

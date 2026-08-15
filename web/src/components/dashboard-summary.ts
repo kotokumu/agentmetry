@@ -7,7 +7,7 @@ import { agentmetryClient } from "../api/agentmetry-client";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
 import { NOT_REPORTED, UNAVAILABLE } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
-import { affectsOverview, LIVE_UPDATE_EVENT, type LiveUpdateWindow } from "../controllers/live-update-controller";
+import { affectsOverview, LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
 export type DashboardStateDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -68,8 +68,8 @@ export class DashboardSummary extends LitElement {
     this.dispatchEvent(new CustomEvent<DashboardStateDetail>("dashboard-state-changed", { detail: { status, sources }, bubbles: true, composed: true }));
   }
 
-  private readonly liveUpdate = (event: CustomEvent<LiveUpdateWindow>) => {
-    if (event.detail.resyncRequired || affectsOverview(event.detail.targets)) this.dashboard.refresh();
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
+    if (event.detail.resyncRequired || affectsOverview(event.detail.targets)) event.detail.waitUntil(this.dashboard.refresh());
   };
 }
 

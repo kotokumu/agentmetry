@@ -270,6 +270,29 @@ ON CONFLICT(source, run_id) DO UPDATE SET
 	if _, err := transaction.ExecContext(ctx, statement, sequence, sequence); err != nil {
 		return fmt.Errorf("increment session rollups: %w", err)
 	}
+	// A monotonic span revision can move the earliest observed timestamp
+	// forward. MIN cannot subtract the previous extremum, so repair only the
+	// revised session scopes using the source/run/time indexes.
+	revisedSessions := make(map[sessionKey]struct{})
+	for _, span := range batch.Spans {
+		old, exists := previousSpans[storedSpanKey{traceID: span.TraceID, spanID: span.SpanID}]
+		if exists && old.session != "" && old.endedAt != formatTime(span.EndedAt) {
+			revisedSessions[sessionKey{source: old.source, runID: old.session}] = struct{}{}
+		}
+	}
+	for key := range revisedSessions {
+		if _, err := transaction.ExecContext(ctx, `UPDATE session_rollups SET started_at = (
+  SELECT MIN(observed_at) FROM (
+    SELECT MIN(ended_at) AS observed_at FROM spans
+      WHERE source = ? AND run_id = ? AND activity_kind <> 'unknown'
+    UNION ALL
+    SELECT MIN(observed_at) FROM logs
+      WHERE source = ? AND run_id = ? AND activity_kind <> 'unknown'
+  )
+) WHERE source = ? AND run_id = ?`, key.source, key.runID, key.source, key.runID, key.source, key.runID); err != nil {
+			return fmt.Errorf("repair revised session start time: %w", err)
+		}
+	}
 	agentStatement := sessionAgentAggregateInsert(`AND projection_sequence = ?`, `AND projection_sequence = ?`) + `
 ON CONFLICT(source, run_id, agent_id) DO UPDATE SET
   agent_definition = CASE WHEN excluded.agent_definition <> '' THEN excluded.agent_definition ELSE session_agents.agent_definition END,

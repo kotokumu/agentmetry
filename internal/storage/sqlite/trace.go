@@ -14,7 +14,12 @@ import (
 
 func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (query.Trace, error) {
 	traceID := filter.TraceID.String()
-	summary, err := store.loadTraceSummary(ctx, traceID)
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.Trace{}, fmt.Errorf("begin trace snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	summary, err := store.loadTraceSummary(ctx, transaction, traceID)
 	if err != nil {
 		return query.Trace{}, err
 	}
@@ -80,7 +85,7 @@ FROM (
 
 ORDER BY started_at ASC, observed_at ASC, signal DESC, activity_key ASC
 LIMIT ? OFFSET ?`
-	rows, err := store.readDB.QueryContext(ctx, statement, traceID, branchLimit, traceID, branchLimit, limit, offset)
+	rows, err := transaction.QueryContext(ctx, statement, traceID, branchLimit, traceID, branchLimit, limit, offset)
 	if err != nil {
 		return query.Trace{}, fmt.Errorf("query trace: %w", err)
 	}
@@ -96,6 +101,9 @@ LIMIT ? OFFSET ?`
 	}
 	if err := rows.Err(); err != nil && err != sql.ErrNoRows {
 		return query.Trace{}, fmt.Errorf("iterate trace activities: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return query.Trace{}, fmt.Errorf("close trace activities: %w", err)
 	}
 	activities = enrichActivityRelationships(enrichAgentEvidence(activities))
 	usageContributions := selectUsageContributions(activities)
@@ -116,6 +124,9 @@ LIMIT ? OFFSET ?`
 		ActivityCount:      summary.ActivityCount,
 		HasMore:            int64(offset+len(activities)) < summary.ActivityCount,
 	}
+	if err := transaction.Commit(); err != nil {
+		return query.Trace{}, fmt.Errorf("commit trace snapshot: %w", err)
+	}
 	return trace, nil
 }
 
@@ -130,11 +141,11 @@ type traceSummary struct {
 	Agents             []query.TraceAgent
 }
 
-func (store *Store) loadTraceSummary(ctx context.Context, traceID string) (traceSummary, error) {
+func (store *Store) loadTraceSummary(ctx context.Context, reader sqlReader, traceID string) (traceSummary, error) {
 	result := traceSummary{Status: query.TraceStatusUnknown, Conversations: make([]query.ConversationRef, 0), Agents: make([]query.TraceAgent, 0)}
 	var started, ended string
 	var statusRank int64
-	err := store.readDB.QueryRowContext(ctx, `SELECT started_at, ended_at, status_rank, activity_count,
+	err := reader.QueryRowContext(ctx, `SELECT started_at, ended_at, status_rank, activity_count,
   root_span_count, missing_parent_count FROM trace_rollups WHERE trace_id = ?`, traceID).Scan(
 		&started, &ended, &statusRank, &result.ActivityCount, &result.RootSpanCount, &result.MissingParentCount,
 	)
@@ -161,7 +172,7 @@ func (store *Store) loadTraceSummary(ctx context.Context, traceID string) (trace
 	case 1:
 		result.Status = query.TraceStatusOK
 	}
-	conversationRows, err := store.readDB.QueryContext(ctx, `SELECT source, run_id FROM trace_conversations
+	conversationRows, err := reader.QueryContext(ctx, `SELECT source, run_id FROM trace_conversations
 WHERE trace_id = ? ORDER BY source, run_id`, traceID)
 	if err != nil {
 		return traceSummary{}, fmt.Errorf("query trace conversations: %w", err)
@@ -181,7 +192,7 @@ WHERE trace_id = ? ORDER BY source, run_id`, traceID)
 	if err := conversationRows.Close(); err != nil {
 		return traceSummary{}, fmt.Errorf("close trace conversations: %w", err)
 	}
-	agentRows, err := store.readDB.QueryContext(ctx, `SELECT source, run_id, agent_id, agent_definition,
+	agentRows, err := reader.QueryContext(ctx, `SELECT source, run_id, agent_id, agent_definition,
   agent_type, parent_agent_id, model FROM trace_agents WHERE trace_id = ? ORDER BY source, run_id, agent_id`, traceID)
 	if err != nil {
 		return traceSummary{}, fmt.Errorf("query trace agents: %w", err)
