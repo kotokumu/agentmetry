@@ -27,7 +27,7 @@ export class SessionFilter extends LitElement {
         ${this.sources.map((source) => html`<option value=${source.id}>${source.label}</option>`)}
       </select></label>
       <label>Search
-        <input type="search" .value=${live(this.search)} placeholder="Prompts, messages, tools…" aria-label="Search conversations" @input=${this.searchChanged}>
+        <input type="search" .value=${live(this.search)} placeholder="Session ID, prompts, messages, tools…" aria-label="Search conversations" @input=${this.searchChanged}>
       </label>
     </div>`;
   }

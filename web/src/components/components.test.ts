@@ -506,6 +506,7 @@ describe("dashboard components", () => {
 
     expect(filter.shadowRoot?.textContent).toContain("Claude Code");
     expect(filter.shadowRoot?.textContent).toContain("Codex");
+    expect(input?.placeholder).toContain("Session ID");
     expect(sourceListener).toHaveBeenCalledOnce();
     expect(sourceListener.mock.calls[0][0].detail).toEqual({ sourceId: "claude" });
     expect(searchListener.mock.calls[0][0].detail).toEqual({ search: "repository review" });

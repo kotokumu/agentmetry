@@ -134,6 +134,47 @@ func TestCommitBatchReplacesSpanRevisionAndBuildsOverview(t *testing.T) {
 	}
 }
 
+func TestListSessionsSearchesSessionID(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{
+			ObservedAt: now,
+			Name:       "gen_ai.agent.message",
+			Body:       "ordinary activity",
+			Kind:       canonical.ActivityMessage,
+			Agent:      canonical.AgentContext{RunID: "session-Alpha-123"},
+		},
+		{
+			ObservedAt: now.Add(time.Second),
+			Name:       "gen_ai.agent.message",
+			Body:       "ordinary activity",
+			Kind:       canonical.ActivityMessage,
+			Agent:      canonical.AgentContext{RunID: "session-beta-456"},
+		},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{
+		Since:  now.Add(-time.Hour),
+		Search: "ALPHA-12",
+		Page:   mustPage(t, 0, 100),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ID != "session-Alpha-123" {
+		t.Fatalf("session ID search returned %#v", page.Sessions)
+	}
+}
+
 func TestOverviewKeepsConversationsSeparateWhenTheyShareATrace(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

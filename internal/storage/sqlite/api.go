@@ -283,7 +283,7 @@ func summaryBranches(since, sourceID, sessionID, search string) (string, []any) 
 		args = append(args, sessionID)
 	}
 	if searchValue != "" {
-		predicate := " AND lower(source || ' ' || name || ' ' || content || ' ' || tool_name || ' ' || agent_id || ' ' || agent_definition || ' ' || agent_type || ' ' || target_agent_id || ' ' || target_agent_type || ' ' || model || ' ' || trace_id) LIKE ?"
+		predicate := " AND lower(run_id || ' ' || source || ' ' || name || ' ' || content || ' ' || tool_name || ' ' || agent_id || ' ' || agent_definition || ' ' || agent_type || ' ' || target_agent_id || ' ' || target_agent_type || ' ' || model || ' ' || trace_id) LIKE ?"
 		spanWhere += predicate
 		logWhere += strings.Replace(predicate, "content", "body", 1)
 	}
