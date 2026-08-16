@@ -354,6 +354,42 @@ describe("Agentmetry app composition", () => {
     expect(`${location.pathname}${location.search}`).toBe("/conversations/codex/conversation-1?range=1h");
   });
 
+  it("keeps the selected conversation when search is cleared", async () => {
+    history.replaceState({}, "", "/?q=session-2");
+    const sessions = ["session-1", "session-2"].map((id) => ({
+      id, sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z",
+      activityCount: 0, tokens: emptyOverview.tokens, agents: [], activities: [],
+    }));
+    const overview = { ...emptyOverview, sessions } as TestOverview;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { sessionId?: string } : {};
+      const selected = sessions.find(({ id }) => id === body.sessionId) ?? sessions[0];
+      switch (connectPath(url).split("/").at(-1)) {
+        case "GetDashboard": return connectResponse(dashboardResponse(overview));
+        case "ListSessions": return connectResponse(sessionsResponse(overview));
+        case "GetSession": return connectResponse({ session: sessionSummary(selected), traceIds: [] });
+        case "ListSessionActivities": return connectResponse(activitiesResponse(selected));
+        default: return connectResponse({});
+      }
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-session-list")?.shadowRoot?.querySelectorAll("a")).toHaveLength(2));
+    const selectedLink = workspaceRootOf(app)?.querySelector("am-session-list")?.shadowRoot
+      ?.querySelector<HTMLAnchorElement>('a[href="/conversations/codex/session-2?q=session-2"]');
+    selectedLink?.click();
+    await vi.waitFor(() => expect(`${location.pathname}${location.search}`).toBe("/conversations/codex/session-2?q=session-2"));
+
+    workspaceOf(app)?.dispatchEvent(new CustomEvent("search-submitted", {
+      detail: { search: "" }, bubbles: true, composed: true,
+    }));
+
+    await vi.waitFor(() => expect(`${location.pathname}${location.search}`).toBe("/conversations/codex/session-2"));
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain("session-2"));
+  });
+
   it("uses a focused trace view with an honest direct-link return target", async () => {
     history.replaceState({}, "", "/traces/direct-trace?source=codex&q=tool+error");
     vi.stubGlobal("fetch", overviewFetch(emptyOverview));

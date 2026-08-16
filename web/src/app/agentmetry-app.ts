@@ -199,6 +199,13 @@ export class AgentmetryApp extends LitElement {
 
   private searchSubmitted(event: CustomEvent<{ search: string }>) {
     this.search = event.detail.search.trim();
+    if (this.requestedConversation) {
+      const href = conversationLocation(this.requestedConversation, this.filters);
+      this.beginNavigation();
+      history.replaceState({}, "", href);
+      this.readRoute(true, true);
+      return;
+    }
     this.showFilteredDashboard();
   }
 
