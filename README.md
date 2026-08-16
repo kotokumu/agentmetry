@@ -182,31 +182,19 @@ for packaging details.
 Tagged desktop releases also publish signed updater bundles. Installed desktop
 apps check the latest GitHub Release at startup, keep the local collector
 running while the update downloads and verifies, then restart to apply it.
-Maintainers must configure these repository secrets before creating a release:
-
-| Secret | Purpose |
-| --- | --- |
-| `TAURI_SIGNING_PRIVATE_KEY` | Signs automatic updater bundles |
-| `APPLE_CERTIFICATE` | Base64-encoded Developer ID Application `.p12` certificate |
-| `APPLE_CERTIFICATE_PASSWORD` | Unlocks the exported `.p12` certificate |
-| `KEYCHAIN_PASSWORD` | Protects the temporary CI signing keychain |
-| `APPLE_ID` | Authenticates to Apple's notary service |
-| `APPLE_PASSWORD` | App-specific password for `APPLE_ID` |
-| `APPLE_TEAM_ID` | Apple Developer team identifier |
-
 The updater public key is embedded in `src-tauri/tauri.conf.json`. CD imports
 the Apple certificate into an ephemeral keychain, signs and notarizes the app
 and DMG, validates them with Gatekeeper, and publishes the GitHub Release only
 after every platform succeeds.
 
-Create a release by updating the Tauri version and pushing the matching tag:
+Releases are managed by Release Please. Conventional commits merged into
+`main` update a Release PR containing the changelog and the next version in
+`src-tauri/tauri.conf.json`. Review and merge that PR to create the matching
+`vX.Y.Z` tag and draft GitHub Release; the tag then starts the signed desktop
+distribution workflow. Do not create or push release tags directly.
 
-```sh
-git tag v0.2.0
-git push origin v0.2.0
-```
-
-The tag and `src-tauri/tauri.conf.json` version must match exactly.
+Release preflight independently rejects any tag whose commit is not in `main`
+history.
 
 ## Contributing
 

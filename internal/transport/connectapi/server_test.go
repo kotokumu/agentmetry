@@ -3,6 +3,7 @@ package connectapi
 import (
 	"context"
 	"net/http/httptest"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +13,74 @@ import (
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/query"
 )
+
+type liveReader struct {
+	readerStub
+	mu          sync.Mutex
+	position    query.ProjectionPosition
+	targets     []query.ChangeTarget
+	wake        chan struct{}
+	syncPage    query.ActivitySyncPage
+	sessionSync query.SessionActivitySyncFilter
+	traceSync   query.TraceActivitySyncFilter
+	readErr     error
+	syncErr     error
+}
+
+func newLiveReader() *liveReader {
+	return &liveReader{position: query.ProjectionPosition{Generation: "test"}, wake: make(chan struct{})}
+}
+func (reader *liveReader) CurrentProjectionPosition(context.Context) (query.ProjectionPosition, error) {
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	return reader.position, nil
+}
+func (reader *liveReader) ReadProjectionChanges(_ context.Context, after query.ProjectionPosition, _, _ int) (query.ProjectionChangeWindow, error) {
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	if reader.readErr != nil {
+		return query.ProjectionChangeWindow{}, reader.readErr
+	}
+	return query.ProjectionChangeWindow{From: after, Through: reader.position, Targets: append([]query.ChangeTarget(nil), reader.targets...)}, nil
+}
+func (reader *liveReader) WaitForProjectionChange(ctx context.Context, _ query.ProjectionPosition) error {
+	reader.mu.Lock()
+	wake := reader.wake
+	reader.mu.Unlock()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-wake:
+		return nil
+	}
+}
+func (reader *liveReader) SyncSessionActivities(_ context.Context, filter query.SessionActivitySyncFilter) (query.ActivitySyncPage, error) {
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	reader.sessionSync = filter
+	return reader.syncResult(), reader.syncErr
+}
+func (reader *liveReader) SyncTraceActivities(_ context.Context, filter query.TraceActivitySyncFilter) (query.ActivitySyncPage, error) {
+	reader.mu.Lock()
+	defer reader.mu.Unlock()
+	reader.traceSync = filter
+	return reader.syncResult(), reader.syncErr
+}
+func (reader *liveReader) syncResult() query.ActivitySyncPage {
+	result := reader.syncPage
+	if result.Through.Generation == "" {
+		result.Through = reader.position
+	}
+	return result
+}
+func (reader *liveReader) commit(target query.ChangeTarget) {
+	reader.mu.Lock()
+	reader.position.Sequence++
+	reader.targets = []query.ChangeTarget{target}
+	close(reader.wake)
+	reader.wake = make(chan struct{})
+	reader.mu.Unlock()
+}
 
 type readerStub struct {
 	dashboard      query.Overview
@@ -59,7 +128,7 @@ func (reader *readerStub) GetTrace(_ context.Context, filter query.TraceFilter) 
 func TestConnectServerMapsDashboardAndFilters(t *testing.T) {
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	reader := &readerStub{dashboard: query.Overview{SignalCounts: query.SignalCounts{Traces: 3}}}
-	_, handler := New(reader, func() time.Time { return now })
+	_, handler := New(reader, nil, func() time.Time { return now })
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
@@ -83,7 +152,7 @@ func TestConnectServerUsesOpaqueSessionPageToken(t *testing.T) {
 		Sessions:   []query.Session{{ID: "session-1", SourceID: "claude", ActivityCount: 101}},
 		NextOffset: 200, HasMore: true,
 	}}
-	_, handler := New(reader, time.Now)
+	_, handler := New(reader, nil, time.Now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
@@ -103,7 +172,7 @@ func TestConnectServerUsesOpaqueSessionPageToken(t *testing.T) {
 }
 
 func TestConnectServerRejectsUnboundedActivityPages(t *testing.T) {
-	_, handler := New(&readerStub{}, time.Now)
+	_, handler := New(&readerStub{}, nil, time.Now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
@@ -117,19 +186,20 @@ func TestConnectServerRejectsUnboundedActivityPages(t *testing.T) {
 }
 
 func TestTimelineDirectionRejectsUnsupportedProtoValues(t *testing.T) {
-	for _, value := range []v1.PageDirection{v1.PageDirection_PAGE_DIRECTION_NEWER, v1.PageDirection(99)} {
-		if _, err := timelineDirection(value); err == nil {
-			t.Fatalf("timelineDirection(%v) accepted an unsupported value", value)
-		}
+	if _, err := timelineDirection(v1.PageDirection(99)); err == nil {
+		t.Fatal("timelineDirection accepted an unsupported value")
 	}
 	if direction, err := timelineDirection(v1.PageDirection_PAGE_DIRECTION_UNSPECIFIED); err != nil || direction != query.TimelineOlder {
 		t.Fatalf("default direction = %q, %v", direction, err)
+	}
+	if direction, err := timelineDirection(v1.PageDirection_PAGE_DIRECTION_NEWER); err != nil || direction != query.TimelineNewer {
+		t.Fatalf("newer direction = %q, %v", direction, err)
 	}
 }
 
 func TestConnectServerPassesAgentActivityFilter(t *testing.T) {
 	reader := &readerStub{activities: query.ActivityPage{Total: 2}}
-	_, handler := New(reader, time.Now)
+	_, handler := New(reader, nil, time.Now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
@@ -159,7 +229,7 @@ func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing
 			CrossAgentOverlap: query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs identities"},
 		},
 	}}}
-	_, handler := New(reader, time.Now)
+	_, handler := New(reader, nil, time.Now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
@@ -187,7 +257,7 @@ func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing
 func TestConnectServerBoundsTracePages(t *testing.T) {
 	const traceID = "11111111111111111111111111111111"
 	reader := &readerStub{trace: query.Trace{TraceID: traceID, ActivityOffset: 50, ActivityCount: 101, HasMore: true}}
-	_, handler := New(reader, time.Now)
+	_, handler := New(reader, nil, time.Now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
 	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
@@ -203,5 +273,213 @@ func TestConnectServerBoundsTracePages(t *testing.T) {
 	}
 	if response.Msg.GetTotalActivities() != 101 || !response.Msg.GetPage().GetHasMore() || response.Msg.GetPage().GetPreviousPageToken() != encodePageToken(0) {
 		t.Fatalf("unexpected trace page: %#v", response.Msg.GetPage())
+	}
+}
+
+func TestConnectServerStreamsCheckpointThenBoundedChangeWindow(t *testing.T) {
+	reader := newLiveReader()
+	_, handler := New(reader, reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stream, err := client.WatchProjectionChanges(ctx, connect.NewRequest(&v1.WatchProjectionChangesRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatal(stream.Err())
+	}
+	checkpoint := stream.Msg()
+	if checkpoint.GetThroughCursor() == "" || len(checkpoint.GetTargets()) != 3 {
+		t.Fatalf("bootstrap checkpoint = %#v", checkpoint)
+	}
+	reader.commit(query.SessionTarget("codex", "session-1"))
+	if !stream.Receive() {
+		t.Fatal(stream.Err())
+	}
+	window := stream.Msg()
+	if len(window.GetTargets()) != 1 || window.GetTargets()[0].GetKind() != v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_SESSION {
+		t.Fatalf("window = %#v", window)
+	}
+}
+
+func TestConnectServerReturnsResyncForMalformedWatchCursor(t *testing.T) {
+	reader := newLiveReader()
+	_, handler := New(reader, reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	stream, err := client.WatchProjectionChanges(context.Background(), connect.NewRequest(&v1.WatchProjectionChangesRequest{AfterCursor: "malformed"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatal(stream.Err())
+	}
+	if !stream.Msg().GetResyncRequired() || stream.Msg().GetThroughCursor() == "" {
+		t.Fatalf("resync window = %#v", stream.Msg())
+	}
+	position, decodeErr := query.DecodeProjectionCursor(stream.Msg().GetThroughCursor())
+	if decodeErr != nil || position.Generation != "test" {
+		t.Fatalf("resync cursor = %#v, error = %v", position, decodeErr)
+	}
+}
+
+func TestConnectServerReturnsLatestCheckpointWhenWatchHistoryExpired(t *testing.T) {
+	reader := newLiveReader()
+	reader.position.Sequence = 12
+	reader.readErr = query.ErrProjectionCursorExpired
+	_, handler := New(reader, reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	after := query.EncodeProjectionCursor(query.ProjectionPosition{Generation: "test", Sequence: 1})
+	stream, err := client.WatchProjectionChanges(context.Background(), connect.NewRequest(&v1.WatchProjectionChangesRequest{AfterCursor: after}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !stream.Receive() {
+		t.Fatal(stream.Err())
+	}
+	response := stream.Msg()
+	position, decodeErr := query.DecodeProjectionCursor(response.GetThroughCursor())
+	if !response.GetResyncRequired() || decodeErr != nil || position != reader.position {
+		t.Fatalf("expired watch response = %#v, position = %#v, decode error = %v", response, position, decodeErr)
+	}
+}
+
+func TestConnectServerMapsBoundedSessionActivitySync(t *testing.T) {
+	reader := newLiveReader()
+	reader.position.Sequence = 3
+	activity := query.Activity{ID: "activity-1", Source: "codex", RunID: "session-1"}
+	reader.syncPage = query.ActivitySyncPage{
+		Mutations: []query.ActivityMutation{{Operation: query.ActivityMutationUpsert, ActivityID: activity.ID, Activity: &activity}},
+		Through:   reader.position, Offset: 100, NextOffset: 101, HasMore: true,
+	}
+	_, handler := New(reader, reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	after := query.EncodeProjectionCursor(query.ProjectionPosition{Generation: "test", Sequence: 1})
+	through := query.EncodeProjectionCursor(reader.position)
+	response, err := client.SyncSessionActivities(context.Background(), connect.NewRequest(&v1.SyncSessionActivitiesRequest{
+		SourceId: "codex", SessionId: "session-1", AfterCursor: after, ThroughCursor: through,
+		Page: &v1.PageRequest{PageSize: 1, PageToken: encodePageToken(100)},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(response.Msg.GetMutations()) != 1 || response.Msg.GetMutations()[0].GetActivityId() != "activity-1" || response.Msg.GetMutations()[0].GetActivity().GetId() != "activity-1" {
+		t.Fatalf("sync response = %#v", response.Msg)
+	}
+	if response.Msg.GetPage().GetStartOffset() != 100 || response.Msg.GetPage().GetNextPageToken() != encodePageToken(101) {
+		t.Fatalf("sync page = %#v", response.Msg.GetPage())
+	}
+}
+
+func TestConnectServerReturnsLatestCheckpointWhenActivitySyncHistoryExpired(t *testing.T) {
+	reader := newLiveReader()
+	reader.position.Sequence = 12
+	reader.syncErr = query.ErrProjectionCursorExpired
+	_, handler := New(reader, reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	after := query.EncodeProjectionCursor(query.ProjectionPosition{Generation: "test", Sequence: 1})
+	through := query.EncodeProjectionCursor(reader.position)
+
+	sessionResponse, err := client.SyncSessionActivities(context.Background(), connect.NewRequest(&v1.SyncSessionActivitiesRequest{
+		SourceId: "codex", SessionId: "session-1", AfterCursor: after, ThroughCursor: through,
+		Page: &v1.PageRequest{PageSize: 100},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	traceResponse, err := client.SyncTraceActivities(context.Background(), connect.NewRequest(&v1.SyncTraceActivitiesRequest{
+		TraceId: "0123456789abcdef0123456789abcdef", AfterCursor: after, ThroughCursor: through, Page: &v1.PageRequest{PageSize: 100},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, response := range map[string]struct {
+		resync bool
+		cursor string
+	}{
+		"session": {sessionResponse.Msg.GetResyncRequired(), sessionResponse.Msg.GetThroughCursor()},
+		"trace":   {traceResponse.Msg.GetResyncRequired(), traceResponse.Msg.GetThroughCursor()},
+	} {
+		position, decodeErr := query.DecodeProjectionCursor(response.cursor)
+		if !response.resync || decodeErr != nil || position != reader.position {
+			t.Fatalf("%s expired sync response = %#v, position = %#v, decode error = %v", name, response, position, decodeErr)
+		}
+	}
+}
+
+func TestConnectServerAcceptsNewerSessionActivityPageDirection(t *testing.T) {
+	reader := &readerStub{}
+	_, handler := New(reader, nil, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	_, err := client.ListSessionActivities(context.Background(), connect.NewRequest(&v1.ListSessionActivitiesRequest{
+		SourceId: "codex", SessionId: "session-1", Page: &v1.PageRequest{PageSize: 50, PageToken: encodePageToken(50)},
+		Direction: v1.PageDirection_PAGE_DIRECTION_NEWER,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastActivities.Direction != query.TimelineNewer || reader.lastActivities.Page.Offset() != 50 {
+		t.Fatalf("newer session page = %#v", reader.lastActivities)
+	}
+}
+
+func TestConnectServerBoundsSubscribersAndReleasesCanceledSlot(t *testing.T) {
+	reader := newLiveReader()
+	_, handler := New(reader, reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+	cancels := make([]context.CancelFunc, 0, 8)
+	for index := 0; index < 8; index++ {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels = append(cancels, cancel)
+		stream, err := client.WatchProjectionChanges(ctx, connect.NewRequest(&v1.WatchProjectionChangesRequest{}))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !stream.Receive() {
+			t.Fatal(stream.Err())
+		}
+	}
+	t.Cleanup(func() {
+		for _, cancel := range cancels {
+			cancel()
+		}
+	})
+
+	overflow, err := client.WatchProjectionChanges(context.Background(), connect.NewRequest(&v1.WatchProjectionChangesRequest{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if overflow.Receive() || connect.CodeOf(overflow.Err()) != connect.CodeResourceExhausted {
+		t.Fatalf("ninth subscriber error = %v", overflow.Err())
+	}
+
+	cancels[0]()
+	deadline := time.Now().Add(time.Second)
+	for {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		stream, streamErr := client.WatchProjectionChanges(ctx, connect.NewRequest(&v1.WatchProjectionChangesRequest{}))
+		if streamErr == nil && stream.Receive() {
+			cancel()
+			break
+		}
+		cancel()
+		if time.Now().After(deadline) {
+			t.Fatal("canceled subscriber slot was not released")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

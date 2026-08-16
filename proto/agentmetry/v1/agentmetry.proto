@@ -30,6 +30,15 @@ service AgentmetryQueryService {
 
   // Returns the bounded trace evidence for one trace ID.
   rpc GetTrace(GetTraceRequest) returns (GetTraceResponse);
+
+  // Streams bounded invalidation windows for committed read-model changes.
+  rpc WatchProjectionChanges(WatchProjectionChangesRequest) returns (stream WatchProjectionChangesResponse);
+
+  // Returns a bounded commit-ordered mutation page for one session.
+  rpc SyncSessionActivities(SyncSessionActivitiesRequest) returns (SyncSessionActivitiesResponse);
+
+  // Returns a bounded commit-ordered mutation page for one trace.
+  rpc SyncTraceActivities(SyncTraceActivitiesRequest) returns (SyncTraceActivitiesResponse);
 }
 
 enum TimeRange {
@@ -86,6 +95,8 @@ message TokenUsage {
 }
 
 message Activity {
+  // Stable opaque identity used for idempotent live replacement.
+  string id = 29;
   string source = 1;
   string signal = 2;
   string trace_id = 3;
@@ -262,6 +273,8 @@ message ListSessionActivitiesResponse {
 message GetTraceRequest {
   string trace_id = 1;
   PageRequest page = 2;
+  // Returns the newest bounded page for live convergence when no page token is supplied.
+  bool live_tail = 3;
 }
 
 message GetTraceResponse {
@@ -276,6 +289,81 @@ message GetTraceResponse {
   repeated Activity activities = 9;
   PageInfo page = 10;
   int64 total_activities = 11;
+}
+
+enum ProjectionTargetKind {
+  PROJECTION_TARGET_KIND_UNSPECIFIED = 0;
+  PROJECTION_TARGET_KIND_OVERVIEW = 1;
+  PROJECTION_TARGET_KIND_SOURCE = 2;
+  PROJECTION_TARGET_KIND_SESSION = 3;
+  PROJECTION_TARGET_KIND_TRACE = 4;
+  PROJECTION_TARGET_KIND_PLAN_USAGE = 5;
+  PROJECTION_TARGET_KIND_ALL_SOURCES = 6;
+  PROJECTION_TARGET_KIND_ALL_SESSIONS = 7;
+  PROJECTION_TARGET_KIND_ALL_TRACES = 8;
+}
+
+message ProjectionChangeTarget {
+  ProjectionTargetKind kind = 1;
+  string source_id = 2;
+  string session_id = 3;
+  string trace_id = 4;
+}
+
+message WatchProjectionChangesRequest {
+  // Opaque cursor from a previous response. Empty starts at the current position.
+  string after_cursor = 1;
+}
+
+message WatchProjectionChangesResponse {
+  // Inclusive end of this contiguous change window.
+  string through_cursor = 1;
+  repeated ProjectionChangeTarget targets = 2;
+  bool resync_required = 3;
+  string resync_reason = 4;
+}
+
+enum ActivityMutationOperation {
+  ACTIVITY_MUTATION_OPERATION_UNSPECIFIED = 0;
+  ACTIVITY_MUTATION_OPERATION_UPSERT = 1;
+  ACTIVITY_MUTATION_OPERATION_REMOVE = 2;
+}
+
+message ActivityMutation {
+  ActivityMutationOperation operation = 1;
+  string activity_id = 2;
+  Activity activity = 3;
+}
+
+message SyncSessionActivitiesRequest {
+  string source_id = 1;
+  string session_id = 2;
+  string after_cursor = 3;
+  string through_cursor = 4;
+  PageRequest page = 5;
+}
+
+message SyncTraceActivitiesRequest {
+  string trace_id = 1;
+  string after_cursor = 2;
+  string through_cursor = 3;
+  PageRequest page = 4;
+}
+
+message SyncSessionActivitiesResponse {
+  repeated ActivityMutation mutations = 1;
+  string through_cursor = 2;
+  PageInfo page = 3;
+  bool resync_required = 4;
+  string resync_reason = 5;
+}
+
+message SyncTraceActivitiesResponse {
+  repeated ActivityMutation mutations = 1;
+  string through_cursor = 2;
+  PageInfo page = 3;
+  bool resync_required = 4;
+  string resync_reason = 5;
 }
 
 message ConversationRef {

@@ -25,6 +25,8 @@ type Backend interface {
 	query.SessionActivitiesReader
 	query.SessionReworkReader
 	query.TraceReader
+	query.ProjectionChangeReader
+	query.ActivitySyncReader
 	planusage.Writer
 }
 
@@ -40,7 +42,7 @@ func NewServices(backend Backend, assets fs.FS, now func() time.Time) Services {
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpserver.New(backend, now))
 	mux.Handle("/", httpapi.New(backend, assets, now, planImporter))
-	connectPath, connectHandler := connectapi.New(backend, now)
+	connectPath, connectHandler := connectapi.New(backend, backend, now)
 	mux.Handle(connectPath, connectHandler)
 	return Services{
 		OTLPReceiver:    receiver,

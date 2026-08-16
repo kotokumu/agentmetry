@@ -3,7 +3,9 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 import {
   AgentmetryQueryService,
+  ActivityMutationOperation,
   PageDirection,
+  ProjectionTargetKind,
   TimeRange,
   type Activity as ActivityMessage,
   type AgentSummary,
@@ -38,7 +40,33 @@ export type ActivityPage = Readonly<{
   previousPageToken?: string;
 }>;
 
+export type ProjectionChangeTarget = Readonly<{
+  kind: ProjectionTargetKind;
+  sourceId: string;
+  sessionId: string;
+  traceId: string;
+}>;
+
+export type ProjectionChangeWindow = Readonly<{
+  throughCursor: string;
+  targets: readonly ProjectionChangeTarget[];
+  resyncRequired: boolean;
+}>;
+
+export type ActivityMutation = Readonly<{ operation: "upsert" | "remove"; activityId: string; activity?: Activity }>;
+export type ActivitySyncPage = Readonly<{ mutations: readonly ActivityMutation[]; throughCursor: string; resyncRequired: boolean; nextPageToken?: string }>;
+
 export const agentmetryClient = {
+  async *watchProjectionChanges(afterCursor: string, signal?: AbortSignal): AsyncGenerator<ProjectionChangeWindow> {
+    for await (const response of client.watchProjectionChanges({ afterCursor }, signal ? { signal } : undefined)) {
+      yield {
+        throughCursor: response.throughCursor,
+        targets: response.targets.map(({ kind, sourceId, sessionId, traceId }) => ({ kind, sourceId, sessionId, traceId })),
+        resyncRequired: response.resyncRequired,
+      };
+    }
+  },
+
   async getDashboard(range: UiTimeRange, sourceId: string, search: string, signal?: AbortSignal): Promise<DashboardSummary> {
     const response = await client.getDashboard(
       { filter: { range: toTimeRange(range), sourceId, search } },
@@ -57,9 +85,7 @@ export const agentmetryClient = {
   },
 
   async getSession(sourceId: string, sessionId: string, traceId?: string, spanId?: string, signal?: AbortSignal): Promise<Session> {
-    const response = await client.getSession({ sourceId, sessionId }, signal ? { signal } : undefined);
-    if (!response.session) throw new Error("Session response was empty");
-    const session = mapSession(response.session, response.traceIds);
+	const session = await this.getSessionSummary(sourceId, sessionId, signal);
     const page = await this.listSessionActivities(sourceId, sessionId, "older", 0, 100, "", traceId, spanId, undefined, signal);
     return { ...session, activities: page.activities, activityOffset: page.offset, hasEarlier: page.hasEarlier, hasMore: page.hasMore, nextPageToken: page.nextPageToken, previousPageToken: page.previousPageToken };
   },
@@ -102,6 +128,22 @@ export const agentmetryClient = {
     };
   },
 
+  async getSessionSummary(sourceId: string, sessionId: string, signal?: AbortSignal): Promise<Session> {
+	const response = await client.getSession({ sourceId, sessionId }, signal ? { signal } : undefined);
+	if (!response.session) throw new Error("Session response was empty");
+	return mapSession(response.session, response.traceIds);
+  },
+
+  async syncSessionActivities(sourceId: string, sessionId: string, afterCursor: string, throughCursor: string, pageToken = "", signal?: AbortSignal): Promise<ActivitySyncPage> {
+	const response = await client.syncSessionActivities({ sourceId, sessionId, afterCursor, throughCursor, page: { pageSize: 100, pageToken } }, signal ? { signal } : undefined);
+	return mapActivitySync(response);
+  },
+
+  async syncTraceActivities(traceId: string, afterCursor: string, throughCursor: string, pageToken = "", signal?: AbortSignal): Promise<ActivitySyncPage> {
+	const response = await client.syncTraceActivities({ traceId, afterCursor, throughCursor, page: { pageSize: 100, pageToken } }, signal ? { signal } : undefined);
+	return mapActivitySync(response);
+  },
+
   async listSessionActivities(sourceId: string, sessionId: string, direction: ActivityDirection, offset: number, limit: number, pageToken = "", traceId?: string, spanId?: string, agentId?: string, signal?: AbortSignal): Promise<ActivityPage> {
     const response = await client.listSessionActivities({
       sourceId,
@@ -124,8 +166,8 @@ export const agentmetryClient = {
     };
   },
 
-  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = "", signal?: AbortSignal): Promise<Trace> {
-    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken } }, signal ? { signal } : undefined);
+  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = "", signal?: AbortSignal, liveTail = false): Promise<Trace> {
+    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken }, liveTail }, signal ? { signal } : undefined);
     const page = response.page;
     const actualOffset = Number(page?.startOffset ?? offset);
     return {
@@ -204,6 +246,7 @@ function mapAgent(value: AgentSummary): AgentSession {
 
 function mapActivity(value: ActivityMessage): Activity {
   return {
+    id: value.id,
     source: value.source,
     signal: value.signal as Activity["signal"],
     traceId: value.traceId || undefined,
@@ -233,6 +276,15 @@ function mapActivity(value: ActivityMessage): Activity {
     costUsd: value.costUsd,
     contributesToTotal: value.contributesToTotal,
   };
+}
+
+function mapActivitySync(value: { mutations: readonly { operation: ActivityMutationOperation; activityId: string; activity?: ActivityMessage }[]; throughCursor: string; resyncRequired: boolean; page?: { nextPageToken: string } }): ActivitySyncPage {
+	return {
+		mutations: value.mutations.map((mutation) => ({ operation: mutation.operation === ActivityMutationOperation.REMOVE ? "remove" : "upsert", activityId: mutation.activityId, activity: mutation.activity ? mapActivity(mutation.activity) : undefined })),
+		throughCursor: value.throughCursor,
+		resyncRequired: value.resyncRequired,
+		nextPageToken: value.page?.nextPageToken || undefined,
+	};
 }
 
 function mapTokens(value?: TokenUsageMessage): TokenUsage {

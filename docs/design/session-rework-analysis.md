@@ -397,7 +397,7 @@ The conversations controller owns a third Lit task keyed by active state, source
 
 ### Dashboard verification
 
-- Web unit/component/composition suite: 77 tests passing.
+- Web unit/component/composition suite: 112 tests passing after live-update integration.
 - Web TypeScript and production Vite build: passing.
 - Full Go suite: passing.
 - `go vet ./...`: passing.

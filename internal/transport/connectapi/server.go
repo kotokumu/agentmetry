@@ -30,15 +30,264 @@ type Reader interface {
 	query.TraceReader
 }
 
-type Server struct {
-	agentmetryv1connect.UnimplementedAgentmetryQueryServiceHandler
-	reader Reader
-	now    Clock
+type LiveReader interface {
+	query.ProjectionChangeReader
+	query.ActivitySyncReader
 }
 
-func New(reader Reader, now Clock) (string, http.Handler) {
-	server := &Server{reader: reader, now: now}
+type Server struct {
+	agentmetryv1connect.UnimplementedAgentmetryQueryServiceHandler
+	reader       Reader
+	changes      query.ProjectionChangeReader
+	activitySync query.ActivitySyncReader
+	now          Clock
+	subscribers  chan struct{}
+}
+
+func New(reader Reader, live LiveReader, now Clock) (string, http.Handler) {
+	server := &Server{reader: reader, now: now, subscribers: make(chan struct{}, 8)}
+	if live != nil {
+		server.changes = live
+		server.activitySync = live
+	}
 	return agentmetryv1connect.NewAgentmetryQueryServiceHandler(server)
+}
+
+func (server *Server) WatchProjectionChanges(ctx context.Context, request *connect.Request[v1.WatchProjectionChangesRequest], stream *connect.ServerStream[v1.WatchProjectionChangesResponse]) error {
+	if server.changes == nil {
+		return connect.NewError(connect.CodeUnimplemented, errors.New("projection change feed is unavailable"))
+	}
+	select {
+	case server.subscribers <- struct{}{}:
+		defer func() { <-server.subscribers }()
+	default:
+		return connect.NewError(connect.CodeResourceExhausted, errors.New("live subscriber limit reached"))
+	}
+
+	position, err := server.changes.CurrentProjectionPosition(ctx)
+	if err != nil {
+		return connect.NewError(connect.CodeInternal, err)
+	}
+	if token := strings.TrimSpace(request.Msg.GetAfterCursor()); token != "" {
+		decoded, decodeErr := query.DecodeProjectionCursor(token)
+		err = decodeErr
+		if err != nil {
+			return sendProjectionResync(stream, position, err)
+		}
+		position = decoded
+	} else if err := stream.Send(&v1.WatchProjectionChangesResponse{ThroughCursor: query.EncodeProjectionCursor(position), Targets: mapProjectionTargets([]query.ChangeTarget{query.OverviewTarget(), query.AllSessionsTarget(), query.AllTracesTarget()})}); err != nil {
+		return err
+	}
+
+	for {
+		current, currentErr := server.changes.CurrentProjectionPosition(ctx)
+		if currentErr != nil {
+			return connect.NewError(connect.CodeInternal, currentErr)
+		}
+		if validationErr := query.ValidateProjectionPosition(current, position); validationErr != nil {
+			return sendProjectionResync(stream, current, validationErr)
+		}
+		if current.Sequence == position.Sequence {
+			if waitErr := server.changes.WaitForProjectionChange(ctx, position); waitErr != nil {
+				if errors.Is(waitErr, context.Canceled) || errors.Is(waitErr, context.DeadlineExceeded) {
+					return nil
+				}
+				return connect.NewError(connect.CodeInternal, waitErr)
+			}
+			timer := time.NewTimer(100 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				if !timer.Stop() {
+					<-timer.C
+				}
+				return nil
+			case <-timer.C:
+			}
+		}
+		window, readErr := server.changes.ReadProjectionChanges(ctx, position, 256, 1024)
+		if errors.Is(readErr, query.ErrProjectionCursorExpired) || errors.Is(readErr, query.ErrProjectionGeneration) {
+			latest, latestErr := server.changes.CurrentProjectionPosition(ctx)
+			if latestErr != nil {
+				return connect.NewError(connect.CodeInternal, latestErr)
+			}
+			return sendProjectionResync(stream, latest, readErr)
+		}
+		if readErr != nil {
+			return connect.NewError(connect.CodeInternal, readErr)
+		}
+		if window.Through.Sequence == position.Sequence {
+			continue
+		}
+		if err := stream.Send(&v1.WatchProjectionChangesResponse{ThroughCursor: query.EncodeProjectionCursor(window.Through), Targets: mapProjectionTargets(window.Targets)}); err != nil {
+			return err
+		}
+		position = window.Through
+	}
+}
+
+func (server *Server) SyncSessionActivities(ctx context.Context, request *connect.Request[v1.SyncSessionActivitiesRequest]) (*connect.Response[v1.SyncSessionActivitiesResponse], error) {
+	if server.activitySync == nil || server.changes == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("activity sync is unavailable"))
+	}
+	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	filter, resync, err := server.activitySyncFilter(ctx, request.Msg.GetAfterCursor(), request.Msg.GetThroughCursor(), request.Msg.GetPage())
+	if err != nil {
+		return nil, err
+	}
+	if resync != nil {
+		return connect.NewResponse(sessionSyncResponse(resync)), nil
+	}
+	page, syncErr := server.activitySync.SyncSessionActivities(ctx, query.SessionActivitySyncFilter{ActivitySyncFilter: filter, Identity: identity})
+	result, err := server.mapActivitySyncResult(ctx, page, syncErr)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(sessionSyncResponse(result)), nil
+}
+
+func (server *Server) SyncTraceActivities(ctx context.Context, request *connect.Request[v1.SyncTraceActivitiesRequest]) (*connect.Response[v1.SyncTraceActivitiesResponse], error) {
+	if server.activitySync == nil || server.changes == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("activity sync is unavailable"))
+	}
+	traceID, err := query.ParseTraceID(strings.TrimSpace(request.Msg.GetTraceId()))
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	filter, resync, err := server.activitySyncFilter(ctx, request.Msg.GetAfterCursor(), request.Msg.GetThroughCursor(), request.Msg.GetPage())
+	if err != nil {
+		return nil, err
+	}
+	if resync != nil {
+		return connect.NewResponse(traceSyncResponse(resync)), nil
+	}
+	page, syncErr := server.activitySync.SyncTraceActivities(ctx, query.TraceActivitySyncFilter{ActivitySyncFilter: filter, TraceID: traceID})
+	result, err := server.mapActivitySyncResult(ctx, page, syncErr)
+	if err != nil {
+		return nil, err
+	}
+	return connect.NewResponse(traceSyncResponse(result)), nil
+}
+
+type activitySyncResult struct {
+	mutations      []*v1.ActivityMutation
+	throughCursor  string
+	page           *v1.PageInfo
+	resyncRequired bool
+	resyncReason   string
+}
+
+func (server *Server) activitySyncFilter(ctx context.Context, afterToken, throughToken string, pageRequest *v1.PageRequest) (query.ActivitySyncFilter, *activitySyncResult, error) {
+	current, err := server.changes.CurrentProjectionPosition(ctx)
+	if err != nil {
+		return query.ActivitySyncFilter{}, nil, connect.NewError(connect.CodeInternal, err)
+	}
+	after, err := query.DecodeProjectionCursor(afterToken)
+	if err != nil {
+		return query.ActivitySyncFilter{}, activityResync(current, err), nil
+	}
+	through := current
+	if throughToken != "" {
+		through, err = query.DecodeProjectionCursor(throughToken)
+		if err != nil {
+			return query.ActivitySyncFilter{}, activityResync(current, err), nil
+		}
+	}
+	size, err := boundedPageSize(pageRequest)
+	if err != nil {
+		return query.ActivitySyncFilter{}, nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	offset, err := parsePageToken(pageRequest.GetPageToken())
+	if err != nil {
+		return query.ActivitySyncFilter{}, nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	page, err := query.NewPage(offset, size)
+	if err != nil {
+		return query.ActivitySyncFilter{}, nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	return query.ActivitySyncFilter{After: after, Through: through, Page: page}, nil, nil
+}
+
+func (server *Server) mapActivitySyncResult(ctx context.Context, page query.ActivitySyncPage, err error) (*activitySyncResult, error) {
+	if errors.Is(err, query.ErrProjectionCursorExpired) || errors.Is(err, query.ErrProjectionGeneration) || errors.Is(err, query.ErrProjectionCursorInvalid) {
+		current, currentErr := server.changes.CurrentProjectionPosition(ctx)
+		if currentErr != nil {
+			return nil, connect.NewError(connect.CodeInternal, currentErr)
+		}
+		return activityResync(current, err), nil
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	mutations := make([]*v1.ActivityMutation, 0, len(page.Mutations))
+	for _, mutation := range page.Mutations {
+		mapped := &v1.ActivityMutation{ActivityId: mutation.ActivityID}
+		if mutation.Operation == query.ActivityMutationRemove {
+			mapped.Operation = v1.ActivityMutationOperation_ACTIVITY_MUTATION_OPERATION_REMOVE
+		} else {
+			mapped.Operation = v1.ActivityMutationOperation_ACTIVITY_MUTATION_OPERATION_UPSERT
+		}
+		if mutation.Activity != nil {
+			mapped.Activity = mapActivities([]query.Activity{*mutation.Activity})[0]
+		}
+		mutations = append(mutations, mapped)
+	}
+	return &activitySyncResult{mutations: mutations, throughCursor: query.EncodeProjectionCursor(page.Through), page: pageInfo(page.HasMore, page.NextOffset, false, 0, page.Offset)}, nil
+}
+
+func activityResync(position query.ProjectionPosition, reason error) *activitySyncResult {
+	return &activitySyncResult{throughCursor: query.EncodeProjectionCursor(position), resyncRequired: true, resyncReason: reason.Error()}
+}
+
+func sessionSyncResponse(result *activitySyncResult) *v1.SyncSessionActivitiesResponse {
+	if result == nil {
+		return nil
+	}
+	return &v1.SyncSessionActivitiesResponse{Mutations: result.mutations, ThroughCursor: result.throughCursor, Page: result.page, ResyncRequired: result.resyncRequired, ResyncReason: result.resyncReason}
+}
+
+func traceSyncResponse(result *activitySyncResult) *v1.SyncTraceActivitiesResponse {
+	if result == nil {
+		return nil
+	}
+	return &v1.SyncTraceActivitiesResponse{Mutations: result.mutations, ThroughCursor: result.throughCursor, Page: result.page, ResyncRequired: result.resyncRequired, ResyncReason: result.resyncReason}
+}
+
+func sendProjectionResync(stream *connect.ServerStream[v1.WatchProjectionChangesResponse], position query.ProjectionPosition, reason error) error {
+	return stream.Send(&v1.WatchProjectionChangesResponse{ThroughCursor: query.EncodeProjectionCursor(position), ResyncRequired: true, ResyncReason: reason.Error()})
+}
+
+func mapProjectionTargets(targets []query.ChangeTarget) []*v1.ProjectionChangeTarget {
+	result := make([]*v1.ProjectionChangeTarget, 0, len(targets))
+	for _, target := range targets {
+		result = append(result, &v1.ProjectionChangeTarget{Kind: mapProjectionTargetKind(target.Kind), SourceId: target.SourceID, SessionId: target.SessionID, TraceId: target.TraceID})
+	}
+	return result
+}
+
+func mapProjectionTargetKind(kind query.ChangeTargetKind) v1.ProjectionTargetKind {
+	switch kind {
+	case query.ChangeTargetOverview:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_OVERVIEW
+	case query.ChangeTargetSource:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_SOURCE
+	case query.ChangeTargetSession:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_SESSION
+	case query.ChangeTargetTrace:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_TRACE
+	case query.ChangeTargetPlanUsage:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_PLAN_USAGE
+	case query.ChangeTargetAllSources:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_ALL_SOURCES
+	case query.ChangeTargetAllSessions:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_ALL_SESSIONS
+	case query.ChangeTargetAllTraces:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_ALL_TRACES
+	default:
+		return v1.ProjectionTargetKind_PROJECTION_TARGET_KIND_UNSPECIFIED
+	}
 }
 
 func (server *Server) GetDashboard(ctx context.Context, request *connect.Request[v1.GetDashboardRequest]) (*connect.Response[v1.GetDashboardResponse], error) {
@@ -175,7 +424,7 @@ func (server *Server) GetTrace(ctx context.Context, request *connect.Request[v1.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Page: queryPage})
+	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Page: queryPage, Tail: request.Msg.GetLiveTail() && request.Msg.GetPage().GetPageToken() == ""})
 	if errors.Is(err, query.ErrTraceNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
@@ -236,8 +485,10 @@ func timelineDirection(value v1.PageDirection) (query.TimelineDirection, error) 
 	switch value {
 	case v1.PageDirection_PAGE_DIRECTION_UNSPECIFIED, v1.PageDirection_PAGE_DIRECTION_OLDER:
 		return query.TimelineOlder, nil
+	case v1.PageDirection_PAGE_DIRECTION_NEWER:
+		return query.TimelineNewer, nil
 	default:
-		return "", fmt.Errorf("%w: %s is not supported; use older", query.ErrInvalidTimelineDirection, value)
+		return "", fmt.Errorf("%w: %s is not supported", query.ErrInvalidTimelineDirection, value)
 	}
 }
 
@@ -333,7 +584,7 @@ func mapActivities(values []query.Activity) []*v1.Activity {
 	result := make([]*v1.Activity, 0, len(values))
 	for _, value := range values {
 		result = append(result, &v1.Activity{
-			Source: value.Source, Signal: string(value.Signal), TraceId: value.TraceID, SpanId: value.SpanID, ParentSpanId: value.ParentSpanID,
+			Id: value.ID, Source: value.Source, Signal: string(value.Signal), TraceId: value.TraceID, SpanId: value.SpanID, ParentSpanId: value.ParentSpanID,
 			Name: value.Name, Kind: string(value.Kind), ToolName: value.ToolName, TargetAgentId: value.TargetAgentID, TargetAgentType: value.TargetAgentType,
 			Content: value.Content, AgentId: value.AgentID, AgentDefinition: value.AgentDefinition, AgentType: value.AgentType, ParentAgentId: value.ParentAgentID,
 			RunId: value.RunID, Model: value.Model, StartedAt: timestamp(value.StartedAt), EndedAt: timestamp(value.EndedAt), ObservedAt: timestamp(value.ObservedAt),

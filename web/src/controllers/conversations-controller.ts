@@ -1,9 +1,12 @@
 import { Task, TaskStatus } from "@lit/task";
+import { Code, ConnectError } from "@connectrpc/connect";
 import type { ReactiveControllerHost } from "lit";
-import type { ActivityPage, AgentmetryClient } from "../api/agentmetry-client";
+import type { ActivityMutation, ActivityPage, AgentmetryClient } from "../api/agentmetry-client";
 import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, ReworkAnalysis, Session, TimeRange } from "../model/telemetry";
+import { ProjectionTargetKind } from "../gen/agentmetry/v1/agentmetry_pb";
 import { telemetryFilterKey, type TelemetryFilters } from "./query-filters";
+import { affectsSession, affectsSessionList, type LiveUpdateWindow } from "./live-update-controller";
 
 type ConversationRef = Readonly<{ sourceId: string; conversationId: string }>;
 type SessionsResult = Readonly<{ key: string; sessions: readonly Session[] }>;
@@ -40,6 +43,12 @@ export class ConversationsController {
   private activityAbort?: AbortController;
   private agentActivityAbort?: AbortController;
   private wasDisconnected = false;
+  private liveRequest = 0;
+  private liveAbort?: AbortController;
+  private liveLoading = false;
+  private syncCursor = "";
+  private removedSessionKey = "";
+  private removedSession?: ConversationRef;
 
   activityPage?: ActivityPageState;
   selectedAgentId = "";
@@ -62,8 +71,8 @@ export class ConversationsController {
       }),
     });
     this.conversationTask = new Task(host, {
-      args: () => {
-        const target = this.target;
+	  args: () => {
+		const target = this.taskTarget;
         return [isActive(), target?.sourceId ?? "", target?.conversationId ?? "", this.requested?.traceId ?? "", this.requested?.spanId ?? ""] as const;
       },
       task: async ([active, sourceId, conversationId, traceId, spanId], { signal }) => ({
@@ -93,6 +102,7 @@ export class ConversationsController {
     this.agentActivityRequest += 1;
     this.activityAbort?.abort();
     this.agentActivityAbort?.abort();
+    this.liveAbort?.abort();
     this.sessionOverride = undefined;
     this.activityPage = undefined;
     this.selectedAgentId = "";
@@ -111,7 +121,10 @@ export class ConversationsController {
   }
 
   private get listedSessions() {
-    return this.sessionsTask.value?.key === telemetryFilterKey(this.filters()) ? this.sessionsTask.value.sessions : [];
+    const sessions = this.sessionsTask.value?.key === telemetryFilterKey(this.filters()) ? this.sessionsTask.value.sessions : [];
+    return this.removedSessionKey
+      ? sessions.filter(({ sourceId, id }) => sessionKey(sourceId, id) !== this.removedSessionKey)
+      : sessions;
   }
 
   get sessions(): readonly Session[] {
@@ -130,23 +143,36 @@ export class ConversationsController {
     return [...values.values()];
   }
 
-  get target(): ConversationRef | undefined {
-    if (this.requested) return { sourceId: this.requested.sourceId, conversationId: this.requested.conversationId };
+	private get taskTarget(): ConversationRef | undefined {
+	  if (this.requested) return { sourceId: this.requested.sourceId, conversationId: this.requested.conversationId };
     const sessions = this.listedSessions;
     if (this.selectedRef && sessions.some(({ id, sourceId }) => id === this.selectedRef?.conversationId && sourceId === this.selectedRef.sourceId)) return this.selectedRef;
     const first = sessions[0];
-    return first ? { sourceId: first.sourceId, conversationId: first.id } : undefined;
-  }
+	  return first ? { sourceId: first.sourceId, conversationId: first.id } : undefined;
+	}
 
-  get selected(): Session | undefined {
-    if (!this.isActive()) return undefined;
-    const target = this.target;
-    if (!target) return undefined;
-    if (this.sessionOverride?.id === target.conversationId && this.sessionOverride.sourceId === target.sourceId) return this.sessionOverride;
-    const result = this.conversationTask.value;
-    const expectedKey = conversationKey(target.sourceId, target.conversationId, this.requested?.traceId ?? "", this.requested?.spanId ?? "");
-    const value = result?.key === expectedKey ? result.session : undefined;
-    return value?.id === target.conversationId && value.sourceId === target.sourceId ? value : undefined;
+	get target(): ConversationRef | undefined {
+	  const requested = this.taskTarget;
+	  if (!requested) return undefined;
+	  if (this.sessionOverride?.sourceId === requested.sourceId) {
+		return { sourceId: this.sessionOverride.sourceId, conversationId: this.sessionOverride.id };
+	  }
+	  const expectedKey = conversationKey(requested.sourceId, requested.conversationId, this.requested?.traceId ?? "", this.requested?.spanId ?? "");
+	  const resolved = this.conversationTask.value?.key === expectedKey ? this.conversationTask.value.session : undefined;
+	  return resolved?.sourceId === requested.sourceId
+		? { sourceId: resolved.sourceId, conversationId: resolved.id }
+		: requested;
+	}
+
+	get selected(): Session | undefined {
+	  if (!this.isActive()) return undefined;
+	  const requested = this.taskTarget;
+	  if (!requested) return undefined;
+	  if (this.sessionOverride?.sourceId === requested.sourceId) return this.sessionOverride;
+	  const result = this.conversationTask.value;
+	  const expectedKey = conversationKey(requested.sourceId, requested.conversationId, this.requested?.traceId ?? "", this.requested?.spanId ?? "");
+	  const value = result?.key === expectedKey ? result.session : undefined;
+	  return value?.sourceId === requested.sourceId ? value : undefined;
   }
 
   get loadingList() { return this.sessionsTask.status === TaskStatus.PENDING && this.listedSessions.length === 0; }
@@ -175,6 +201,153 @@ export class ConversationsController {
   }
   refreshRework() { void this.reworkTask.run(); }
 
+  async applyLiveUpdate(window: LiveUpdateWindow) {
+    const filter = this.filters();
+    const refreshList = window.resyncRequired || affectsSessionList(window.targets, filter.sourceId)
+      ? this.refreshListForLive()
+      : Promise.resolve();
+    await Promise.all([refreshList, this.applySelectedLiveUpdate(window)]);
+  }
+
+  private async refreshListForLive() {
+    await this.sessionsTask.run();
+    if (this.sessionsTask.status === TaskStatus.ERROR) throw this.sessionsTask.error;
+  }
+
+  private async applySelectedLiveUpdate(window: LiveUpdateWindow) {
+    if (!this.isActive()) {
+      await this.verifyInactiveRequestedSession(window);
+      return;
+    }
+    const session = this.selected;
+    if (!session || (!window.resyncRequired && !affectsSession(window.targets, session.sourceId, session.id))) return;
+    const request = ++this.liveRequest;
+    const agentPage = this.agentActivityPage;
+    this.activityRequest += 1;
+    this.activityAbort?.abort();
+    this.activityPage = undefined;
+    this.agentActivityRequest += 1;
+    this.agentActivityAbort?.abort();
+    this.liveAbort?.abort();
+    const abort = new AbortController();
+    this.liveAbort = abort;
+    this.liveLoading = true;
+    try {
+      const mutations: ActivityMutation[] = [];
+		  const membershipMayHaveChanged = window.targets.some(({ kind }) => kind === ProjectionTargetKind.ALL_SESSIONS);
+		  let incremental = !window.resyncRequired && !membershipMayHaveChanged && Boolean(this.syncCursor) && Boolean(window.throughCursor);
+      let convergedCursor = window.throughCursor;
+      if (incremental) {
+        let pageToken = "";
+        for (let pageIndex = 0; pageIndex < 10; pageIndex += 1) {
+          const page = await this.client.syncSessionActivities(session.sourceId, session.id, this.syncCursor, window.throughCursor, pageToken, abort.signal);
+          if (page.resyncRequired) {
+            mutations.length = 0;
+            incremental = false;
+            convergedCursor = page.throughCursor;
+            break;
+          }
+          mutations.push(...page.mutations);
+          if (!page.nextPageToken) break;
+          if (pageIndex === 9) {
+            mutations.length = 0;
+            incremental = false;
+            break;
+          }
+          pageToken = page.nextPageToken;
+        }
+      }
+      // The bounded head is authoritative for overlapping activity IDs. Loaded
+      // history stays resident during a normal incremental refresh so reading
+      // context is not replaced by the head-only snapshot.
+      let latest: Session;
+      try {
+        latest = await this.client.getSession(session.sourceId, session.id, undefined, undefined, abort.signal);
+      } catch (error) {
+        if (!isNotFound(error)) throw error;
+        if (request !== this.liveRequest || abort.signal.aborted) return;
+        this.markSessionRemoved({ sourceId: session.sourceId, conversationId: session.id }, convergedCursor);
+        return;
+      }
+      if (request !== this.liveRequest || abort.signal.aborted || this.target?.sourceId !== session.sourceId || this.target.conversationId !== session.id) return;
+      const preserveResidentWindow = !window.resyncRequired && !membershipMayHaveChanged && (incremental || !this.syncCursor);
+      const activities = preserveResidentWindow
+        ? applyActivityMutations([...session.activities, ...latest.activities], mutations)
+        : latest.activities;
+      this.sessionOverride = {
+        ...latest,
+        activities,
+        activityOffset: 0,
+        hasEarlier: false,
+        hasMore: activities.length < latest.activityCount,
+        nextPageToken: preserveResidentWindow ? session.nextPageToken ?? latest.nextPageToken : latest.nextPageToken,
+      };
+      if (this.removedSessionKey === sessionKey(session.sourceId, session.id)) this.removedSessionKey = "";
+      if (agentPage?.sessionId === session.id && agentPage.sourceId === session.sourceId && agentPage.agentId === this.selectedAgentId) {
+        const agent = latest.agents.find(({ agentId }) => agentId === agentPage.agentId);
+        const agentActivities = preserveResidentWindow
+          ? applyActivityMutations(
+            [...agentPage.activities, ...latest.activities.filter(({ agentId }) => agentId === agentPage.agentId)],
+            mutations,
+            ({ agentId }) => agentId === agentPage.agentId,
+          )
+          : latest.activities.filter(({ agentId }) => agentId === agentPage.agentId);
+        this.agentActivityPage = {
+          ...agentPage,
+          activities: agentActivities,
+          total: agent?.activityCount ?? agentActivities.length,
+          offset: 0,
+          hasEarlier: false,
+          hasMore: agentActivities.length < (agent?.activityCount ?? agentActivities.length),
+          loading: false,
+          error: undefined,
+        };
+      }
+      this.syncCursor = convergedCursor;
+      void this.reworkTask.run();
+      this.host.requestUpdate();
+    } catch (error) {
+      if (request !== this.liveRequest || abort.signal.aborted) return;
+      throw error;
+    } finally {
+      if (request === this.liveRequest) this.liveLoading = false;
+    }
+  }
+
+  private async verifyInactiveRequestedSession(window: LiveUpdateWindow) {
+    const requested = this.requested;
+    if (!requested || (!window.resyncRequired && !affectsSession(window.targets, requested.sourceId, requested.conversationId))) return;
+    const request = ++this.liveRequest;
+    this.liveAbort?.abort();
+    const abort = new AbortController();
+    this.liveAbort = abort;
+    this.liveLoading = true;
+    try {
+      // The hidden workspace owns only a navigation origin. Check existence
+      // without the previous trace/span activity filter and without syncing
+      // its inactive resident activity window.
+      await this.client.getSession(requested.sourceId, requested.conversationId, undefined, undefined, abort.signal);
+    } catch (error) {
+      if (request !== this.liveRequest || abort.signal.aborted) return;
+      if (!isNotFound(error)) throw error;
+      if (this.requested?.sourceId !== requested.sourceId || this.requested.conversationId !== requested.conversationId) return;
+      this.markSessionRemoved(requested, window.throughCursor);
+    } finally {
+      if (request === this.liveRequest) this.liveLoading = false;
+    }
+  }
+
+  private markSessionRemoved(session: ConversationRef, cursor: string) {
+    this.requested = undefined;
+    this.selectedRef = undefined;
+    this.sessionOverride = undefined;
+    this.agentActivityPage = undefined;
+    this.removedSessionKey = sessionKey(session.sourceId, session.conversationId);
+    this.removedSession = session;
+    this.syncCursor = cursor;
+    this.host.requestUpdate();
+  }
+
   select(target: ConversationTarget) {
     const previous = this.target;
     const retry = this.conversationTask.status === TaskStatus.ERROR
@@ -186,6 +359,12 @@ export class ConversationsController {
     if (retry) void this.conversationTask.run();
   }
 
+  takeRemovedSession() {
+    const removed = this.removedSession;
+    this.removedSession = undefined;
+    return removed;
+  }
+
   clearRoute() {
     this.requested = undefined;
     this.selectedRef = undefined;
@@ -195,6 +374,8 @@ export class ConversationsController {
   filtersChanged() {
     this.selectedRef = undefined;
     this.requested = undefined;
+    this.removedSessionKey = "";
+    this.removedSession = undefined;
     this.resetDetailState();
   }
 
@@ -208,7 +389,7 @@ export class ConversationsController {
 
   async loadActivities(direction: ActivityDirection) {
     const session = this.selected;
-    if (!session || this.activityPage?.loading) return;
+    if (!session || this.activityPage?.loading || this.liveLoading) return;
     if (direction === "newer" && !session.hasEarlier) return;
     if (direction === "older" && (session.hasMore === false || (session.hasMore === undefined && session.activities.length >= session.activityCount))) return;
     const currentOffset = session.activityOffset ?? 0;
@@ -235,7 +416,7 @@ export class ConversationsController {
 
   async loadAgentActivities(direction: ActivityDirection, agentId = this.selectedAgentId) {
     const session = this.selected;
-    if (!session || !agentId) return;
+    if (!session || !agentId || this.liveLoading) return;
     const current = this.agentActivityPage?.sessionId === session.id && this.agentActivityPage.agentId === agentId ? this.agentActivityPage : undefined;
     const offset = direction === "older" ? (current ? current.offset + current.activities.length : 0) : Math.max(0, (current?.offset ?? 0) - 100);
     const request = ++this.agentActivityRequest;
@@ -262,6 +443,8 @@ export class ConversationsController {
   private resetDetailState() {
     this.activityAbort?.abort();
     this.agentActivityAbort?.abort();
+    this.liveAbort?.abort();
+	this.syncCursor = "";
     this.activityRequest += 1;
     this.agentActivityRequest += 1;
     this.sessionOverride = undefined;
@@ -272,9 +455,36 @@ export class ConversationsController {
   }
 }
 
+const activityIdentity = (activity: Session["activities"][number]) => activity.id ?? `${activity.signal}\u0000${activity.traceId ?? ""}\u0000${activity.spanId ?? ""}\u0000${activity.observedAt}\u0000${activity.name}`;
+const sessionKey = (sourceId: string, sessionId: string) => `${sourceId}\u0000${sessionId}`;
+
+const applyActivityMutations = (
+  current: Session["activities"],
+  mutations: readonly ActivityMutation[],
+  accepts: (activity: Session["activities"][number]) => boolean = () => true,
+) => {
+  const values = new Map(current.map((activity) => [activityIdentity(activity), activity]));
+  for (const mutation of mutations) {
+    if (mutation.operation === "remove" || !mutation.activity || !accepts(mutation.activity)) values.delete(mutation.activityId);
+    else values.set(mutation.activityId, mutation.activity);
+  }
+  const result = [...values.values()].filter(accepts);
+  result.sort((left, right) => right.observedAt.localeCompare(left.observedAt) || activityIdentity(left).localeCompare(activityIdentity(right)));
+  return result.slice(0, 2000);
+};
+
+const isNotFound = (error: unknown) => error instanceof ConnectError && error.code === Code.NotFound;
+
 const mergeSessionPage = (session: Session, page: ActivityPage, direction: ActivityDirection): Session => {
-  const activities = direction === "newer" ? [...page.activities, ...session.activities] : [...session.activities, ...page.activities];
-  const activityOffset = direction === "newer" ? page.offset : session.activityOffset ?? page.offset;
+	let activities = [...new Map((direction === "newer" ? [...page.activities, ...session.activities] : [...session.activities, ...page.activities]).map((activity) => [activityIdentity(activity), activity])).values()];
+	let activityOffset = direction === "newer" ? page.offset : session.activityOffset ?? page.offset;
+	if (activities.length > 2000) {
+	  if (direction === "older") {
+		const evicted = activities.length - 2000;
+		activities = activities.slice(evicted);
+		activityOffset += evicted;
+	  } else activities = activities.slice(0, 2000);
+	}
   return {
     ...session,
     activities,
@@ -296,16 +506,21 @@ const mergeAgentActivityPage = (
   current: AgentActivityPage | undefined,
   page: ActivityPage,
   direction: ActivityDirection,
-): AgentActivityPage => ({
-  sessionId,
-  sourceId,
-  agentId,
-  activities: direction === "newer" ? [...page.activities, ...(current?.activities ?? [])] : [...(current?.activities ?? []), ...page.activities],
+): AgentActivityPage => {
+	let activities = direction === "newer" ? [...page.activities, ...(current?.activities ?? [])] : [...(current?.activities ?? []), ...page.activities];
+	let offset = direction === "newer" ? page.offset : current?.offset ?? page.offset;
+	if (activities.length > 2000) {
+	  if (direction === "older") { const evicted = activities.length - 2000; activities = activities.slice(evicted); offset += evicted; }
+	  else activities = activities.slice(0, 2000);
+	}
+	return {
+  sessionId, sourceId, agentId, activities,
   total: page.total,
-  offset: direction === "newer" ? page.offset : current?.offset ?? page.offset,
+	offset,
   hasEarlier: page.hasEarlier,
   hasMore: page.hasMore,
   nextPageToken: page.nextPageToken,
   previousPageToken: page.previousPageToken,
   loading: false,
-});
+};
+};

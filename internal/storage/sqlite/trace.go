@@ -3,7 +3,6 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -15,7 +14,12 @@ import (
 
 func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (query.Trace, error) {
 	traceID := filter.TraceID.String()
-	summary, err := store.loadTraceSummary(ctx, traceID)
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.Trace{}, fmt.Errorf("begin trace snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	summary, err := store.loadTraceSummary(ctx, transaction, traceID)
 	if err != nil {
 		return query.Trace{}, err
 	}
@@ -24,8 +28,11 @@ func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (que
 	}
 	offset := filter.Page.Offset()
 	limit := filter.Page.Size()
+	if filter.Tail {
+		offset = max(0, int(summary.ActivityCount)-limit)
+	}
 	branchLimit := filter.Page.WindowEnd(offset)
-	const statement = `SELECT source, signal, trace_id, span_id, parent_span_id, name,
+	const statement = `SELECT stored_activity_id, activity_key, source, signal, trace_id, span_id, parent_span_id, name,
   activity_kind, tool_name, target_agent_id, target_agent_type, content,
   agent_id, agent_definition, agent_type, parent_agent_id, run_id, model,
   started_at, ended_at, observed_at, status, cost_usd,
@@ -33,7 +40,7 @@ func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (que
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
   cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id, attributes_json
 FROM (
-  SELECT source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
+  SELECT activity_id AS stored_activity_id, 'span:' || trace_id || ':' || span_id AS activity_key, source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model,
     started_at, ended_at, ended_at AS observed_at, status, cost_usd,
@@ -50,12 +57,12 @@ FROM (
     started_at, ended_at, status, cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json
+    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json, activity_id
   FROM spans WHERE trace_id = ?
-  ORDER BY started_at ASC, ended_at ASC
+  ORDER BY started_at ASC, ended_at ASC, trace_id ASC, span_id ASC
   LIMIT ?) AS spans
   UNION ALL
-  SELECT source, 'log', trace_id, span_id, '', name,
+  SELECT activity_id, 'log:' || id AS activity_key, source, 'log', trace_id, span_id, '', name,
     activity_kind, tool_name, target_agent_id, target_agent_type, body,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model,
     observed_at, observed_at, observed_at, '', cost_usd,
@@ -66,21 +73,21 @@ FROM (
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), ''),
     attributes_json
-  FROM (SELECT source, trace_id, span_id, name,
+  FROM (SELECT id, source, trace_id, span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, body,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model,
     observed_at, cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json
+    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json, activity_id
   FROM logs WHERE trace_id = ?
-  ORDER BY observed_at ASC
+  ORDER BY observed_at ASC, CAST(id AS TEXT) ASC
   LIMIT ?) AS logs
 )
 
-ORDER BY started_at ASC, observed_at ASC, signal DESC
+ORDER BY started_at ASC, observed_at ASC, signal DESC, activity_key ASC
 LIMIT ? OFFSET ?`
-	rows, err := store.db.QueryContext(ctx, statement, traceID, branchLimit, traceID, branchLimit, limit, offset)
+	rows, err := transaction.QueryContext(ctx, statement, traceID, branchLimit, traceID, branchLimit, limit, offset)
 	if err != nil {
 		return query.Trace{}, fmt.Errorf("query trace: %w", err)
 	}
@@ -96,6 +103,9 @@ LIMIT ? OFFSET ?`
 	}
 	if err := rows.Err(); err != nil && err != sql.ErrNoRows {
 		return query.Trace{}, fmt.Errorf("iterate trace activities: %w", err)
+	}
+	if err := rows.Close(); err != nil {
+		return query.Trace{}, fmt.Errorf("close trace activities: %w", err)
 	}
 	activities = enrichActivityRelationships(enrichAgentEvidence(activities))
 	usageContributions := selectUsageContributions(activities)
@@ -116,6 +126,9 @@ LIMIT ? OFFSET ?`
 		ActivityCount:      summary.ActivityCount,
 		HasMore:            int64(offset+len(activities)) < summary.ActivityCount,
 	}
+	if err := transaction.Commit(); err != nil {
+		return query.Trace{}, fmt.Errorf("commit trace snapshot: %w", err)
+	}
 	return trace, nil
 }
 
@@ -130,44 +143,17 @@ type traceSummary struct {
 	Agents             []query.TraceAgent
 }
 
-func (store *Store) loadTraceSummary(ctx context.Context, traceID string) (traceSummary, error) {
+func (store *Store) loadTraceSummary(ctx context.Context, reader sqlReader, traceID string) (traceSummary, error) {
 	result := traceSummary{Status: query.TraceStatusUnknown, Conversations: make([]query.ConversationRef, 0), Agents: make([]query.TraceAgent, 0)}
 	var started, ended string
 	var statusRank int64
-	var conversationsJSON, agentsJSON string
-	err := store.db.QueryRowContext(ctx, `
-WITH trace_events AS MATERIALIZED (
-  SELECT source, run_id, agent_id, agent_definition, agent_type, parent_agent_id, model,
-    started_at, ended_at,
-    CASE lower(status) WHEN 'error' THEN 2 WHEN 'ok' THEN 1 ELSE 0 END AS status_rank,
-    CASE WHEN parent_span_id = '' THEN 1 ELSE 0 END AS root_span_count,
-    CASE WHEN parent_span_id <> '' AND NOT EXISTS (
-      SELECT 1 FROM spans AS parent
-      WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
-    ) THEN 1 ELSE 0 END AS missing_parent_count
-  FROM spans WHERE trace_id = ?
-  UNION ALL
-  SELECT source, run_id, agent_id, agent_definition, agent_type, parent_agent_id, model,
-    observed_at, observed_at, 0, 0, 0
-  FROM logs WHERE trace_id = ?
-), agent_groups AS (
-  SELECT source, run_id, agent_id, MAX(agent_definition) AS agent_definition,
-    MAX(agent_type) AS agent_type, MAX(parent_agent_id) AS parent_agent_id, MAX(model) AS model
-  FROM trace_events WHERE agent_id <> ''
-  GROUP BY source, run_id, agent_id
-)
-SELECT COUNT(*), COALESCE(MIN(started_at), ''), COALESCE(MAX(ended_at), ''),
-  COALESCE(MAX(status_rank), 0), COALESCE(SUM(root_span_count), 0), COALESCE(SUM(missing_parent_count), 0),
-  COALESCE((SELECT json_group_array(json_object('sourceId', source, 'id', run_id))
-    FROM (SELECT DISTINCT source, run_id FROM trace_events WHERE run_id <> '' ORDER BY source, run_id)), '[]'),
-  COALESCE((SELECT json_group_array(json_object('sourceId', source, 'conversationId', run_id, 'agentId', agent_id,
-      'agentDefinition', agent_definition, 'agentType', agent_type, 'parentAgentId', parent_agent_id, 'model', model))
-    FROM (SELECT source, run_id, agent_id, agent_definition, agent_type, parent_agent_id, model
-      FROM agent_groups ORDER BY source, run_id, agent_id)), '[]')
-FROM trace_events`, traceID, traceID).Scan(
-		&result.ActivityCount, &started, &ended, &statusRank, &result.RootSpanCount,
-		&result.MissingParentCount, &conversationsJSON, &agentsJSON,
+	err := reader.QueryRowContext(ctx, `SELECT started_at, ended_at, status_rank, activity_count,
+  root_span_count, missing_parent_count FROM trace_rollups WHERE trace_id = ?`, traceID).Scan(
+		&started, &ended, &statusRank, &result.ActivityCount, &result.RootSpanCount, &result.MissingParentCount,
 	)
+	if err == sql.ErrNoRows {
+		return result, nil
+	}
 	if err != nil {
 		return traceSummary{}, fmt.Errorf("query trace summary: %w", err)
 	}
@@ -188,11 +174,46 @@ FROM trace_events`, traceID, traceID).Scan(
 	case 1:
 		result.Status = query.TraceStatusOK
 	}
-	if err := json.Unmarshal([]byte(conversationsJSON), &result.Conversations); err != nil {
-		return traceSummary{}, fmt.Errorf("decode trace conversations: %w", err)
+	conversationRows, err := reader.QueryContext(ctx, `SELECT source, run_id FROM trace_conversations
+WHERE trace_id = ? ORDER BY source, run_id`, traceID)
+	if err != nil {
+		return traceSummary{}, fmt.Errorf("query trace conversations: %w", err)
 	}
-	if err := json.Unmarshal([]byte(agentsJSON), &result.Agents); err != nil {
-		return traceSummary{}, fmt.Errorf("decode trace agents: %w", err)
+	for conversationRows.Next() {
+		var conversation query.ConversationRef
+		if err := conversationRows.Scan(&conversation.SourceID, &conversation.ID); err != nil {
+			_ = conversationRows.Close()
+			return traceSummary{}, fmt.Errorf("scan trace conversation: %w", err)
+		}
+		result.Conversations = append(result.Conversations, conversation)
+	}
+	if err := conversationRows.Err(); err != nil {
+		_ = conversationRows.Close()
+		return traceSummary{}, fmt.Errorf("iterate trace conversations: %w", err)
+	}
+	if err := conversationRows.Close(); err != nil {
+		return traceSummary{}, fmt.Errorf("close trace conversations: %w", err)
+	}
+	agentRows, err := reader.QueryContext(ctx, `SELECT source, run_id, agent_id, agent_definition,
+  agent_type, parent_agent_id, model FROM trace_agents WHERE trace_id = ? ORDER BY source, run_id, agent_id`, traceID)
+	if err != nil {
+		return traceSummary{}, fmt.Errorf("query trace agents: %w", err)
+	}
+	for agentRows.Next() {
+		var agent query.TraceAgent
+		if err := agentRows.Scan(&agent.SourceID, &agent.ConversationID, &agent.AgentID, &agent.AgentDefinition,
+			&agent.AgentType, &agent.ParentAgentID, &agent.Model); err != nil {
+			_ = agentRows.Close()
+			return traceSummary{}, fmt.Errorf("scan trace agent: %w", err)
+		}
+		result.Agents = append(result.Agents, agent)
+	}
+	if err := agentRows.Err(); err != nil {
+		_ = agentRows.Close()
+		return traceSummary{}, fmt.Errorf("iterate trace agents: %w", err)
+	}
+	if err := agentRows.Close(); err != nil {
+		return traceSummary{}, fmt.Errorf("close trace agents: %w", err)
 	}
 	return result, nil
 }

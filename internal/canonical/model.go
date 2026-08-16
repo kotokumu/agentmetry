@@ -303,9 +303,20 @@ type MetricPoint struct {
 	Agent      AgentContext   `json:"agent"`
 }
 
+// SessionLink records a source-authoritative parent/child relationship between
+// conversations. Source profiles decide when an event has this meaning; query
+// storage never infers it from producer-specific attributes.
+type SessionLink struct {
+	Source          string    `json:"source,omitempty"`
+	ParentSessionID string    `json:"parentSessionId"`
+	ChildSessionID  string    `json:"childSessionId"`
+	ObservedAt      time.Time `json:"observedAt"`
+}
+
 type Batch struct {
-	Signal  Signal        `json:"signal"`
-	Spans   []Span        `json:"spans,omitempty"`
-	Logs    []Log         `json:"logs,omitempty"`
-	Metrics []MetricPoint `json:"metrics,omitempty"`
+	Signal       Signal        `json:"signal"`
+	Spans        []Span        `json:"spans,omitempty"`
+	Logs         []Log         `json:"logs,omitempty"`
+	Metrics      []MetricPoint `json:"metrics,omitempty"`
+	SessionLinks []SessionLink `json:"sessionLinks,omitempty"`
 }

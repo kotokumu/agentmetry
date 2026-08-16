@@ -1,4 +1,4 @@
-import { LitElement, css, html } from "lit";
+import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/telemetry";
 import { conversationHref, type ConversationTarget, tokenEvidence } from "../model/trace-analysis";
@@ -22,6 +22,7 @@ export class TraceWaterfall extends LitElement {
   @property({ attribute: false }) onLoadMore?: () => void;
   @property({ attribute: false }) locationForConversation?: (target: ConversationTarget) => string;
   private loadMoreObserver?: IntersectionObserver;
+  private renderOffset = 0;
 
   static styles = css`
     :host { display: block; overflow: auto; }
@@ -52,12 +53,16 @@ export class TraceWaterfall extends LitElement {
     .message { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--am-text); font: inherit; }
     .conversation { display: inline-block; margin-top: 12px; color: var(--am-accent); font-weight: 700; }
     .load-status { min-height: 24px; padding: 12px 0 4px; color: var(--am-muted); text-align: center; font-size: .76rem; }
+    .window-nav { display: flex; justify-content: center; gap: 8px; padding: 10px; }
+    .window-nav button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
   `;
 
   render() {
     const trace = this.trace;
     if (!trace) return null;
-    return html`<div class="rows" role="list" aria-label="Trace timeline">${traceRows(trace).map((row) => {
+    const hasPreviousWindow = this.renderOffset > 0;
+    const hasNextWindow = this.renderOffset + 200 < trace.activities.length;
+    return html`${hasPreviousWindow ? this.windowNavigation("previous") : null}<div class="rows" role="list" aria-label="Trace timeline">${traceRows(trace, this.renderOffset).map((row) => {
       const activity = withAgentEvidence(trace, row.activity);
       return html`
       <details class="row" role="listitem" style=${`--depth:${row.depth}`} .open=${activity.status?.toLowerCase() === "error"}>
@@ -73,7 +78,16 @@ export class TraceWaterfall extends LitElement {
         </summary>
         ${this.activityEvidence(activity)}
       </details>`;})}
-    </div>${this.hasMore ? html`<div class="load-status" role="status" aria-live="polite">${this.loading ? "Loading more trace data…" : ""}</div>` : null}`;
+    </div>${hasNextWindow ? this.windowNavigation("next") : null}${this.hasMore && !hasNextWindow ? html`<div class="load-status" role="status" aria-live="polite">${this.loading ? "Loading more trace data…" : ""}</div>` : null}`;
+  }
+
+  protected willUpdate(changed: PropertyValues<this>) {
+    if (!changed.has("trace")) return;
+    const previous = changed.get("trace") as Trace | undefined;
+    if (previous?.traceId !== this.trace?.traceId) this.renderOffset = 0;
+    if (this.trace && this.renderOffset >= this.trace.activities.length) {
+      this.renderOffset = Math.max(0, this.trace.activities.length - 200);
+    }
   }
 
   protected updated(changed: Map<string, unknown>) {
@@ -95,6 +109,18 @@ export class TraceWaterfall extends LitElement {
       if (entries.some((entry) => entry.isIntersecting)) this.requestMore();
     }, { rootMargin: "0px 0px 600px" });
     this.loadMoreObserver.observe(sentinel);
+  }
+
+  private windowNavigation(direction: "previous" | "next") {
+    return html`<div class="window-nav"><button type="button" @click=${() => this.moveWindow(direction)}>Show ${direction} loaded trace activities</button></div>`;
+  }
+
+  private moveWindow(direction: "previous" | "next") {
+    const length = this.trace?.activities.length ?? 0;
+    this.renderOffset = direction === "previous"
+      ? Math.max(0, this.renderOffset - 200)
+      : Math.min(Math.max(0, length - 1), this.renderOffset + 200);
+    this.requestUpdate();
   }
 
   private requestMore() {
@@ -132,7 +158,7 @@ export class TraceWaterfall extends LitElement {
   }
 }
 
-export const traceRows = (trace: Trace): readonly TraceRow[] => {
+export const traceRows = (trace: Trace, offset = 0): readonly TraceRow[] => {
   const start = new Date(trace.startedAt).getTime();
   const total = Math.max(1, new Date(trace.endedAt).getTime() - start);
   const spans = new Map(trace.activities.filter(({ signal, spanId }) => signal === "trace" && spanId).map((activity) => [activity.spanId!, activity]));
@@ -144,7 +170,7 @@ export const traceRows = (trace: Trace): readonly TraceRow[] => {
     seen.add(parentID);
     return 1 + depthOf(parent, seen);
   };
-  return trace.activities.map((activity) => {
+  return trace.activities.slice(offset, offset + 200).map((activity) => {
     const activityStart = new Date(activity.startedAt ?? activity.observedAt).getTime();
     const activityEnd = new Date(activity.endedAt ?? activity.observedAt).getTime();
     const missingParent = activity.signal === "trace" && Boolean(activity.parentSpanId) && !spans.has(activity.parentSpanId!);

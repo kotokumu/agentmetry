@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Code, ConnectError } from "@connectrpc/connect";
 import "./agentmetry-app";
+import { agentmetryClient } from "../api/agentmetry-client";
+import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
+import { ProjectionTargetKind } from "../gen/agentmetry/v1/agentmetry_pb";
 import type { AgentmetryApp } from "./agentmetry-app";
 import type { TimeRangeFilter } from "../components/time-range-filter";
 import type { SessionList } from "../components/session-list";
@@ -126,6 +130,7 @@ const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(asy
 
 afterEach(() => {
   document.body.replaceChildren();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   history.replaceState({}, "", "/");
 });
@@ -162,6 +167,107 @@ describe("Agentmetry app composition", () => {
     expect(cards).toHaveLength(8);
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("25.0%");
     expect(panel?.shadowRoot?.textContent).toContain("Partial evidence");
+  });
+
+  it("returns a removed trace route to the filtered dashboard", async () => {
+    history.replaceState({}, "", "/traces/trace-gone?range=7d");
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(traceExplorerOf(app)).toBeTruthy());
+
+    traceExplorerOf(app)?.dispatchEvent(new CustomEvent("trace-removed", {
+      detail: { traceId: "trace-gone" }, bubbles: true, composed: true,
+    }));
+
+    await vi.waitFor(() => expect(location.pathname).toBe("/"));
+    expect(location.search).toContain("range=7d");
+  });
+
+	it("returns a removed conversation route to the filtered dashboard", async () => {
+    history.replaceState({}, "", "/conversations/codex/removed?range=7d");
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(workspaceOf(app)).toBeTruthy());
+
+    workspaceOf(app)?.dispatchEvent(new CustomEvent("conversation-removed", {
+      detail: { sourceId: "codex", conversationId: "removed" }, bubbles: true, composed: true,
+    }));
+
+    await vi.waitFor(() => expect(location.pathname).toBe("/"));
+	  expect(location.search).toContain("range=7d");
+	});
+
+	it("replaces a child conversation route with its canonical aggregated root", async () => {
+	  const traceId = "11111111111111111111111111111111";
+	  const spanId = "aaaaaaaaaaaaaaaa";
+	  history.replaceState({}, "", `/conversations/codex/child?range=7d&traceId=${traceId}&spanId=${spanId}`);
+	  const parent: TestSession = {
+		id: "parent", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+		startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z", activityCount: 0,
+		tokens: emptyOverview.tokens, agents: [], activities: [],
+	  };
+	  vi.stubGlobal("fetch", overviewFetch({ ...emptyOverview, sessions: [parent] } as TestOverview));
+	  const app = document.createElement("am-app") as AgentmetryApp;
+	  document.body.append(app);
+
+	  await vi.waitFor(() => expect(location.pathname).toBe("/conversations/codex/parent"));
+	  expect(location.search).toContain("range=7d");
+	  expect(location.search).toContain(`traceId=${traceId}`);
+	  expect(location.search).toContain(`spanId=${spanId}`);
+	  await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain("parent"));
+	});
+
+  it("keeps a valid trace open when its conversation return origin is removed", async () => {
+    history.replaceState({}, "", "/conversations/codex/conversation-1?range=7d");
+    const conversation: TestSession = {
+      id: "conversation-1", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z", activityCount: 0,
+      tokens: emptyOverview.tokens, agents: [], activities: [],
+    };
+    const overview = { ...emptyOverview, sessions: [conversation] } as TestOverview;
+    const trace = {
+      traceId: "trace-a", startedAt: conversation.startedAt, endedAt: conversation.endedAt,
+      status: "ok", rootSpanCount: 1, missingParentCount: 0, conversations: [], agents: [], activities: [],
+    };
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => {
+      switch (connectPath(url).split("/").at(-1)) {
+        case "GetDashboard": return connectResponse(dashboardResponse(overview));
+        case "ListSessions": return connectResponse(sessionsResponse(overview));
+        case "GetSession": return connectResponse({ session: sessionSummary(conversation), traceIds: [] });
+        case "ListSessionActivities": return connectResponse(activitiesResponse(conversation));
+        case "GetTrace": return connectResponse(trace);
+        default: return connectResponse({});
+      }
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(workspaceOf(app)).toBeTruthy());
+
+    workspaceOf(app)?.dispatchEvent(new CustomEvent("trace-selected", {
+      detail: { traceId: "trace-a", sourceId: "codex", conversationId: "conversation-1" },
+      bubbles: true, composed: true,
+    }));
+    await vi.waitFor(() => expect(location.pathname).toBe("/traces/trace-a"));
+    await vi.waitFor(() => expect(traceExplorerOf(app)).toBeTruthy());
+
+    vi.spyOn(agentmetryClient, "getSession").mockRejectedValueOnce(new ConnectError("gone", Code.NotFound));
+    const pending: Promise<unknown>[] = [];
+    const detail: LiveUpdateDelivery = {
+      resyncRequired: false,
+      throughCursor: "cursor-after-removal",
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "conversation-1", traceId: "" }],
+      waitUntil: (promise) => pending.push(promise),
+    };
+    window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail }));
+    await Promise.all(pending);
+    await app.updateComplete;
+
+    expect(location.pathname).toBe("/traces/trace-a");
+    expect(location.search).toContain("range=7d");
+    expect(traceRootOf(app)?.querySelector<HTMLAnchorElement>("a.trace-close")?.getAttribute("href")).toBe("/?range=7d");
+    expect(history.state?.origin).toBeUndefined();
   });
 
   it("uses source-neutral product language", async () => {
@@ -322,6 +428,42 @@ describe("Agentmetry app composition", () => {
     await app.updateComplete;
 
     expect(`${location.pathname}${location.search}`).toBe("/conversations/codex/conversation-1?range=1h");
+  });
+
+  it("keeps the selected conversation when search is cleared", async () => {
+    history.replaceState({}, "", "/?q=session-2");
+    const sessions = ["session-1", "session-2"].map((id) => ({
+      id, sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z",
+      activityCount: 0, tokens: emptyOverview.tokens, agents: [], activities: [],
+    }));
+    const overview = { ...emptyOverview, sessions } as TestOverview;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { sessionId?: string } : {};
+      const selected = sessions.find(({ id }) => id === body.sessionId) ?? sessions[0];
+      switch (connectPath(url).split("/").at(-1)) {
+        case "GetDashboard": return connectResponse(dashboardResponse(overview));
+        case "ListSessions": return connectResponse(sessionsResponse(overview));
+        case "GetSession": return connectResponse({ session: sessionSummary(selected), traceIds: [] });
+        case "ListSessionActivities": return connectResponse(activitiesResponse(selected));
+        default: return connectResponse({});
+      }
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-session-list")?.shadowRoot?.querySelectorAll("a")).toHaveLength(2));
+    const selectedLink = workspaceRootOf(app)?.querySelector("am-session-list")?.shadowRoot
+      ?.querySelector<HTMLAnchorElement>('a[href="/conversations/codex/session-2?q=session-2"]');
+    selectedLink?.click();
+    await vi.waitFor(() => expect(`${location.pathname}${location.search}`).toBe("/conversations/codex/session-2?q=session-2"));
+
+    workspaceOf(app)?.dispatchEvent(new CustomEvent("search-submitted", {
+      detail: { search: "" }, bubbles: true, composed: true,
+    }));
+
+    await vi.waitFor(() => expect(`${location.pathname}${location.search}`).toBe("/conversations/codex/session-2"));
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain("session-2"));
   });
 
   it("uses a focused trace view with an honest direct-link return target", async () => {

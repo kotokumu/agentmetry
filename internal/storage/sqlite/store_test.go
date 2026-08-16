@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -168,9 +169,6 @@ func TestListSessionActivitiesHydratesInternalAnalysisAttributes(t *testing.T) {
 	if !ok || arguments["cmd"] != "go test ./..." {
 		t.Fatalf("analysis attributes were not hydrated: %#v", page.Activities[0].Attributes)
 	}
-	if !page.Activities[0].ContributesToTotal {
-		t.Fatal("authoritative activity was not selected for analysis token totals")
-	}
 }
 
 func TestGetSessionReworkAnalyzesTheCompleteStoredSession(t *testing.T) {
@@ -190,7 +188,6 @@ func TestGetSessionReworkAnalyzesTheCompleteStoredSession(t *testing.T) {
 	}
 
 	analysis, err := database.GetSessionRework(context.Background(), mustConversationIdentity(t, "codex", "run-rework"))
-
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -199,6 +196,95 @@ func TestGetSessionReworkAnalyzesTheCompleteStoredSession(t *testing.T) {
 	}
 	if analysis.Report.ReworkDuration != 3*time.Second || analysis.Report.Coverage.ActivityCoverage != query.ActivityCoverageComplete {
 		t.Fatalf("unexpected effort/coverage: %#v", analysis.Report)
+	}
+}
+
+func TestGetSessionReworkAggregatesChildActivitiesIntoCanonicalRoot(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	start := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	spans := []canonical.Span{
+		{Source: "codex", TraceID: "trace-child-rework", SpanID: "fail", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start, EndedAt: start.Add(time.Second), Status: "Error", Attributes: map[string]any{"command": "go test ./..."}, Agent: canonical.AgentContext{RunID: "child"}},
+		{Source: "codex", TraceID: "trace-child-rework", SpanID: "edit", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "apply_patch", StartedAt: start.Add(2 * time.Second), EndedAt: start.Add(3 * time.Second), Status: "Ok", Attributes: map[string]any{"file_path": "main.go"}, Agent: canonical.AgentContext{RunID: "child"}},
+		{Source: "codex", TraceID: "trace-child-rework", SpanID: "retry", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start.Add(4 * time.Second), EndedAt: start.Add(5 * time.Second), Status: "Ok", Attributes: map[string]any{"command": "go test ./..."}, Agent: canonical.AgentContext{RunID: "child"}},
+	}
+	batch := canonical.Batch{
+		Signal: canonical.SignalTrace,
+		Spans:  spans,
+		SessionLinks: []canonical.SessionLink{{
+			Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: start,
+		}},
+	}
+	if err := database.CommitBatch(context.Background(), batch); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := database.GetSessionRework(context.Background(), mustConversationIdentity(t, "codex", "child"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.RunID != "parent" || analysis.Report.ValidationFailures != 1 || analysis.Report.FailFixRetryCycles != 1 {
+		t.Fatalf("aggregated child rework = %#v", analysis)
+	}
+}
+
+func TestSpanRevisionRepairsSessionTimeExtrema(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef",
+		Kind: canonical.ActivityResponse, StartedAt: now.Add(-time.Second), EndedAt: now,
+		Agent: canonical.AgentContext{RunID: "revised-session", AgentID: "main"},
+	}
+	ctx := context.Background()
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.EndedAt = now.Add(time.Minute)
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "revised-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.StartedAt.Equal(span.EndedAt) || !session.EndedAt.Equal(span.EndedAt) || session.ActivityCount != 1 {
+		t.Fatalf("revised session extrema = %s..%s count=%d, want %s", session.StartedAt, session.EndedAt, session.ActivityCount, span.EndedAt)
+	}
+}
+
+func TestSpanRevisionToUnknownRemovesEmptySessionAndTraceRollups(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef",
+		Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now,
+		Agent: canonical.AgentContext{RunID: "kind-session", AgentID: "main"},
+	}
+	ctx := context.Background()
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.Kind = canonical.ActivityUnknown
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "kind-session")); !errors.Is(err, query.ErrConversationNotFound) {
+		t.Fatalf("session error = %v, want not found", err)
+	}
+	if _, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, span.TraceID), Page: mustPage(t, 0, 100)}); !errors.Is(err, query.ErrTraceNotFound) {
+		t.Fatalf("trace error = %v, want not found", err)
 	}
 }
 
@@ -278,6 +364,441 @@ func TestOverviewKeepsConversationsSeparateWhenTheyShareATrace(t *testing.T) {
 	}
 	if len(byID["parent-run"].TraceIDs) != 1 || len(byID["child-run"].TraceIDs) != 1 {
 		t.Fatalf("shared trace correlation was lost: %#v", overview.Sessions)
+	}
+}
+
+func TestCodexSpawnAggregatesChildConversationIntoParentSession(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{
+			Source: "codex", ObservedAt: now, Name: "gen_ai.user_prompt", Kind: canonical.ActivityPrompt,
+			Body: "delegate analysis", Agent: canonical.AgentContext{RunID: "parent-thread", Model: "gpt-5.6-sol"},
+		},
+		{
+			Source: "codex", ObservedAt: now.Add(time.Second), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation,
+			Agent: canonical.AgentContext{AgentID: "parent-thread"}, TargetAgentID: "child-thread",
+			Attributes: map[string]any{"state": "send", "kind": "spawn", "communication_id": "communication-1"},
+		},
+		{
+			Source: "codex", ObservedAt: now.Add(2 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse,
+			Body: "analysis complete", Agent: canonical.AgentContext{
+				RunID: "child-thread", Model: "gpt-5.6-luna", Tokens: canonical.TokenUsage{Input: 11, Output: 4},
+			},
+		},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{Source: "codex", ParentSessionID: "parent-thread", ChildSessionID: "child-thread", ObservedAt: now.Add(time.Second)}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{
+		Since: now.Add(-time.Hour), Page: mustPage(t, 0, 100),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ID != "parent-thread" || page.Sessions[0].ActivityCount != 2 || page.Sessions[0].AgentCount != 2 {
+		t.Fatalf("spawned conversation was not aggregated into its parent: %#v", page.Sessions)
+	}
+	searched, err := database.ListSessions(context.Background(), query.SessionListFilter{
+		Since: now.Add(-time.Hour), Search: "analysis complete", Page: mustPage(t, 0, 100),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(searched.Sessions) != 1 || searched.Sessions[0].ID != "parent-thread" || searched.Sessions[0].ActivityCount != 2 {
+		t.Fatalf("child search did not return the complete parent group: %#v", searched.Sessions)
+	}
+	dashboard, err := database.GetDashboard(context.Background(), query.DashboardFilter{Since: now.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.RunCount != 1 || dashboard.AgentCount != 2 || dashboard.Tokens.Total() != 15 {
+		t.Fatalf("dashboard did not aggregate the spawned conversation: %#v", dashboard)
+	}
+	overview, err := database.GetOverview(context.Background(), query.OverviewFilter{Since: now.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Sessions) != 1 || overview.Sessions[0].ID != "parent-thread" || overview.Sessions[0].AgentCount != 2 || len(overview.Sessions[0].Agents) != 2 {
+		t.Fatalf("overview did not aggregate the spawned conversation: %#v", overview.Sessions)
+	}
+
+	for _, requestedID := range []string{"parent-thread", "child-thread"} {
+		summary, err := database.GetSessionSummary(context.Background(), mustConversationIdentity(t, "codex", requestedID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if summary.ID != "parent-thread" || summary.ActivityCount != 2 || summary.AgentCount != 2 || summary.Tokens.Total() != 15 {
+			t.Fatalf("unexpected aggregate for %q: %#v", requestedID, summary)
+		}
+		agents := make(map[string]query.AgentSession, len(summary.Agents))
+		for _, agent := range summary.Agents {
+			agents[agent.AgentID] = agent
+		}
+		if agents["parent-thread"].Model != "gpt-5.6-sol" || agents["child-thread"].Model != "gpt-5.6-luna" || agents["child-thread"].ParentAgentID != "parent-thread" {
+			t.Fatalf("unexpected aggregate agent topology for %q: %#v", requestedID, summary.Agents)
+		}
+	}
+
+	activityPage, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+		Identity: mustConversationIdentity(t, "codex", "parent-thread"), AgentID: "child-thread", Page: mustPage(t, 0, 100),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if activityPage.Total != 1 || len(activityPage.Activities) != 1 || activityPage.Activities[0].RunID != "child-thread" || activityPage.Activities[0].AgentID != "child-thread" {
+		t.Fatalf("child agent activity filter returned %#v", activityPage)
+	}
+	childPage, err := database.ListSessions(context.Background(), query.SessionListFilter{
+		Since: now.Add(-time.Hour), SourceID: "codex", SessionID: "child-thread", Page: mustPage(t, 0, 100),
+	})
+	if err != nil || len(childPage.Sessions) != 1 || childPage.Sessions[0].ID != "parent-thread" {
+		t.Fatalf("child session lookup returned page=%#v err=%v", childPage, err)
+	}
+	childActivities, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+		Identity: mustConversationIdentity(t, "codex", "child-thread"), Page: mustPage(t, 0, 100),
+	})
+	if err != nil || childActivities.Total != 2 {
+		t.Fatalf("child activity lookup returned page=%#v err=%v", childActivities, err)
+	}
+	conversation, err := database.GetConversation(context.Background(), query.ConversationFilter{
+		Identity: mustConversationIdentity(t, "codex", "child-thread"), Page: mustPage(t, 0, 100), PageMode: query.ConversationPageFromOffset,
+	})
+	if err != nil || conversation.ID != "parent-thread" || conversation.ActivityCount != 2 {
+		t.Fatalf("child conversation lookup returned session=%#v err=%v", conversation, err)
+	}
+	_, err = database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+		Identity: mustConversationIdentity(t, "codex", "parent-thread"), AgentID: "missing", Page: mustPage(t, 0, 100),
+	})
+	if !errors.Is(err, query.ErrConversationNotFound) {
+		t.Fatalf("missing agent error = %v", err)
+	}
+}
+
+func TestSessionAggregationTraversesNestedSpawnsWithoutDoubleCounting(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	activity := func(runID string, offset time.Duration) canonical.Log {
+		return canonical.Log{Source: "codex", ObservedAt: now.Add(offset), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: runID}}
+	}
+	edge := func(parent, child, communicationID string, offset time.Duration) canonical.Log {
+		return canonical.Log{
+			Source: "codex", ObservedAt: now.Add(offset), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation,
+			Agent: canonical.AgentContext{AgentID: parent}, TargetAgentID: child,
+			Attributes: map[string]any{"state": "send", "kind": "spawn", "communication_id": communicationID},
+		}
+	}
+	logs := []canonical.Log{
+		activity("parent", 0), edge("parent", "child", "one", time.Second),
+		edge("parent", "child", "one", 2*time.Second), activity("child", 3*time.Second),
+		edge("child", "grandchild", "two", 4*time.Second), activity("grandchild", 5*time.Second),
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{
+		{Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now.Add(time.Second)},
+		{Source: "codex", ParentSessionID: "child", ChildSessionID: "grandchild", ObservedAt: now.Add(4 * time.Second)},
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: mustPage(t, 0, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ID != "parent" || page.Sessions[0].ActivityCount != 3 || page.Sessions[0].AgentCount != 3 {
+		t.Fatalf("nested spawn group = %#v", page.Sessions)
+	}
+}
+
+func TestSessionAggregationGroupsBeforePagination(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: now, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "root-a"}},
+		{Source: "codex", ObservedAt: now.Add(time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "root-b"}},
+		{Source: "codex", ObservedAt: now.Add(2 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent"}},
+		{Source: "codex", ObservedAt: now.Add(3 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{
+		Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now.Add(2 * time.Second),
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"parent", "root-b", "root-a"}
+	for offset, wantID := range want {
+		page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: mustPage(t, offset, 1)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(page.Sessions) != 1 || page.Sessions[0].ID != wantID {
+			t.Fatalf("page %d = %#v, want %q", offset, page.Sessions, wantID)
+		}
+		if page.HasMore != (offset < len(want)-1) {
+			t.Fatalf("page %d HasMore = %v", offset, page.HasMore)
+		}
+	}
+}
+
+func TestSessionAggregationPagesAroundAChildActivityAnchor(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	traceID := "11111111111111111111111111111111"
+	spanIDs := []string{"0000000000000001", "0000000000000002", "0000000000000003", "0000000000000004"}
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: now, TraceID: traceID, SpanID: spanIDs[0], Name: "gen_ai.agent.message", Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "parent"}},
+		{Source: "codex", ObservedAt: now.Add(time.Second), TraceID: traceID, SpanID: spanIDs[1], Name: "gen_ai.agent.message", Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "child"}},
+		{Source: "codex", ObservedAt: now.Add(2 * time.Second), TraceID: traceID, SpanID: spanIDs[2], Name: "gen_ai.agent.message", Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "parent"}},
+		{Source: "codex", ObservedAt: now.Add(3 * time.Second), TraceID: traceID, SpanID: spanIDs[3], Name: "gen_ai.agent.message", Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "child"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{
+		Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+		Identity: mustConversationIdentity(t, "codex", "child"), Anchor: mustActivityAnchor(t, traceID, spanIDs[1]), Page: mustPage(t, 0, 2),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, activity := range page.Activities {
+		found = found || activity.SpanID == spanIDs[1]
+	}
+	if page.Total != 4 || page.Offset != 1 || !page.HasEarlier || !page.HasMore || !found {
+		t.Fatalf("group anchor page = %#v", page)
+	}
+}
+
+func TestSessionAggregationIgnoresNonSpawnSendEvents(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: now, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent"}},
+		{Source: "codex", ObservedAt: now.Add(time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child"}},
+		{
+			Source: "codex", ObservedAt: now.Add(2 * time.Second), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation,
+			Agent: canonical.AgentContext{AgentID: "parent"}, TargetAgentID: "child", Attributes: map[string]any{"state": "send", "kind": "followup"},
+		},
+		{
+			Source: "codex", ObservedAt: now.Add(3 * time.Second), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation,
+			Agent: canonical.AgentContext{AgentID: "parent"}, TargetAgentID: "child", Attributes: map[string]any{"state": "receive", "kind": "spawn"},
+		},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: mustPage(t, 0, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 2 {
+		t.Fatalf("non-spawn communication grouped sessions: %#v", page.Sessions)
+	}
+}
+
+func TestSessionAggregationPersistsAmbiguousAndCyclicLinksSafely(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	ids := []string{"parent-1", "parent-2", "ambiguous", "cycle-1", "cycle-2"}
+	logs := make([]canonical.Log, 0, len(ids))
+	for index, id := range ids {
+		logs = append(logs, canonical.Log{Source: "codex", ObservedAt: now.Add(time.Duration(index) * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: id}})
+	}
+	links := []canonical.SessionLink{
+		{Source: "codex", ParentSessionID: "parent-1", ChildSessionID: "ambiguous", ObservedAt: now},
+		{Source: "codex", ParentSessionID: "parent-2", ChildSessionID: "ambiguous", ObservedAt: now},
+		{Source: "codex", ParentSessionID: "cycle-1", ChildSessionID: "cycle-2", ObservedAt: now},
+		{Source: "codex", ParentSessionID: "cycle-2", ChildSessionID: "cycle-1", ObservedAt: now},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: links}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: mustPage(t, 0, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != len(ids) {
+		t.Fatalf("unsafe links were grouped: %#v", page.Sessions)
+	}
+}
+
+func TestSessionAggregationNamespacesExplicitAgentIDsByConversation(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: now.Add(-2 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent"}},
+		{Source: "codex", ObservedAt: now.Add(-time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent", AgentID: "parent"}},
+		{Source: "codex", ObservedAt: now, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent", AgentID: "main"}},
+		{Source: "codex", ObservedAt: now.Add(time.Second), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation, Agent: canonical.AgentContext{AgentID: "parent"}, TargetAgentID: "child", Attributes: map[string]any{"state": "send", "kind": "spawn"}},
+		{Source: "codex", ObservedAt: now.Add(2 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child", AgentID: "main"}},
+		{Source: "codex", ObservedAt: now.Add(3 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now.Add(time.Second)}}}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := database.GetSessionSummary(context.Background(), mustConversationIdentity(t, "codex", "parent"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Agents) != 2 || summary.Agents[0].AgentID != "child" || summary.Agents[0].ParentAgentID != "parent" || summary.Agents[1].AgentID != "parent" {
+		t.Fatalf("explicit primary agent IDs were not namespaced by conversation: %#v", summary.Agents)
+	}
+	overview, err := database.GetOverview(context.Background(), query.OverviewFilter{Since: now.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(overview.Sessions) != 1 || len(overview.Sessions[0].Agents) != 2 {
+		t.Fatalf("overview collapsed explicit primary agents: %#v", overview.Sessions)
+	}
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: mustPage(t, 0, 100)})
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].AgentCount != 2 {
+		t.Fatalf("rollup primary agent identities diverged: page=%#v err=%v", page, err)
+	}
+}
+
+func TestSessionAggregationAppliesTimeRangeAfterGrouping(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	old := now.Add(-2 * time.Hour)
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: old, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent", Tokens: canonical.TokenUsage{Input: 5, Output: 1}}},
+		{Source: "codex", ObservedAt: now.Add(-time.Minute), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation, Agent: canonical.AgentContext{AgentID: "parent"}, TargetAgentID: "child", Attributes: map[string]any{"state": "send", "kind": "spawn"}},
+		{Source: "codex", ObservedAt: now, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child", Tokens: canonical.TokenUsage{Input: 7, Output: 2}}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now.Add(-time.Minute)}}}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Page: mustPage(t, 0, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 1 || page.Sessions[0].ActivityCount != 2 || page.Sessions[0].AgentCount != 2 || !page.Sessions[0].StartedAt.Equal(old) {
+		t.Fatalf("time range was applied before grouping: %#v", page.Sessions)
+	}
+	dashboard, err := database.GetDashboard(context.Background(), query.DashboardFilter{Since: now.Add(-time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.RunCount != 1 || dashboard.AgentCount != 2 || dashboard.Tokens.Total() != 15 {
+		t.Fatalf("dashboard returned a partial group: %#v", dashboard)
+	}
+	overview, err := database.GetOverview(context.Background(), query.OverviewFilter{Since: now.Add(-time.Hour)})
+	if err != nil || len(overview.Sessions) != 1 || overview.Sessions[0].Tokens.Total() != 15 || overview.Sessions[0].ActivityCount != 2 {
+		t.Fatalf("overview returned a partial group: overview=%#v err=%v", overview, err)
+	}
+}
+
+func TestDashboardSearchAggregatesTheCompleteMatchingGroup(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: now, Name: "gen_ai.response.completed", Body: "ordinary parent", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent", Tokens: canonical.TokenUsage{Input: 5, Output: 1}}},
+		{Source: "codex", ObservedAt: now.Add(time.Second), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation, Agent: canonical.AgentContext{AgentID: "parent"}, TargetAgentID: "child", Attributes: map[string]any{"state": "send", "kind": "spawn"}},
+		{Source: "codex", ObservedAt: now.Add(2 * time.Second), Name: "gen_ai.response.completed", Body: "unique child needle", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child", Tokens: canonical.TokenUsage{Input: 7, Output: 2}}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now.Add(time.Second)}}}); err != nil {
+		t.Fatal(err)
+	}
+	dashboard, err := database.GetDashboard(context.Background(), query.DashboardFilter{Since: now.Add(-time.Hour), Search: "unique child needle"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.RunCount != 1 || dashboard.AgentCount != 2 || dashboard.Tokens.Total() != 15 {
+		t.Fatalf("dashboard search returned only matching activities: %#v", dashboard)
+	}
+}
+
+func TestSessionSearchMatchesOlderActivityInAnActiveGroup(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	old := now.Add(-2 * time.Hour)
+	logs := []canonical.Log{
+		{Source: "codex", ObservedAt: old, Name: "gen_ai.response.completed", Body: "older unique needle", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent", Tokens: canonical.TokenUsage{Input: 5}}},
+		{Source: "codex", ObservedAt: now, Name: "gen_ai.response.completed", Body: "recent child", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child", Tokens: canonical.TokenUsage{Output: 7}}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs, SessionLinks: []canonical.SessionLink{{
+		Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: now,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	filter := query.SessionListFilter{Since: now.Add(-time.Hour), Search: "older unique needle", Page: mustPage(t, 0, 100)}
+	page, err := database.ListSessions(context.Background(), filter)
+	if err != nil || len(page.Sessions) != 1 || page.Sessions[0].ID != "parent" || page.Sessions[0].ActivityCount != 2 {
+		t.Fatalf("group search returned page=%#v err=%v", page, err)
+	}
+	dashboard, err := database.GetDashboard(context.Background(), query.DashboardFilter{Since: filter.Since, Search: filter.Search})
+	if err != nil || dashboard.RunCount != 1 || dashboard.AgentCount != 2 || dashboard.Tokens.Total() != 12 {
+		t.Fatalf("group dashboard search returned dashboard=%#v err=%v", dashboard, err)
+	}
+	overview, err := database.GetOverview(context.Background(), query.OverviewFilter{Since: filter.Since, Search: filter.Search})
+	if err != nil || len(overview.Sessions) != 1 || overview.Sessions[0].ID != "parent" || overview.Sessions[0].Tokens.Total() != 12 {
+		t.Fatalf("group overview search returned overview=%#v err=%v", overview, err)
+	}
+}
+
+func TestSessionAggregationDoesNotInterpretOtherSourcesAsCodexThreads(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := []canonical.Log{
+		{Source: "claude", ObservedAt: now, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "parent"}},
+		{Source: "claude", ObservedAt: now.Add(time.Second), Name: "gen_ai.agent.delegation", Kind: canonical.ActivityDelegation, Agent: canonical.AgentContext{AgentID: "parent"}, TargetAgentID: "child", Attributes: map[string]any{"state": "send", "kind": "spawn"}},
+		{Source: "claude", ObservedAt: now.Add(2 * time.Second), Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Agent: canonical.AgentContext{RunID: "child"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+	page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), SourceID: "claude", Page: mustPage(t, 0, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Sessions) != 2 {
+		t.Fatalf("non-Codex sessions were grouped: %#v", page.Sessions)
 	}
 }
 
@@ -507,6 +1028,53 @@ func TestListSessionActivitiesKeepsAnchorInsideSmallPage(t *testing.T) {
 		}
 	}
 	t.Fatal("anchor fell outside the bounded activity page")
+}
+
+func TestSessionActivityPagesHaveStableTotalOrderForEqualTimestamps(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC()
+	logs := make([]canonical.Log, 205)
+	for index := range logs {
+		logs[index] = canonical.Log{
+			Source: "example", ObservedAt: now, Name: fmt.Sprintf("equal-%03d", index),
+			Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "equal-time"},
+		}
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+	identity := mustConversationIdentity(t, "example", "equal-time")
+	readIDs := func() []string {
+		result := make([]string, 0, len(logs))
+		for offset := 0; offset < len(logs); offset += 100 {
+			page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+				Identity: identity,
+				Page:     mustPage(t, offset, min(100, len(logs)-offset)),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, activity := range page.Activities {
+				result = append(result, activity.ID)
+			}
+		}
+		return result
+	}
+	first, second := readIDs(), readIDs()
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("equal-time order changed: first=%v second=%v", first, second)
+	}
+	unique := make(map[string]struct{}, len(first))
+	for _, id := range first {
+		unique[id] = struct{}{}
+	}
+	if len(first) != len(logs) || len(unique) != len(logs) {
+		t.Fatalf("equal-time page identities: total=%d unique=%d", len(first), len(unique))
+	}
 }
 
 func TestOverviewCountsOneAuthoritativeUsageContribution(t *testing.T) {
