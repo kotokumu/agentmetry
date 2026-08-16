@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.1](https://github.com/theoden9014/agentmetry/compare/v1.5.0...v1.5.1) (2026-08-16)
+
+
+### Bug Fixes
+
+* **live:** preserve message reading context ([2110906](https://github.com/theoden9014/agentmetry/commit/21109069ca359f9d597861ae390c10b551a091b6))
+* **live:** preserve message reading context ([59601a0](https://github.com/theoden9014/agentmetry/commit/59601a0afe6c9f168841cbb6cea0ae6b6a070722))
+
 ## [1.5.0](https://github.com/theoden9014/agentmetry/compare/v1.4.1...v1.5.0) (2026-08-16)
 
 
