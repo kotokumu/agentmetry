@@ -63,7 +63,7 @@ Clicking a reported trace ID in an activity row must open the Trace Explorer. Th
 
 ## 9. Detailed design
 
-`am-activity-table` derives a pure URL from the reported trace ID and renders a native anchor. No click handler, `CustomEvent`, host listener, or `history.pushState` call is required for opening a trace. Full-page same-origin navigation is acceptable for the PoC because all trace state is reconstructible from the URL and local API. The close action is a native `href="/"` anchor. Its handler uses `history.back()` only when `document.referrer` identifies the same-origin dashboard root or a valid source-qualified conversation route and `history.length > 1`, allowing the browser to restore its prior selected conversation and span. Direct, foreign, and new-tab deep links use the root fallback; the anchor also works when application JavaScript is unavailable.
+`am-activity-table` derives a pure URL from the reported trace ID and renders a native anchor. No click handler, `CustomEvent`, host listener, or `history.pushState` call is required for opening a trace. Full-page same-origin navigation is supported because all trace state is reconstructible from the URL and local API. The close action is a native `href="/"` anchor. Its handler uses `history.back()` only when `document.referrer` identifies the same-origin dashboard root or a valid source-qualified conversation route and `history.length > 1`, allowing the browser to restore its prior selected conversation and span. Direct, foreign, and new-tab deep links use the root fallback; the anchor also works when application JavaScript is unavailable.
 
 ## 10. TDD construction plan
 

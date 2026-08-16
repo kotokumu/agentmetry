@@ -1,6 +1,6 @@
 # ADR 0005: Modular Reuse of OpenObserve and GreptimeDB
 
-- Status: Proposed
+- Status: Superseded by the current native product architecture
 - Date: 2026-08-11
 - Research: luna + parallel subagents, using only official repositories, documentation, and crates
 

@@ -41,7 +41,8 @@ OTLP does not define an agent session hierarchy. Trace, log/event, and metric re
 - Plugins never derive conversation identity from `trace_id`, or rewrite source conversation identity into trace identity.
 - A shared trace ID creates correlation evidence but does not merge two source conversations.
 
-The full signal and identity model is defined in [Grand Architecture section 3.3](../grand-architecture.md#33-otlp-signals-and-identity-semantics).
+The current signal and identity model is defined in
+[Source and identity semantics](../architecture.md#source-and-identity-semantics).
 
 ## Interface
 
@@ -102,4 +103,4 @@ The main risk is growing the plugin into a producer-specific pipeline framework.
 - First-party plugins are replaceable modules but remain compiled into the product.
 - A source package can evolve and be fixture-tested independently of the receiver and database.
 - Users still install one executable and configure only OTLP for baseline ingestion.
-- Installing an arbitrary third-party binary plugin at runtime is intentionally not supported by this PoC.
+- Installing an arbitrary third-party binary plugin at runtime is outside the supported product contract.

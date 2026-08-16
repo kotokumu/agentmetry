@@ -124,8 +124,8 @@ The UI stores the absolute offset of its current contiguous window. A newer requ
 
 ## Follow-up architecture work
 
-The PoC keeps exact conversation totals and agent rollups authoritative by projecting the complete conversation before slicing its displayed activities. The indexed query now meets the observed local interaction need, but a larger-scale implementation should separate summary aggregation from the bounded activity-window query so adjacent-page requests do not rebuild the summary.
+The current v1 query keeps exact conversation totals and agent rollups authoritative by projecting the complete conversation before slicing its displayed activities. The indexed query meets the observed local interaction need, but a larger-scale implementation should separate summary aggregation from the bounded activity-window query so adjacent-page requests do not rebuild the summary.
 
-Numeric offsets are also a PoC trade-off. A live producer can insert newer records while a user is paging, shifting later offsets. The production continuation contract should expose opaque earlier/later cursors backed by a deterministic storage ordering key, while cursor encoding remains private to the storage adapter.
+Numeric offsets are a documented v1 trade-off. A live producer can insert newer records while a user is paging, shifting later offsets. A future continuation contract should expose opaque earlier/later cursors backed by a deterministic storage ordering key, while cursor encoding remains private to the storage adapter.
 
 Cursor acceptance tests must cover equal timestamps across signal types and an insertion between two adjacent-page requests. The cursor should include a snapshot watermark and a total ordering key such as `(observed_at, signal, persisted row identity)`.

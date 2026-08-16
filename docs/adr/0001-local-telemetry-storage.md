@@ -1,6 +1,6 @@
 # ADR 0001: Local Telemetry Storage
 
-- Status: Draft — storage landscape longlist and benchmark required before decision
+- Status: Superseded by ADR 0006 and the current product architecture
 - Date: 2026-08-10
 - Decision owner: Agentmetry architecture
 - Research: luna, using only official primary sources

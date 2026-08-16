@@ -6,11 +6,6 @@ Agentmetry receives OpenTelemetry (OTLP) data from Claude Code and Codex, then
 shows sessions, subagents, activities, token usage, and costs in a local Web UI.
 It also exposes the same data through HTTP and MCP.
 
-> **Early development / PoC**
->
-> APIs, storage schema, and source integrations may change. Feedback and issue
-> reports are welcome.
-
 ## Highlights
 
 - One local process with OTLP HTTP/gRPC, SQLite, Web UI, HTTP API, and MCP
@@ -18,11 +13,17 @@ It also exposes the same data through HTTP and MCP.
 - Session, subagent, model, tool, token, and cost views
 - Lossless local telemetry journal with canonical query projections
 - No external database or hosted service required after installation
-- Optional Tauri desktop packaging for macOS, Windows, and Linux
+- Signed desktop releases and automatic updates for macOS, Windows, and Linux
 
-## Quick start
+## Install
 
-Requirements: Go 1.26, Node.js 24, and npm.
+Download the latest desktop package for your platform from
+[GitHub Releases](https://github.com/theoden9014/agentmetry/releases/latest).
+The desktop app starts the local collector, dashboard, API, and MCP server as a
+single application.
+
+To build the standalone binary from source, install Go 1.26, Node.js 24, and
+npm, then run:
 
 ```sh
 git clone https://github.com/theoden9014/agentmetry.git
@@ -113,57 +114,14 @@ docker run --rm \
   -v agentmetry-data:/data agentmetry
 ```
 
-## Development
-
-```sh
-# Backend unit and fixture tests
-go test ./...
-
-# Web tests
-npm --prefix web ci
-npm --prefix web test -- --run
-
-# Backend integration tests, including the embedded Web UI
-npm --prefix web run build
-go test -tags=integration ./...
-```
-
-Provider contract tests make paid API requests and are opt-in:
-
-```sh
-ANTHROPIC_API_KEY=... OPENAI_API_KEY=... \
-  go test -tags=providerlive ./internal/source/claude ./internal/source/codex
-```
-
-The real-agent MCP integration test is also opt-in because it invokes local
-Claude and Codex SDKs and may consume subscription or API quota:
-
-```sh
-npm --prefix evals/agentmetry ci
-npm --prefix evals/agentmetry run e2e
-```
-
-It starts an isolated Agentmetry instance, runs both SDKs through Promptfoo,
-requires each agent to call `get_agent_context` and
-`get_source_capabilities`, checks that each run is observed under the expected
-source ID, and performs source-qualified MCP analysis from the runner. The
-runner verifies MCP initialization and tool discovery before making calls, and
-the deterministic fixture integration test repeats the lifecycle through the
-official MCP client while asserting semantic results. Local SDK authentication
-is reused; no credentials are written to the repository or broadly inherited
-by the Codex subprocess.
-
-See [the token accounting test strategy](docs/adr/0013-token-accounting-test-strategy.md)
-for the unit, fixture, and provider-live test boundaries.
-
 ## Documentation
 
-- [PoC scope and acceptance criteria](docs/poc-spec.md)
-- [Architecture overview](docs/grand-architecture.md)
-- [Trace explorer design](docs/design/trace-explorer.md)
+- [Documentation index](docs/README.md)
+- [Product architecture](docs/architecture.md)
+- [Storage maintenance](docs/operations/storage-maintenance.md)
 - [API contract](docs/design/api-proto-contract.md)
-- [CI and build validation](docs/adr/0012-ci-build-validation.md)
-- [Desktop build architecture](docs/adr/0010-desktop-build-architecture.md)
+- [Contributing](CONTRIBUTING.md)
+- [Security policy](SECURITY.md)
 
 ## Desktop builds
 
@@ -187,42 +145,12 @@ the Apple certificate into an ephemeral keychain, signs and notarizes the app
 and DMG, validates them with Gatekeeper, and publishes the GitHub Release only
 after every platform succeeds.
 
-Releases are managed by Release Please. Conventional commits merged into
-`main` update a Release PR containing the changelog and the next version in
-`src-tauri/tauri.conf.json`. Review and merge that PR to create the matching
-`vX.Y.Z` tag and draft GitHub Release; the tag then starts the signed desktop
-distribution workflow. Do not create or push release tags directly.
-
-Release preflight independently rejects any tag whose commit is not in `main`
-history.
-
 ## Contributing
 
-### Compacting local telemetry storage
-
-New OTLP journal entries are stored as adaptive zstd-compressed protobuf, and
-runtime-only spans are kept in the replay journal instead of the dashboard read
-models. After an application update, databases created by earlier releases are
-automatically migrated before OTLP listeners accept new writes. The desktop app
-shows verified-export progress, preserves the original database on failure, and
-regenerates current dashboard projections from the lossless journal. Fresh
-installs and already-current databases skip historical replay.
-
-The same operation can be forced manually for maintenance:
-
-```sh
-agentmetry -compact-database -database /path/to/agentmetry.db
-```
-
-Quit every Agentmetry process before running manual compaction. The command streams the
-legacy journal into a sibling database, replays current semantic projections,
-verifies every restored payload and SHA-256 plus derived row counts, then
-replaces the legacy file only after validation succeeds. A durable manifest
-recovers interrupted file replacement on the next launch.
-
-Please open an issue for bugs, source-format changes, or feature proposals.
-Small, focused pull requests are welcome. Before submitting a change, run the
-backend and Web tests relevant to the area you touched.
+Bug reports, source-format updates, and focused pull requests are welcome. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and release
+policy. Report security issues through the private channel documented in
+[SECURITY.md](SECURITY.md).
 
 ## License
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/theoden9014/agentmetry/internal/product"
 	"github.com/theoden9014/agentmetry/internal/query"
 )
 
@@ -22,6 +23,14 @@ type readerStub struct {
 
 func testService(reader *readerStub, now Clock) *Service {
 	return &Service{dashboardReader: reader, sessionReader: reader, summaryReader: reader, activityReader: reader, traceReader: reader, now: now}
+}
+
+func TestImplementationInfoUsesReleasedProductMetadata(t *testing.T) {
+	info := implementationInfo()
+
+	if info.Name != product.ID || info.Title != product.Name || info.Version != product.Version {
+		t.Fatalf("unexpected MCP implementation metadata: %#v", info)
+	}
 }
 
 func (reader *readerStub) GetDashboard(_ context.Context, filter query.DashboardFilter) (query.Overview, error) {

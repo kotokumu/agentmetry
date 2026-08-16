@@ -1,6 +1,6 @@
 # ADR 0002: Server Runtime and Language
 
-- Status: Draft — spike required before implementation commitment
+- Status: Superseded by the current Go product architecture
 - Date: 2026-08-10
 - Research: luna, using only official primary sources
 

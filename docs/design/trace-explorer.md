@@ -2,7 +2,7 @@
 
 - Status: Implemented
 - Date: 2026-08-11
-- Scope: Agentmetry vertical-slice PoC
+- Scope: Agentmetry conversation and trace navigation
 
 ## 1. Requirement Summary
 
@@ -38,7 +38,7 @@ Agentmetry must keep source conversations separate from OTLP traces. The dashboa
 - Reconstructing unreported conversations or trace IDs.
 - Distributed trace search by arbitrary attributes.
 - Sampling repair, tail-based trace completion, or remote trace federation.
-- A database schema migration; the PoC already stores the required identifiers and timestamps.
+- A database schema migration; the product already stores the required identifiers and timestamps.
 
 ## 3. Conceptual Model
 
@@ -137,7 +137,9 @@ type TraceReader interface {
 }
 ```
 
-The existing session read model gains explicit source-qualified identity for compatibility during the PoC. Public trace lookup uses the native trace ID path segment and never accepts a session ID as a fallback.
+The existing session read model gains explicit source-qualified identity for the
+v1 compatibility contract. Public trace lookup uses the native trace ID path
+segment and never accepts a session ID as a fallback.
 
 HTTP:
 
