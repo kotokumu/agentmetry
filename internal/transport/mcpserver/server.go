@@ -14,6 +14,7 @@ import (
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/planusage"
+	"github.com/theoden9014/agentmetry/internal/product"
 	"github.com/theoden9014/agentmetry/internal/query"
 )
 
@@ -385,12 +386,7 @@ type Service struct {
 
 func New(reader Reader, now Clock) http.Handler {
 	service := &Service{dashboardReader: reader, sessionReader: reader, summaryReader: reader, activityReader: reader, traceReader: reader, now: now}
-	server := mcp.NewServer(&mcp.Implementation{
-		Name:        "agentmetry",
-		Title:       "Agentmetry Agent Trace Lab",
-		Description: "Read-only evidence and efficiency analysis for AI-agent development runs. Call get_agent_context first; never assume the latest run is the caller's run.",
-		Version:     "0.1.0-poc",
-	}, &mcp.ServerOptions{Instructions: "Call get_agent_context first. The server is read-only and stateless; never assume the latest run is the caller's run. Provide source and runId explicitly for analysis."})
+	server := mcp.NewServer(implementationInfo(), &mcp.ServerOptions{Instructions: "Call get_agent_context first. The server is read-only and stateless; never assume the latest run is the caller's run. Provide source and runId explicitly for analysis."})
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_agent_context", Title: "Get agent context contract",
 		Description: "Describes what an AI caller can retrieve from Agentmetry, required run identity, completeness, privacy, and recommended analysis workflow.",
@@ -458,6 +454,15 @@ func New(reader Reader, now Clock) http.Handler {
 			PropagateRequestCancellation: true,
 		},
 	)
+}
+
+func implementationInfo() *mcp.Implementation {
+	return &mcp.Implementation{
+		Name:        product.ID,
+		Title:       product.Name,
+		Description: product.Description + " Call get_agent_context first; never assume the latest run is the caller's run.",
+		Version:     product.Version,
+	}
 }
 
 func (service *Service) getAgentContext(context.Context, *mcp.CallToolRequest, AgentContextInput) (*mcp.CallToolResult, AgentContextOutput, error) {

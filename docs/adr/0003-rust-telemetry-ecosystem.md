@@ -1,6 +1,6 @@
 # ADR 0003: Rust Telemetry Ecosystem Reuse
 
-- Status: Draft — implementation spikes required
+- Status: Superseded by the current Go product architecture
 - Date: 2026-08-10
 - Research: luna + parallel subagents, using only official sources
 

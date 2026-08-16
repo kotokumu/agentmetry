@@ -1,6 +1,6 @@
 # ADR 0004: Integrated Technology Stack Evaluation
 
-- Status: Proposed
+- Status: Superseded by the current product architecture
 - Date: 2026-08-10
 - Scope: Runtime × Ingestion × Storage × GUI × MCP × Packaging
 - Evidence: ADR 0001–0003 and their primary sources

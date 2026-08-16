@@ -5,7 +5,7 @@
     "tauri": "tauri",
     "web:build": "npm --prefix web run build",
     "desktop:inputs": "npm run web:build && node build/desktop/build-sidecar.mjs",
-    "desktop:test": "node --test build/desktop/*.test.mjs",
+    "desktop:test": "node --test build/*.test.mjs build/desktop/*.test.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "desktop:build:macos": "tauri build --bundles app && node build/desktop/package-macos-dmg.mjs",

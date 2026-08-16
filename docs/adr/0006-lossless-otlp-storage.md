@@ -17,14 +17,14 @@ Agentmetry must retain every accepted OTLP export while its UI, MCP tools, and v
 6. Every observation references its source export and normalizer version.
 7. Historical exports can be normalized again after the canonical model or a source profile changes.
 8. A normalization failure never loses a valid export. The raw envelope is committed with a failed status and is retryable.
-9. The PoC has no automatic retention policy.
+9. Agentmetry does not currently apply an automatic retention policy.
 
 ### Non-goals
 
 - Third-normal-form decomposition of the complete OTLP data model.
 - Byte-for-byte preservation of HTTP JSON whitespace, headers, or compressed frames.
 - Preservation of protobuf fields unknown to the pinned decoder version.
-- A stable public SQL schema during the PoC.
+- A stable public SQL schema; consumers use the documented API surfaces.
 
 ## Conceptual Model
 
@@ -212,5 +212,5 @@ Request-level usage events are canonical observations. Aggregate OTLP metrics ar
 
 - Storage grows intentionally while the product model evolves.
 - UI and MCP changes can reuse accumulated telemetry without asking producers to resend it.
-- SQLite remains sufficient for the PoC because the canonical model is append-oriented and only useful fields are indexed.
+- SQLite remains the supported local store because the canonical model is append-oriented and only useful fields are indexed.
 - The pinned Collector/pdata version defines which OTLP fields can be preserved semantically; upgrades require compatibility fixtures.

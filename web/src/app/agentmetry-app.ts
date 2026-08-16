@@ -357,7 +357,7 @@ export class AgentmetryApp extends LitElement {
     this.requestedAgentId = view?.selectedAgentId ?? "";
     this.traceReturn = undefined;
     this.routeAnnouncement = "Dashboard";
-    document.title = "Agentmetry · Agent Trace Lab";
+    document.title = "Agentmetry · Local AI Agent Observability";
     this.pendingFocus = restoreContext ? "list" : undefined;
   }
 

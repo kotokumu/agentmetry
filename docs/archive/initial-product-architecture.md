@@ -1,4 +1,9 @@
-# Agentmetry Grand Architecture
+# Initial Product Architecture
+
+> Historical document. This captures the alternatives and decision gates used
+> before the current architecture was implemented. It is retained for design
+> provenance and is not the current product architecture. See
+> [the current architecture](../architecture.md).
 
 - Status: Proposed
 - Date: 2026-08-10
@@ -28,7 +33,7 @@ Use a staged backend strategy rather than treating the alternatives as mutually 
 
 Do not adopt a plan that forks an OSS project and carries custom modifications. Even if SigNoz Embedded is selected, combine upstream binaries with public contracts and preserve the ability to replace the vendor, storage, and UI. Concentrate proprietary value in the Normalizer, Correlator, Analyzer, Agent Dashboard, and Semantic MCP.
 
-Under the integrated evaluation current as of 2026-08-10 in [ADR 0004](adr/0004-integrated-stack-evaluation.md), Go + Collector/pdata + SQLite is the production baseline, Rust + vendored Rotel + SQLite is the strong challenger, and OpenObserve is the no-fork OSS PoC. This is the ranking before the spikes, not a technology commitment that bypasses the hard gates.
+Under the integrated evaluation current as of 2026-08-10 in [ADR 0004](../adr/0004-integrated-stack-evaluation.md), Go + Collector/pdata + SQLite is the production baseline, Rust + vendored Rotel + SQLite is the strong challenger, and OpenObserve is the no-fork OSS PoC. This is the ranking before the spikes, not a technology commitment that bypasses the hard gates.
 
 ## 2. Requirements Specification
 
@@ -583,8 +588,8 @@ fixtures/           sanitized versioned source payloads
 
 Recommended implementation profile:
 
-- Daemon/runtime: undecided. Compare Rust, Go, and TypeScript runtimes in [Runtime ADR 0002](adr/0002-server-runtime.md), then decide through measurements and the shared Desktop/binary/container contract.
-- Store: under [Storage ADR 0001](adr/0001-local-telemetry-storage.md), the provisional MVP choice is SQLite WAL. Treat SQLite + Parquet/DuckDB as the scale-up path, DuckDB alone as a challenger, and ClickHouse as an optional SigNoz/large-scale profile. Decide with the same fixture benchmark.
+- Daemon/runtime: undecided. Compare Rust, Go, and TypeScript runtimes in [Runtime ADR 0002](../adr/0002-server-runtime.md), then decide through measurements and the shared Desktop/binary/container contract.
+- Store: under [Storage ADR 0001](../adr/0001-local-telemetry-storage.md), the provisional MVP choice is SQLite WAL. Treat SQLite + Parquet/DuckDB as the scale-up path, DuckDB alone as a challenger, and ClickHouse as an optional SigNoz/large-scale profile. Decide with the same fixture benchmark.
 - Storage boundary: only the daemon connects to the Storage Port; do not expose database-specific SQL or schemas to the UI or MCP.
 - Archive/scale: adopt a two-tier hot-store/archive design only if a single store cannot meet retention or scale targets.
 - Storage extensibility: implement and optimize only the selected backend in v1. Do not build multiple adapters, dynamic storage plugins, or a common query DSL. Retain only the minimum boundary required for future migration through raw OTLP reprojection and migrations.

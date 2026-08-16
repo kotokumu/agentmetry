@@ -1,9 +1,13 @@
-# Agentmetry Vertical Slice PoC Specification (historical)
+# Initial Vertical Slice Specification
+
+> Historical document. This records the original feasibility milestone and is
+> not the current product contract. See [the documentation index](../README.md)
+> and [current architecture](../architecture.md).
 
 > The current read API is protobuf-first and supersedes the original
 > overview-shaped HTTP/MCP contract described below. See
-> [api-proto-contract.md](design/api-proto-contract.md) and
-> [agentmetry.proto](../proto/agentmetry/v1/agentmetry.proto).
+> [api-proto-contract.md](../design/api-proto-contract.md) and
+> [agentmetry.proto](../../proto/agentmetry/v1/agentmetry.proto).
 
 - Status: Approved for construction
 - Date: 2026-08-11
