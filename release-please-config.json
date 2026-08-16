@@ -25,10 +25,6 @@
         },
         {
           "type": "generic",
-          "path": "src-tauri/Cargo.lock"
-        },
-        {
-          "type": "generic",
           "path": "internal/product/metadata.go"
         }
       ]

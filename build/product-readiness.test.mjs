@@ -64,12 +64,10 @@ test("release metadata stays synchronized", () => {
   const applicationVersion = JSON.parse(read("src-tauri/tauri.conf.json")).version;
   const releaseVersion = JSON.parse(read(".release-please-manifest.json"))["."];
   const cargoVersion = read("src-tauri/Cargo.toml").match(/^version = "([^"]+)"/m)?.[1];
-  const cargoLockVersion = read("src-tauri/Cargo.lock").match(/^name = "agentmetry-desktop"\nversion = "([^"]+)"/m)?.[1];
   const productVersion = read("internal/product/metadata.go").match(/^\s*Version\s*=\s*"([^"]+)"/m)?.[1];
 
   assert.match(applicationVersion, /^\d+\.\d+\.\d+$/);
   assert.equal(releaseVersion, applicationVersion);
   assert.equal(cargoVersion, applicationVersion);
-  assert.equal(cargoLockVersion, applicationVersion);
   assert.equal(productVersion, applicationVersion);
 });
