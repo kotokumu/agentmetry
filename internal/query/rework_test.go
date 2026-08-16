@@ -108,6 +108,9 @@ func TestAnalyzeReworkCalculatesEvidenceBackedSessionMetrics(t *testing.T) {
 	if report.ReworkDuration != 6*time.Second || report.ReworkTokens.Total() != 60 {
 		t.Fatalf("unexpected rework effort: %#v", report)
 	}
+	if report.TotalAgentEffort != 25*time.Second || report.ReworkAgentEffortRate == nil || math.Abs(*report.ReworkAgentEffortRate-0.24) > 0.000001 {
+		t.Fatalf("unexpected normalized rework effort: %#v", report)
+	}
 	if report.ToolAttemptsWithOutcome != 5 || report.ToolFailures != 2 || report.ToolFailureRate == nil || math.Abs(*report.ToolFailureRate-0.4) > 0.000001 {
 		t.Fatalf("unexpected tool failure rate: %#v", report)
 	}
@@ -125,6 +128,51 @@ func TestAnalyzeReworkCalculatesEvidenceBackedSessionMetrics(t *testing.T) {
 	}
 	if report.Capabilities.ChangeRevert.State != CapabilityUnavailable || report.Capabilities.CrossAgentOverlap.State != CapabilityUnavailable {
 		t.Fatalf("unsupported metrics were not explicit: %#v", report.Capabilities)
+	}
+}
+
+func TestAnalyzeReworkMergesOverlappingEffortPerAgentAndCountsParallelAgents(t *testing.T) {
+	start := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	activities := []Activity{
+		toolActivity(start, 0, 10, "agent-1-outer", "agent-1", "read_file", map[string]any{"file_path": "main.go"}, 0),
+		toolActivity(start, 2, 6, "agent-1-inner", "agent-1", "read_file", map[string]any{"file_path": "main.go"}, 0),
+		toolActivity(start, 3, 8, "agent-2-parallel", "agent-2", "read_file", map[string]any{"file_path": "other.go"}, 0),
+	}
+
+	report := AnalyzeRework(Session{ActivityCount: int64(len(activities))}, activities)
+
+	if report.TotalAgentEffort != 15*time.Second {
+		t.Fatalf("total agent effort = %s, want 15s", report.TotalAgentEffort)
+	}
+	if report.ReworkAgentEffortRate == nil || *report.ReworkAgentEffortRate != 0 {
+		t.Fatalf("rework effort rate = %#v, want observed zero", report.ReworkAgentEffortRate)
+	}
+}
+
+func TestAnalyzeReworkIncludesSameAgentActivitySpanningTheRetryCycleWindow(t *testing.T) {
+	start := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	activities := []Activity{
+		{Source: "codex", RunID: "run-1", TraceID: "trace-1", SpanID: "parent", Name: "agent turn", AgentID: "agent-1", StartedAt: start, EndedAt: start.Add(10 * time.Second), ObservedAt: start.Add(10 * time.Second)},
+		toolActivity(start, 1, 2, "failed", "agent-1", "exec_command", map[string]any{"command": "go test ./...", "exit_code": 1}, 0),
+		toolActivity(start, 3, 4, "edit", "agent-1", "apply_patch", map[string]any{"file_path": "main.go", "success": true}, 0),
+		toolActivity(start, 5, 6, "retry", "agent-1", "exec_command", map[string]any{"command": "go test ./...", "exit_code": 0}, 0),
+	}
+
+	report := AnalyzeRework(Session{ActivityCount: int64(len(activities))}, activities)
+
+	if report.ReworkDuration != 5*time.Second || report.TotalAgentEffort != 10*time.Second {
+		t.Fatalf("effort = %s of %s, want cycle-window intersection 5s of 10s", report.ReworkDuration, report.TotalAgentEffort)
+	}
+	if report.ReworkAgentEffortRate == nil || *report.ReworkAgentEffortRate != 0.5 {
+		t.Fatalf("rework effort rate = %#v, want 0.5", report.ReworkAgentEffortRate)
+	}
+}
+
+func TestAnalyzeReworkDoesNotReportEffortRateWithoutObservedDuration(t *testing.T) {
+	report := AnalyzeRework(Session{ActivityCount: 1}, []Activity{{AgentID: "main"}})
+
+	if report.TotalAgentEffort != 0 || report.ReworkAgentEffortRate != nil {
+		t.Fatalf("unexpected effort without duration evidence: %#v", report)
 	}
 }
 

@@ -93,6 +93,8 @@ const reworkResponse = (session: TestSession) => ({
     validationFailures: 2,
     failFixRetryCycles: 1,
     reworkDurationMs: "3500",
+    totalAgentEffortMs: "10000",
+    reworkAgentEffortRate: 0.35,
     reworkTokens: { input: "100", output: "20", total: "120" },
     toolAttemptsWithOutcome: 4,
     toolFailures: 1,
@@ -146,7 +148,7 @@ describe("Agentmetry app composition", () => {
         startedAt: "2026-08-11T00:00:00Z",
         endedAt: "2026-08-11T00:01:00Z",
         activityCount: 8,
-        tokens: emptyOverview.tokens,
+        tokens: { ...emptyOverview.tokens, input: 800, output: 200, total: 1_000 },
         agents: [],
         activities: [],
       }],
@@ -166,6 +168,8 @@ describe("Agentmetry app composition", () => {
 
     expect(cards).toHaveLength(8);
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("25.0%");
+    expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("35.0%");
+    expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("12.0%");
     expect(panel?.shadowRoot?.textContent).toContain("Partial evidence");
   });
 

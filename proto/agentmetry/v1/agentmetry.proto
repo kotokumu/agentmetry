@@ -228,6 +228,8 @@ message ReworkMetrics {
   ApiRetryWaste api_retry_waste = 8;
   int64 repeated_commands = 9;
   int64 reedited_files = 10;
+  int64 total_agent_effort_ms = 11;
+  optional double rework_agent_effort_rate = 12;
 }
 
 message ReworkCoverage {

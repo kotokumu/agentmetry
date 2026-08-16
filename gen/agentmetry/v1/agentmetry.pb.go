@@ -1767,6 +1767,8 @@ type ReworkMetrics struct {
 	ApiRetryWaste           *ApiRetryWaste         `protobuf:"bytes,8,opt,name=api_retry_waste,json=apiRetryWaste,proto3" json:"api_retry_waste,omitempty"`
 	RepeatedCommands        int64                  `protobuf:"varint,9,opt,name=repeated_commands,json=repeatedCommands,proto3" json:"repeated_commands,omitempty"`
 	ReeditedFiles           int64                  `protobuf:"varint,10,opt,name=reedited_files,json=reeditedFiles,proto3" json:"reedited_files,omitempty"`
+	TotalAgentEffortMs      int64                  `protobuf:"varint,11,opt,name=total_agent_effort_ms,json=totalAgentEffortMs,proto3" json:"total_agent_effort_ms,omitempty"`
+	ReworkAgentEffortRate   *float64               `protobuf:"fixed64,12,opt,name=rework_agent_effort_rate,json=reworkAgentEffortRate,proto3,oneof" json:"rework_agent_effort_rate,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -1867,6 +1869,20 @@ func (x *ReworkMetrics) GetRepeatedCommands() int64 {
 func (x *ReworkMetrics) GetReeditedFiles() int64 {
 	if x != nil {
 		return x.ReeditedFiles
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetTotalAgentEffortMs() int64 {
+	if x != nil {
+		return x.TotalAgentEffortMs
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetReworkAgentEffortRate() float64 {
+	if x != nil && x.ReworkAgentEffortRate != nil {
+		return *x.ReworkAgentEffortRate
 	}
 	return 0
 }
@@ -3284,7 +3300,7 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"\battempts\x18\x01 \x01(\x03R\battempts\x12\x1f\n" +
 	"\vduration_ms\x18\x02 \x01(\x03R\n" +
 	"durationMs\x121\n" +
-	"\x06tokens\x18\x03 \x01(\v2\x19.agentmetry.v1.TokenUsageR\x06tokens\"\xa4\x04\n" +
+	"\x06tokens\x18\x03 \x01(\v2\x19.agentmetry.v1.TokenUsageR\x06tokens\"\xb2\x05\n" +
 	"\rReworkMetrics\x12/\n" +
 	"\x13validation_failures\x18\x01 \x01(\x03R\x12validationFailures\x121\n" +
 	"\x15fail_fix_retry_cycles\x18\x02 \x01(\x03R\x12failFixRetryCycles\x12,\n" +
@@ -3296,8 +3312,11 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"\x0fapi_retry_waste\x18\b \x01(\v2\x1c.agentmetry.v1.ApiRetryWasteR\rapiRetryWaste\x12+\n" +
 	"\x11repeated_commands\x18\t \x01(\x03R\x10repeatedCommands\x12%\n" +
 	"\x0ereedited_files\x18\n" +
-	" \x01(\x03R\rreeditedFilesB\x14\n" +
-	"\x12_tool_failure_rate\"\xbc\x01\n" +
+	" \x01(\x03R\rreeditedFiles\x121\n" +
+	"\x15total_agent_effort_ms\x18\v \x01(\x03R\x12totalAgentEffortMs\x12<\n" +
+	"\x18rework_agent_effort_rate\x18\f \x01(\x01H\x01R\x15reworkAgentEffortRate\x88\x01\x01B\x14\n" +
+	"\x12_tool_failure_rateB\x1b\n" +
+	"\x19_rework_agent_effort_rate\"\xbc\x01\n" +
 	"\x0eReworkCoverage\x12+\n" +
 	"\x11activity_coverage\x18\x01 \x01(\tR\x10activityCoverage\x12)\n" +
 	"\x10canonical_events\x18\x02 \x01(\x03R\x0fcanonicalEvents\x12+\n" +

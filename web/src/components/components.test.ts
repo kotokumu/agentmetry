@@ -73,6 +73,7 @@ const reworkFixture: ReworkAnalysis = {
   sessionId: "session-1",
   metrics: {
     validationFailures: 2, failFixRetryCycles: 1, reworkDurationMs: 3500,
+    totalAgentEffortMs: 10_000, reworkAgentEffortRate: 0.35,
     reworkTokens: { input: 100, output: 20, cacheRead: null, cacheWrite: null, reasoning: null, total: 120 },
     toolAttemptsWithOutcome: 4, toolFailures: 1, toolFailureRate: 0.25,
     apiRetryWaste: { attempts: 1, durationMs: 500, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } },
@@ -89,6 +90,7 @@ describe("dashboard components", () => {
   it("renders session rework metrics with coverage and capability limits", async () => {
     const panel = document.createElement("am-rework-summary") as ReworkSummary;
     panel.analysis = reworkFixture;
+    panel.sessionTotalTokens = 1_000;
     document.body.append(panel);
 
     await panel.updateComplete;
@@ -99,9 +101,13 @@ describe("dashboard components", () => {
     const cardContent = cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ");
     expect(content).toContain("Development rework");
     expect(cardContent).toContain("Validation failures");
-    expect(cardContent).toContain("3.5 s");
+    expect(cardContent).toContain("Detected retry-cycle share");
+    expect(cardContent).toContain("35.0%");
+    expect(cardContent).toContain("3.5 s of 10 s observed agent-active time");
     expect(cardContent).toContain("25.0%");
-    expect(cardContent).toContain("120");
+    expect(cardContent).toContain("Rework token rate");
+    expect(cardContent).toContain("12.0%");
+    expect(cardContent).toContain("120 of 1,000 session tokens");
     expect(content).toContain("Partial evidence");
     expect(content).toContain("4 of 8 events report outcomes");
     expect(content).toContain("Change revert");
@@ -109,6 +115,84 @@ describe("dashboard components", () => {
     expect(cards).toHaveLength(8);
     expect(cards.every((card) => card.description.length > 0)).toBe(true);
     expect(cards.every((card) => card.shadowRoot?.querySelector("button.help"))).toBe(true);
+  });
+
+  it("does not report a rework effort rate without observed agent duration", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = {
+      ...reworkFixture,
+      metrics: {
+        ...reworkFixture.metrics,
+        totalAgentEffortMs: 0,
+        reworkAgentEffortRate: null,
+      },
+    };
+    document.body.append(panel);
+
+    await panel.updateComplete;
+
+    const card = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? [])
+      .find((candidate) => candidate.label === "Detected retry-cycle share");
+    await card?.updateComplete;
+    expect(card?.value).toBe("Not reported");
+    expect(card?.hint).toBe("Observed agent-active duration unavailable");
+  });
+
+  it("labels an observed zero as no detected closed retry cycles", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = {
+      ...reworkFixture,
+      metrics: {
+        ...reworkFixture.metrics,
+        reworkDurationMs: 0,
+        reworkAgentEffortRate: 0,
+      },
+    };
+    document.body.append(panel);
+
+    await panel.updateComplete;
+
+    const card = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? [])
+      .find((candidate) => candidate.label === "Detected retry-cycle share");
+    await card?.updateComplete;
+    expect(card?.value).toBe("0.0%");
+    expect(card?.hint).toBe("No detected closed retry cycles · 10 s observed agent-active time");
+  });
+
+  it("does not report a rework token rate without a positive session token total", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = reworkFixture;
+    panel.sessionTotalTokens = 0;
+    document.body.append(panel);
+
+    await panel.updateComplete;
+
+    const card = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? [])
+      .find((candidate) => candidate.label === "Rework token rate");
+    await card?.updateComplete;
+    expect(card?.value).toBe("Not reported");
+    expect(card?.hint).toBe("Session token total unavailable");
+  });
+
+  it("distinguishes missing rework token usage from a missing session total", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = {
+      ...reworkFixture,
+      metrics: {
+        ...reworkFixture.metrics,
+        reworkTokens: { ...reworkFixture.metrics.reworkTokens, total: null },
+      },
+    };
+    panel.sessionTotalTokens = 1_000;
+    document.body.append(panel);
+
+    await panel.updateComplete;
+
+    const card = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? [])
+      .find((candidate) => candidate.label === "Rework token rate");
+    await card?.updateComplete;
+    expect(card?.value).toBe("Not reported");
+    expect(card?.hint).toBe("Rework token usage unavailable");
   });
 
   it("isolates rework loading and retry states", async () => {

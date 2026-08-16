@@ -103,6 +103,8 @@ export const agentmetryClient = {
         validationFailures: Number(metrics.validationFailures),
         failFixRetryCycles: Number(metrics.failFixRetryCycles),
         reworkDurationMs: Number(metrics.reworkDurationMs),
+        totalAgentEffortMs: Number(metrics.totalAgentEffortMs),
+        reworkAgentEffortRate: metrics.reworkAgentEffortRate === undefined ? null : metrics.reworkAgentEffortRate,
         reworkTokens: mapTokens(metrics.reworkTokens),
         toolAttemptsWithOutcome: Number(metrics.toolAttemptsWithOutcome),
         toolFailures: Number(metrics.toolFailures),

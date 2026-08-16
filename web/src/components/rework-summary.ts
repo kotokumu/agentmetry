@@ -8,6 +8,7 @@ import "./kpi-card";
 @customElement("am-rework-summary")
 export class ReworkSummary extends LitElement {
   @property({ attribute: false }) analysis?: ReworkAnalysis;
+  @property({ attribute: false }) sessionTotalTokens: number | null = null;
   @property({ type: Boolean }) loading = false;
   @property() error = "";
 
@@ -38,13 +39,16 @@ export class ReworkSummary extends LitElement {
 
     const { metrics, coverage, capabilities } = this.analysis;
     const partial = coverage.activityCoverage !== "observed_projection_complete";
+    const reworkEffortHint = formatReworkEffortHint(metrics.reworkDurationMs, metrics.totalAgentEffortMs, metrics.reworkAgentEffortRate);
+    const reworkTokenRate = calculateRate(metrics.reworkTokens.total, this.sessionTotalTokens);
+    const reworkTokenHint = formatReworkTokenHint(metrics.reworkTokens.total, this.sessionTotalTokens);
     return html`<section class="panel">
       <div class="heading"><div><h2>Development rework</h2><p>Diagnostic signals from normalized Claude/Codex telemetry—not a productivity score.</p></div><span class=${`coverage-badge ${partial ? "partial" : ""}`}>${partial ? "Partial evidence" : "Complete retained projection"}</span></div>
       <div class="metrics" aria-label="Session rework indicators">
         <am-kpi-card label="Validation failures" .value=${formatCount(metrics.validationFailures)} hint="Test, build, and lint" description="Known failed test, build, and lint operations. Use this to locate validation friction; zero can also mean no validation ran or outcomes were not reported."></am-kpi-card>
         <am-kpi-card label="Failure/edit/retry" .value=${formatCount(metrics.failFixRetryCycles)} hint="Failure → edit → retry" description="A failed validation followed by an edit and a matching retry by the same agent. The retry does not have to succeed, and failures without a retry are not included."></am-kpi-card>
-        <am-kpi-card label="Rework time" .value=${formatDuration(metrics.reworkDurationMs)} hint="Observed cycle activity" description="Activity time observed inside detected failure/edit/retry windows, summed per agent. It may include useful diagnosis and is not proven wasted time."></am-kpi-card>
-        <am-kpi-card label="Rework tokens" .value=${formatOptionalCount(metrics.reworkTokens.total)} hint="Authoritative usage only" description="Authoritative token usage observed inside detected failure/edit/retry windows. These tokens are cycle-associated, not necessarily avoidable waste."></am-kpi-card>
+        <am-kpi-card label="Detected retry-cycle share" .value=${formatRate(metrics.reworkAgentEffortRate)} .hint=${reworkEffortHint} description="Detected same-agent activity time inside failure, edit, and matching retry windows divided by all observed agent-active time. Matching is heuristic and the retry need not succeed. Activity overlap is merged within each agent; other parallel agents add to the denominator and can dilute the session share. This is not proven waste or a productivity score."></am-kpi-card>
+        <am-kpi-card label="Rework token rate" .value=${formatRate(reworkTokenRate)} .hint=${reworkTokenHint} description="Authoritative tokens observed inside detected failure/edit/retry windows divided by total authoritative tokens for this session. It normalizes for session size, but cycle-associated tokens are not necessarily avoidable waste."></am-kpi-card>
         <am-kpi-card label="Tool failure rate" .value=${formatRate(metrics.toolFailureRate)} .hint=${metrics.toolAttemptsWithOutcome ? `${metrics.toolFailures} of ${metrics.toolAttemptsWithOutcome} known outcomes` : "No reported outcomes"} description="Known failed tool outcomes divided by tool attempts with known outcomes. Missing outcomes are excluded, and small samples can make the percentage unstable."></am-kpi-card>
         <am-kpi-card label="Estimated API retry" .value=${formatCount(metrics.apiRetryWaste.attempts)} .hint=${`${formatDuration(metrics.apiRetryWaste.durationMs)} observed`} description="Failed API attempts followed later by a matching API call. Matching is heuristic; the value shows estimated retry count and observed duration, not guaranteed waste."></am-kpi-card>
         <am-kpi-card label="Repeated commands" .value=${formatCount(metrics.repeatedCommands)} hint="Same agent and command" description="Each execution after the first of the same normalized command by one agent. Re-running validation after an edit may be healthy rather than rework."></am-kpi-card>
@@ -63,7 +67,17 @@ export class ReworkSummary extends LitElement {
 
 const capability = (label: string, state: string, reason: string) => html`<article><strong>${label} · ${state === "unavailable" ? "Not available" : state}</strong><p>${reason}</p></article>`;
 const formatCount = (value: number) => value.toLocaleString();
-const formatOptionalCount = (value: number | null) => value === null ? NOT_REPORTED : formatCount(value);
+const calculateRate = (part: number | null, total: number | null) => part === null || total === null || total <= 0 ? null : part / total;
+const formatReworkTokenHint = (reworkTokens: number | null, sessionTokens: number | null) => {
+  if (reworkTokens === null) return "Rework token usage unavailable";
+  if (sessionTokens === null || sessionTokens <= 0) return "Session token total unavailable";
+  return `${formatCount(reworkTokens)} of ${formatCount(sessionTokens)} session tokens`;
+};
+const formatReworkEffortHint = (reworkMs: number, totalMs: number, rate: number | null) => {
+  if (rate === null || totalMs <= 0) return "Observed agent-active duration unavailable";
+  if (rate === 0) return `No detected closed retry cycles · ${formatDuration(totalMs)} observed agent-active time`;
+  return `${formatDuration(reworkMs)} of ${formatDuration(totalMs)} observed agent-active time`;
+};
 const formatRate = (value: number | null) => value === null ? NOT_REPORTED : `${(value * 100).toFixed(1)}%`;
 const formatDuration = (milliseconds: number) => {
   if (milliseconds < 1000) return `${milliseconds.toLocaleString()} ms`;

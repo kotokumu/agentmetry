@@ -43,6 +43,7 @@ type ReworkCycle struct {
 	Operation canonical.Operation   `json:"operation"`
 	Target    canonical.EventTarget `json:"target"`
 	Evidence  []Evidence            `json:"evidence"`
+	agentID   string
 	eventKeys []string
 	startedAt time.Time
 	endedAt   time.Time
@@ -52,6 +53,8 @@ type ReworkReport struct {
 	ValidationFailures      int64                `json:"validationFailures"`
 	FailFixRetryCycles      int64                `json:"failFixRetryCycles"`
 	ReworkDuration          time.Duration        `json:"reworkDuration"`
+	TotalAgentEffort        time.Duration        `json:"totalAgentEffort"`
+	ReworkAgentEffortRate   *float64             `json:"reworkAgentEffortRate"`
 	ReworkTokens            canonical.TokenUsage `json:"reworkTokens"`
 	ToolAttemptsWithOutcome int64                `json:"toolAttemptsWithOutcome"`
 	ToolFailures            int64                `json:"toolFailures"`
@@ -167,6 +170,11 @@ func AnalyzeRework(summary Session, activities []Activity) ReworkReport {
 	report.Cycles = detectReworkCycles(events)
 	report.FailFixRetryCycles = int64(len(report.Cycles))
 	report.ReworkDuration, report.ReworkTokens = aggregateCycleEffort(events, report.Cycles)
+	report.TotalAgentEffort = AnalyzeRun(summary, activities).ActiveDuration
+	if report.TotalAgentEffort > 0 {
+		rate := float64(report.ReworkDuration) / float64(report.TotalAgentEffort)
+		report.ReworkAgentEffortRate = &rate
+	}
 	report.APIRetryWaste = detectAPIRetryWaste(events)
 	return report
 }
@@ -207,7 +215,7 @@ func detectReworkCycles(events []canonical.Event) []ReworkCycle {
 			}
 			cycles = append(cycles, ReworkCycle{
 				Operation: event.Operation, Target: event.Target, Evidence: evidence, eventKeys: eventKeys,
-				startedAt: eventTime(events[candidate.index]), endedAt: eventEnd(event),
+				agentID: event.AgentID, startedAt: eventTime(events[candidate.index]), endedAt: eventEnd(event),
 			})
 			delete(pending, key)
 		}
@@ -227,26 +235,26 @@ func aggregateCycleEffort(events []canonical.Event, cycles []ReworkCycle) (time.
 	countedTokens := make(map[string]struct{})
 	var tokens canonical.TokenUsage
 	for _, cycle := range cycles {
+		agentID := effortAgentID(cycle.agentID)
+		for _, event := range events {
+			if event.Duration <= 0 || effortAgentID(event.AgentID) != agentID {
+				continue
+			}
+			start, end := event.StartedAt, event.EndedAt
+			if start.Before(cycle.startedAt) {
+				start = cycle.startedAt
+			}
+			if end.After(cycle.endedAt) {
+				end = cycle.endedAt
+			}
+			if end.After(start) {
+				intervalsByAgent[agentID] = append(intervalsByAgent[agentID], timeInterval{start: start, end: end})
+			}
+		}
 		for _, key := range cycle.eventKeys {
 			event, exists := eventsByKey[key]
 			if !exists {
 				continue
-			}
-			if event.Duration > 0 {
-				start, end := event.StartedAt, event.EndedAt
-				if start.Before(cycle.startedAt) {
-					start = cycle.startedAt
-				}
-				if end.After(cycle.endedAt) {
-					end = cycle.endedAt
-				}
-				if end.After(start) {
-					agentID := event.AgentID
-					if agentID == "" {
-						agentID = "main"
-					}
-					intervalsByAgent[agentID] = append(intervalsByAgent[agentID], timeInterval{start: start, end: end})
-				}
 			}
 			if _, counted := countedTokens[key]; !counted && event.ContributesToTotal {
 				tokens.Add(event.Tokens)
@@ -259,6 +267,13 @@ func aggregateCycleEffort(events []canonical.Event, cycles []ReworkCycle) (time.
 		duration += mergedDuration(intervals)
 	}
 	return duration, tokens
+}
+
+func effortAgentID(agentID string) string {
+	if agentID == "" {
+		return "main"
+	}
+	return agentID
 }
 
 func detectAPIRetryWaste(events []canonical.Event) APIRetryWaste {
