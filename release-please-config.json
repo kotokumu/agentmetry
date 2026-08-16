@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "60ad0098806163b2a31f11baf2a617cf3007158e",
+  "packages": {
+    ".": {
+      "release-type": "simple",
+      "component": "agentmetry",
+      "package-name": "agentmetry",
+      "include-v-in-tag": true,
+      "include-component-in-tag": false,
+      "draft": true,
+      "force-tag-creation": true,
+      "separate-pull-requests": true,
+      "pull-request-title-pattern": "chore${scope}: release${component} ${version}",
+      "extra-files": [
+        {
+          "type": "json",
+          "path": "src-tauri/tauri.conf.json",
+          "jsonpath": "$.version"
+        }
+      ]
+    }
+  }
+}
