@@ -150,6 +150,8 @@ type ReworkMetricsOutput struct {
 	ValidationFailures      int64               `json:"validationFailures"`
 	FailFixRetryCycles      int64               `json:"failFixRetryCycles"`
 	ReworkDurationMs        int64               `json:"reworkDurationMs"`
+	TotalAgentEffortMs      int64               `json:"totalAgentEffortMs"`
+	ReworkAgentEffortRate   *float64            `json:"reworkAgentEffortRate"`
 	ReworkTokens            TokenUsageOutput    `json:"reworkTokens"`
 	ToolAttemptsWithOutcome int64               `json:"toolAttemptsWithOutcome"`
 	ToolFailures            int64               `json:"toolFailures"`
@@ -569,6 +571,7 @@ func (service *Service) analyzeRework(ctx context.Context, _ *mcp.CallToolReques
 		Metrics: ReworkMetricsOutput{
 			ValidationFailures: report.ValidationFailures, FailFixRetryCycles: report.FailFixRetryCycles,
 			ReworkDurationMs: report.ReworkDuration.Milliseconds(), ReworkTokens: mapTokens(report.ReworkTokens),
+			TotalAgentEffortMs: report.TotalAgentEffort.Milliseconds(), ReworkAgentEffortRate: report.ReworkAgentEffortRate,
 			ToolAttemptsWithOutcome: report.ToolAttemptsWithOutcome, ToolFailures: report.ToolFailures,
 			ToolFailureRate:  report.ToolFailureRate,
 			APIRetryWaste:    APIRetryWasteOutput{Attempts: report.APIRetryWaste.Attempts, DurationMs: report.APIRetryWaste.Duration.Milliseconds(), Tokens: mapTokens(report.APIRetryWaste.Tokens)},

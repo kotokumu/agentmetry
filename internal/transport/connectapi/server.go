@@ -561,6 +561,7 @@ func mapSessionRework(value query.SessionRework) *v1.GetSessionReworkResponse {
 		Metrics: &v1.ReworkMetrics{
 			ValidationFailures: report.ValidationFailures, FailFixRetryCycles: report.FailFixRetryCycles,
 			ReworkDurationMs: report.ReworkDuration.Milliseconds(), ReworkTokens: mapTokens(report.ReworkTokens),
+			TotalAgentEffortMs: report.TotalAgentEffort.Milliseconds(), ReworkAgentEffortRate: report.ReworkAgentEffortRate,
 			ToolAttemptsWithOutcome: report.ToolAttemptsWithOutcome, ToolFailures: report.ToolFailures, ToolFailureRate: report.ToolFailureRate,
 			ApiRetryWaste:    &v1.ApiRetryWaste{Attempts: report.APIRetryWaste.Attempts, DurationMs: report.APIRetryWaste.Duration.Milliseconds(), Tokens: mapTokens(report.APIRetryWaste.Tokens)},
 			RepeatedCommands: report.RepeatedCommands, ReeditedFiles: report.ReeditedFiles,

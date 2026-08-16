@@ -191,7 +191,7 @@ func TestAnalyzeReworkReturnsSessionMetricsAndUnsupportedCapabilities(t *testing
 	if output.SourceID != "codex" || output.RunID != "run-1" || output.Metrics.ValidationFailures != 1 || output.Metrics.FailFixRetryCycles != 1 {
 		t.Fatalf("unexpected rework output: %#v", output)
 	}
-	if output.Metrics.ReworkDurationMs != 3000 || len(output.Cycles) != 1 || len(output.Cycles[0].Evidence) != 3 {
+	if output.Metrics.ReworkDurationMs != 3000 || output.Metrics.TotalAgentEffortMs != 3000 || output.Metrics.ReworkAgentEffortRate == nil || *output.Metrics.ReworkAgentEffortRate != 1 || len(output.Cycles) != 1 || len(output.Cycles[0].Evidence) != 3 {
 		t.Fatalf("unexpected rework cycle output: %#v", output)
 	}
 	if output.Capabilities.ChangeRevert.State != query.CapabilityUnavailable || output.Metadata.RuleVersion != query.AnalysisRuleVersion {

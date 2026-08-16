@@ -25,6 +25,8 @@ export type ReworkAnalysis = Readonly<{
     validationFailures: number;
     failFixRetryCycles: number;
     reworkDurationMs: number;
+    totalAgentEffortMs: number;
+    reworkAgentEffortRate: number | null;
     reworkTokens: TokenUsage;
     toolAttemptsWithOutcome: number;
     toolFailures: number;

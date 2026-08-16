@@ -52,7 +52,7 @@ describe("Lit data controllers", () => {
     const second = { ...first, id: "session-2" };
     const getSessionRework = vi.fn().mockImplementation((_sourceId: string, sessionId: string) => Promise.resolve({
       sourceId: "codex", sessionId,
-      metrics: { validationFailures: sessionId === "session-2" ? 2 : 1, failFixRetryCycles: 0, reworkDurationMs: 0, reworkTokens: tokens, toolAttemptsWithOutcome: 0, toolFailures: 0, toolFailureRate: null, apiRetryWaste: { attempts: 0, durationMs: 0, tokens }, repeatedCommands: 0, reeditedFiles: 0 },
+      metrics: { validationFailures: sessionId === "session-2" ? 2 : 1, failFixRetryCycles: 0, reworkDurationMs: 0, totalAgentEffortMs: 0, reworkAgentEffortRate: null, reworkTokens: tokens, toolAttemptsWithOutcome: 0, toolFailures: 0, toolFailureRate: null, apiRetryWaste: { attempts: 0, durationMs: 0, tokens }, repeatedCommands: 0, reeditedFiles: 0 },
       coverage: { activityCoverage: "observed_projection_complete", canonicalEvents: 1, classifiedEvents: 1, knownOutcomes: 0 },
       capabilities: { changeRevert: { state: "unavailable", reason: "needs diffs" }, crossAgentOverlap: { state: "unavailable", reason: "needs identities" } },
     }));
@@ -208,7 +208,7 @@ describe("Lit data controllers", () => {
     const current = session([{ ...activity("current"), id: "current" }]);
     const rework = (validationFailures: number) => ({
       sourceId: "codex", sessionId: "session-1",
-      metrics: { validationFailures, failFixRetryCycles: 0, reworkDurationMs: 0, reworkTokens: tokens, toolAttemptsWithOutcome: 0, toolFailures: 0, toolFailureRate: null, apiRetryWaste: { attempts: 0, durationMs: 0, tokens }, repeatedCommands: 0, reeditedFiles: 0 },
+      metrics: { validationFailures, failFixRetryCycles: 0, reworkDurationMs: 0, totalAgentEffortMs: 0, reworkAgentEffortRate: null, reworkTokens: tokens, toolAttemptsWithOutcome: 0, toolFailures: 0, toolFailureRate: null, apiRetryWaste: { attempts: 0, durationMs: 0, tokens }, repeatedCommands: 0, reeditedFiles: 0 },
       coverage: { activityCoverage: "observed_projection_complete", canonicalEvents: 1, classifiedEvents: 1, knownOutcomes: 0 },
       capabilities: { changeRevert: { state: "unavailable", reason: "needs diffs" }, crossAgentOverlap: { state: "unavailable", reason: "needs identities" } },
     });

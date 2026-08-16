@@ -217,8 +217,10 @@ func TestConnectServerPassesAgentActivityFilter(t *testing.T) {
 
 func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing.T) {
 	rate := 0.25
+	effortRate := 0.6
 	reader := &readerStub{rework: query.SessionRework{SourceID: "codex", RunID: "run-1", Report: query.ReworkReport{
 		ValidationFailures: 2, FailFixRetryCycles: 1, ReworkDuration: 3 * time.Second,
+		TotalAgentEffort: 5 * time.Second, ReworkAgentEffortRate: &effortRate,
 		ReworkTokens:            canonical.TokenUsage{Input: 10, Presence: canonical.TokenPresence{Output: true}},
 		ToolAttemptsWithOutcome: 4, ToolFailures: 1, ToolFailureRate: &rate,
 		APIRetryWaste:    query.APIRetryWaste{Attempts: 1, Duration: time.Second},
@@ -243,7 +245,7 @@ func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing
 		t.Fatalf("unexpected identity: %#v", reader.reworkIdentity)
 	}
 	metrics := response.Msg.GetMetrics()
-	if metrics.GetValidationFailures() != 2 || metrics.GetFailFixRetryCycles() != 1 || metrics.GetReworkDurationMs() != 3000 || metrics.GetToolFailureRate() != rate {
+	if metrics.GetValidationFailures() != 2 || metrics.GetFailFixRetryCycles() != 1 || metrics.GetReworkDurationMs() != 3000 || metrics.GetTotalAgentEffortMs() != 5000 || metrics.GetReworkAgentEffortRate() != effortRate || metrics.GetToolFailureRate() != rate {
 		t.Fatalf("unexpected metrics: %#v", metrics)
 	}
 	if metrics.GetReworkTokens().GetInput() != 10 || metrics.GetReworkTokens().Output == nil || metrics.GetApiRetryWaste().GetDurationMs() != 1000 {
