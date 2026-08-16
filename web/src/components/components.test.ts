@@ -116,6 +116,78 @@ describe("dashboard components", () => {
     expect(table.shadowRoot?.textContent).toContain("Show older loaded activities");
   });
 
+  it("keeps the same loaded activity window visible when live activities are prepended", async () => {
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = Array.from({ length: 400 }, (_, index) => ({
+      id: `activity-${index}`,
+      source: "example", signal: "log" as const, name: `activity ${index}`, kind: "message" as const,
+      agentId: "main", runId: "run-1", model: "", observedAt: new Date(1_700_000_000_000 - index).toISOString(),
+      contributesToTotal: false,
+      tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null },
+    }));
+    document.body.append(table);
+    await table.updateComplete;
+    table.shadowRoot?.querySelector<HTMLButtonElement>(".continuation button")?.click();
+    await table.updateComplete;
+    expect(table.shadowRoot?.querySelector("tbody tr")?.getAttribute("data-activity-id")).toBe("activity-200");
+
+    table.activities = [
+      ...Array.from({ length: 5 }, (_, index) => ({ ...table.activities[0], id: `new-${index}`, name: `new ${index}` })),
+      ...table.activities,
+    ];
+    await table.updateComplete;
+
+    expect(table.shadowRoot?.querySelector("tbody tr")?.getAttribute("data-activity-id")).toBe("activity-200");
+  });
+
+  it("keeps the first visible activity at the same viewport position during a live refresh", async () => {
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = Array.from({ length: 20 }, (_, index) => ({
+      id: `activity-${index}`,
+      source: "example", signal: "log" as const, name: `activity ${index}`, kind: "message" as const,
+      agentId: "main", runId: "run-1", model: "", observedAt: new Date(1_700_000_000_000 - index).toISOString(),
+      contributesToTotal: false,
+      tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null },
+    }));
+    document.body.append(table);
+    await table.updateComplete;
+    let anchorReads = 0;
+    const rect = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(function (this: HTMLElement) {
+      const index = Number(this.dataset.activityIndex ?? -1);
+      const top = this.dataset.activityId === "activity-5" ? (++anchorReads >= 2 ? 30 : -10) : index < 5 ? -100 : 100;
+      return { x: 0, y: top, top, bottom: top + 20, left: 0, right: 100, width: 100, height: 20, toJSON: () => ({}) };
+    });
+    const scrollBy = vi.spyOn(window, "scrollBy").mockImplementation(() => undefined);
+
+    table.activities = [{ ...table.activities[0], id: "new", name: "new" }, ...table.activities];
+    await table.updateComplete;
+
+    expect(scrollBy).toHaveBeenCalledWith({ top: 40, behavior: "instant" });
+    rect.mockRestore();
+    scrollBy.mockRestore();
+  });
+
+  it("keeps expanded message content open when live activities are prepended", async () => {
+    const longContent = "expanded content ".repeat(20);
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = [{
+      id: "existing",
+      source: "example", signal: "log", name: "existing", kind: "message", content: longContent,
+      agentId: "main", runId: "run-1", model: "", observedAt: "2026-08-11T00:00:00Z",
+      contributesToTotal: false,
+      tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null },
+    }];
+    document.body.append(table);
+    await table.updateComplete;
+    const expanded = table.shadowRoot?.querySelector<HTMLDetailsElement>("details");
+    if (expanded) expanded.open = true;
+
+    table.activities = [{ ...table.activities[0], id: "new", name: "new", content: "new message" }, ...table.activities];
+    await table.updateComplete;
+
+    expect(table.shadowRoot?.querySelector<HTMLDetailsElement>('tr[data-activity-id="existing"] details')?.open).toBe(true);
+  });
+
   it("navigates every loaded trace activity while keeping the DOM at 200 rows", async () => {
     const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
     waterfall.trace = {

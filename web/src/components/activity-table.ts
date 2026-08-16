@@ -1,5 +1,6 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import type { Activity, ActivityDirection } from "../model/telemetry";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
@@ -24,6 +25,7 @@ export class ActivityTable extends LitElement {
   private lastScrollTop = 0;
   private revealedTarget = "";
 	private renderOffset = 0;
+  private readingAnchor?: Readonly<{ activityId: string; top: number }>;
 
   static styles = css`
     :host { display: block; max-width: 100%; overflow: visible; }
@@ -82,8 +84,16 @@ export class ActivityTable extends LitElement {
 	  this.revealedTarget = "";
 	  this.renderOffset = 0;
 	}
-	if (changed.has("activities") && this.renderOffset >= this.activities.length) {
-	  this.renderOffset = Math.max(0, this.activities.length - 200);
+	if (changed.has("activities")) {
+      if (!changed.has("pagingContext")) this.captureReadingAnchor();
+      else this.readingAnchor = undefined;
+      const previous = changed.get("activities") as readonly Activity[] | undefined;
+      const windowAnchor = previous?.[this.renderOffset];
+      if (this.renderOffset > 0 && windowAnchor) {
+        const nextOffset = this.activities.findIndex((activity) => activityIdentity(activity) === activityIdentity(windowAnchor));
+        if (nextOffset >= 0) this.renderOffset = nextOffset;
+      }
+      if (this.renderOffset >= this.activities.length) this.renderOffset = Math.max(0, this.activities.length - 200);
 	}
   }
 
@@ -91,12 +101,12 @@ export class ActivityTable extends LitElement {
 	const visibleActivities = this.activities.slice(this.renderOffset, this.renderOffset + 200);
     return html`${this.continuation("newer")}<div class="table-scroll"><table>
       <thead><tr><th>Time</th><th>Agent</th><th>Type</th><th>Operation / message</th><th>Source</th><th>Model</th><th>Tokens</th><th>Trace</th></tr></thead>
-	  <tbody>${visibleActivities.map((activity) => {
+	  <tbody>${repeat(visibleActivities, activityIdentity, (activity, index) => {
         const highlighted = Boolean(this.highlightedTraceId && this.highlightedSpanId)
           && activity.signal === "trace"
           && activity.traceId === this.highlightedTraceId
           && activity.spanId === this.highlightedSpanId;
-        return html`<tr data-highlighted=${String(highlighted)} aria-current=${highlighted ? "location" : "false"}>
+	    return html`<tr data-activity-id=${activityIdentity(activity)} data-activity-index=${this.renderOffset + index} data-highlighted=${String(highlighted)} aria-current=${highlighted ? "location" : "false"}>
         <td>${formatTime(activity.observedAt)}</td>
         <td><small>Agent</small><br><strong>${agentDisplayLabel(activity)}</strong><br><small>Runtime ID: <code>${activity.agentId || "main"}</code></small><br><small>Type: ${activity.agentType || NOT_REPORTED}</small></td>
         <td><span class="kind">${activity.kind}</span></td>
@@ -111,6 +121,7 @@ export class ActivityTable extends LitElement {
 
   protected updated(changed: PropertyValues<this>) {
     if (changed.has("activities") || changed.has("hasMore") || changed.has("hasEarlier") || changed.has("loading") || changed.has("pageDirection")) this.observePagingSentinel();
+    if (changed.has("activities")) this.restoreReadingAnchor();
     if (!changed.has("highlightedTraceId") && !changed.has("highlightedSpanId") && !changed.has("activities")) return;
     const targetIdentity = this.highlightedTraceId && this.highlightedSpanId
       ? `${this.highlightedTraceId}:${this.highlightedSpanId}`
@@ -124,6 +135,34 @@ export class ActivityTable extends LitElement {
     if (!target) return;
     target.scrollIntoView?.({ block: "center", inline: "nearest" });
     this.revealedTarget = targetIdentity;
+  }
+
+  private captureReadingAnchor() {
+    const rows = [...(this.shadowRoot?.querySelectorAll<HTMLElement>("tbody tr") ?? [])];
+    const first = rows[0];
+    const firstRect = first?.getBoundingClientRect();
+    if (!first || !firstRect || firstRect.top >= 0) {
+      this.readingAnchor = undefined;
+      return;
+    }
+    for (const row of rows) {
+      const rect = row.getBoundingClientRect();
+      if (rect.bottom <= 0) continue;
+      this.readingAnchor = row.dataset.activityId ? { activityId: row.dataset.activityId, top: rect.top } : undefined;
+      return;
+    }
+    this.readingAnchor = undefined;
+  }
+
+  private restoreReadingAnchor() {
+    const anchor = this.readingAnchor;
+    this.readingAnchor = undefined;
+    if (!anchor) return;
+    const row = [...(this.shadowRoot?.querySelectorAll<HTMLElement>("tbody tr") ?? [])]
+      .find(({ dataset }) => dataset.activityId === anchor.activityId);
+    if (!row) return;
+    const movement = row.getBoundingClientRect().top - anchor.top;
+    if (Math.abs(movement) > 0.5) window.scrollBy({ top: movement, behavior: "instant" });
   }
 
   private observePagingSentinel() {
@@ -207,6 +246,7 @@ export class ActivityTable extends LitElement {
 const formatTime = (value: string) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
 const shortId = (value?: string) => value ? `${value.slice(0, 8)}…` : NOT_APPLICABLE;
 const shortValue = (value: string) => value.length > 18 ? `${value.slice(0, 14)}…` : value;
+const activityIdentity = (activity: Activity) => activity.id ?? `${activity.signal}\u0000${activity.traceId ?? ""}\u0000${activity.spanId ?? ""}\u0000${activity.observedAt}\u0000${activity.name}`;
 export const operationLabel = (activity: Activity) => {
   if (activity.toolName) return activity.toolName;
   switch (activity.kind) {

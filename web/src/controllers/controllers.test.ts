@@ -173,7 +173,32 @@ describe("Lit data controllers", () => {
 
     await host.conversations.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-1", targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "session-1", traceId: "" }] });
 
-	expect(host.conversations.selected?.activities.map(({ name }) => name)).toEqual(["updated", "new"]);
+	expect(host.conversations.selected?.activities.map(({ name }) => name)).toEqual(["new", "updated", "older"]);
+  });
+
+  it("keeps an agent-filtered resident page populated while establishing live sync", async () => {
+    const old = { ...activity("old"), id: "old", agentId: "main", observedAt: "2026-08-11T00:00:00Z" };
+    const added = { ...activity("new"), id: "new", agentId: "main", observedAt: "2026-08-11T00:02:00Z" };
+    const current = { ...session([old]), agents: [{ agentId: "main", activityCount: 1, tokens }] };
+    const latest = { ...session([added]), activityCount: 2, agents: [{ agentId: "main", activityCount: 2, tokens }] };
+    conversationsClient = {
+      listSessions: vi.fn().mockResolvedValue([current]),
+      getSession: vi.fn().mockResolvedValueOnce(current).mockResolvedValueOnce(latest),
+      listSessionActivities: vi.fn().mockResolvedValue({ activities: [old], total: 1, offset: 0, hasEarlier: false, hasMore: false }),
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-1"));
+    host.conversations.selectAgent("main");
+    await vi.waitFor(() => expect(host.conversations.agentActivityPage?.loading).toBe(false));
+
+    await host.conversations.applyLiveUpdate({
+      resyncRequired: false,
+      throughCursor: "cursor-1",
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "session-1", traceId: "" }],
+    });
+
+    expect(host.conversations.agentActivityPage?.activities.map(({ name }) => name)).toEqual(["new", "old"]);
   });
 
 	it("applies session REMOVE and UPSERT mutations idempotently after bootstrap", async () => {
@@ -306,7 +331,7 @@ describe("Lit data controllers", () => {
     expect(host.conversations.selected?.activities.map(({ id }) => id)).toEqual(["current", "fresh"]);
   });
 
-  it("replaces a capped session resident window with a contiguous authoritative head", async () => {
+  it("keeps a capped session resident window contiguous when a live head arrives", async () => {
     const resident = Array.from({ length: 2000 }, (_, index) => ({ ...activity(`old-${index}`), id: `old-${index}` }));
     const current = { ...session(resident), activityCount: 2100 };
     const fresh = { ...session([{ ...activity("fresh-head"), id: "fresh-head" }]), activityCount: 2101, nextPageToken: "head-next" };
@@ -324,9 +349,11 @@ describe("Lit data controllers", () => {
     await host.conversations.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-1", targets });
     await host.conversations.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-2", targets });
 
-    expect(host.conversations.selected?.activities.map(({ id }) => id)).toEqual(["fresh-head"]);
+    expect(host.conversations.selected?.activities).toHaveLength(2000);
+    expect(host.conversations.selected?.activities[0]?.id).toBe("fresh-head");
+    expect(host.conversations.selected?.activities.filter(({ id }) => id?.startsWith("old-") ?? false)).toHaveLength(1999);
     expect(host.conversations.selected?.activityOffset).toBe(0);
-    expect(host.conversations.selected?.nextPageToken).toBe("head-next");
+    expect(host.conversations.selected?.nextPageToken).toBe("next");
   });
 
   it("removes a selected session immediately when its live refresh returns not found", async () => {
