@@ -2,8 +2,10 @@ package query
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,10 +29,18 @@ type ReworkCapabilities struct {
 }
 
 type ReworkCoverage struct {
-	ActivityCoverage string `json:"activityCoverage"`
-	CanonicalEvents  int64  `json:"canonicalEvents"`
-	ClassifiedEvents int64  `json:"classifiedEvents"`
-	KnownOutcomes    int64  `json:"knownOutcomes"`
+	ActivityCoverage                   string `json:"activityCoverage"`
+	CanonicalEvents                    int64  `json:"canonicalEvents"`
+	ClassifiedEvents                   int64  `json:"classifiedEvents"`
+	KnownOutcomes                      int64  `json:"knownOutcomes"`
+	ValidationAttempts                 int64  `json:"validationAttempts"`
+	FingerprintedFailures              int64  `json:"fingerprintedFailures"`
+	IdentifiedValidationAttempts       int64  `json:"identifiedValidationAttempts"`
+	IDBackedValidationAttempts         int64  `json:"idBackedValidationAttempts"`
+	MergedValidationAttempts           int64  `json:"mergedValidationAttempts"`
+	UncorrelatedValidationObservations int64  `json:"uncorrelatedValidationObservations"`
+	ConflictingAttemptObservations     int64  `json:"conflictingAttemptObservations"`
+	AmbiguousFailureAttempts           int64  `json:"ambiguousFailureAttempts"`
 }
 
 type APIRetryWaste struct {
@@ -49,22 +59,46 @@ type ReworkCycle struct {
 	endedAt   time.Time
 }
 
+type RecurringFailureEpisode struct {
+	AgentID               string               `json:"agentId"`
+	Operation             canonical.Operation  `json:"operation"`
+	ValidationFingerprint string               `json:"validationFingerprint"`
+	ErrorFingerprints     []string             `json:"errorFingerprints"`
+	FailureAttempts       int64                `json:"failureAttempts"`
+	Resolved              bool                 `json:"resolved"`
+	ResolutionDuration    time.Duration        `json:"resolutionDuration"`
+	ResolutionTokens      canonical.TokenUsage `json:"resolutionTokens"`
+	TraceID               string               `json:"traceId,omitempty"`
+	SpanID                string               `json:"spanId,omitempty"`
+}
+
 type ReworkReport struct {
-	ValidationFailures      int64                `json:"validationFailures"`
-	FailFixRetryCycles      int64                `json:"failFixRetryCycles"`
-	ReworkDuration          time.Duration        `json:"reworkDuration"`
-	TotalAgentEffort        time.Duration        `json:"totalAgentEffort"`
-	ReworkAgentEffortRate   *float64             `json:"reworkAgentEffortRate"`
-	ReworkTokens            canonical.TokenUsage `json:"reworkTokens"`
-	ToolAttemptsWithOutcome int64                `json:"toolAttemptsWithOutcome"`
-	ToolFailures            int64                `json:"toolFailures"`
-	ToolFailureRate         *float64             `json:"toolFailureRate"`
-	APIRetryWaste           APIRetryWaste        `json:"apiRetryWaste"`
-	RepeatedCommands        int64                `json:"repeatedCommands"`
-	ReeditedFiles           int64                `json:"reeditedFiles"`
-	Cycles                  []ReworkCycle        `json:"cycles"`
-	Coverage                ReworkCoverage       `json:"coverage"`
-	Capabilities            ReworkCapabilities   `json:"capabilities"`
+	ValidationFailures            int64                     `json:"validationFailures"`
+	FailFixRetryCycles            int64                     `json:"failFixRetryCycles"`
+	ReworkDuration                time.Duration             `json:"reworkDuration"`
+	TotalAgentEffort              time.Duration             `json:"totalAgentEffort"`
+	ReworkAgentEffortRate         *float64                  `json:"reworkAgentEffortRate"`
+	ReworkTokens                  canonical.TokenUsage      `json:"reworkTokens"`
+	ToolAttemptsWithOutcome       int64                     `json:"toolAttemptsWithOutcome"`
+	ToolFailures                  int64                     `json:"toolFailures"`
+	ToolFailureRate               *float64                  `json:"toolFailureRate"`
+	APIRetryWaste                 APIRetryWaste             `json:"apiRetryWaste"`
+	RepeatedCommands              int64                     `json:"repeatedCommands"`
+	ReeditedFiles                 int64                     `json:"reeditedFiles"`
+	ValidationAttemptsWithOutcome int64                     `json:"validationAttemptsWithOutcome"`
+	FirstPassEligibleValidations  int64                     `json:"firstPassEligibleValidations"`
+	FirstPassSuccesses            int64                     `json:"firstPassSuccesses"`
+	FirstPassSuccessRate          *float64                  `json:"firstPassSuccessRate"`
+	RecurringFailureLoops         int64                     `json:"recurringFailureLoops"`
+	RepeatedFailureAttempts       int64                     `json:"repeatedFailureAttempts"`
+	ResolvedFailureLoops          int64                     `json:"resolvedFailureLoops"`
+	UnresolvedFailureLoops        int64                     `json:"unresolvedFailureLoops"`
+	FailureResolutionDuration     time.Duration             `json:"failureResolutionDuration"`
+	FailureResolutionTokens       canonical.TokenUsage      `json:"failureResolutionTokens"`
+	FailureEpisodes               []RecurringFailureEpisode `json:"failureEpisodes"`
+	Cycles                        []ReworkCycle             `json:"cycles"`
+	Coverage                      ReworkCoverage            `json:"coverage"`
+	Capabilities                  ReworkCapabilities        `json:"capabilities"`
 }
 
 type SessionRework struct {
@@ -97,13 +131,16 @@ func CanonicalizeActivity(activity Activity) canonical.Event {
 	return canonical.Event{
 		Source: activity.Source, RunID: activity.RunID, AgentID: activity.AgentID,
 		ParentAgentID: activity.ParentAgentID, Operation: operation,
-		Target:  canonical.EventTarget{File: strings.TrimSpace(file), Command: command},
+		Target:  canonical.EventTarget{File: strings.TrimSpace(file), Command: command, WorkingDirectory: firstNestedString(attributes, "cwd", "working_directory", "workdir")},
 		Success: observedSuccess(activity), StartedAt: activity.StartedAt,
 		EndedAt: activity.EndedAt, ObservedAt: activity.ObservedAt,
 		Duration: positiveDuration(activity.StartedAt, activity.EndedAt),
 		Tokens:   activity.Tokens, ContributesToTotal: activity.ContributesToTotal,
 		TraceID: activity.TraceID, SpanID: activity.SpanID, Name: activity.Name,
 		ToolName: activity.ToolName, Tool: activity.Kind == canonical.ActivityTool || activity.ToolName != "",
+		AttemptID:        canonicalAttemptID(activity),
+		Signal:           activity.Signal,
+		ErrorFingerprint: failureFingerprint(activity),
 	}
 }
 
@@ -142,9 +179,6 @@ func AnalyzeRework(summary Session, activities []Activity) ReworkReport {
 				report.ToolFailures++
 			}
 		}
-		if isValidationOperation(event.Operation) && explicitlyFailed(event) {
-			report.ValidationFailures++
-		}
 		if repeatableCommandOperation(event.Operation) && event.Target.Command != "" {
 			key := event.AgentID + "\x00" + event.Target.Command
 			if _, exists := commandSeen[key]; exists {
@@ -166,6 +200,65 @@ func AnalyzeRework(summary Session, activities []Activity) ReworkReport {
 		rate := float64(report.ToolFailures) / float64(report.ToolAttemptsWithOutcome)
 		report.ToolFailureRate = &rate
 	}
+	validationProjection := projectValidationAttempts(events)
+	validationAttempts := validationProjection.attempts
+	report.Coverage.ValidationAttempts = int64(len(validationAttempts))
+	report.Coverage.IDBackedValidationAttempts = validationProjection.idBackedAttempts
+	report.Coverage.MergedValidationAttempts = validationProjection.mergedAttempts
+	report.Coverage.UncorrelatedValidationObservations = validationProjection.uncorrelatedObservations
+	report.Coverage.ConflictingAttemptObservations = validationProjection.conflictingObservations
+	report.Coverage.AmbiguousFailureAttempts = validationProjection.ambiguousFailures
+	firstValidationOutcome := make(map[string]bool)
+	for _, attempt := range validationAttempts {
+		if validationIdentity(attempt) != "" {
+			report.Coverage.IdentifiedValidationAttempts++
+		}
+		if explicitlyFailed(attempt) {
+			report.ValidationFailures++
+			if attempt.ErrorFingerprint != "" {
+				report.Coverage.FingerprintedFailures++
+			}
+		}
+		if attempt.Success == nil {
+			continue
+		}
+		report.ValidationAttemptsWithOutcome++
+		if attempt.AttemptID == "" {
+			continue
+		}
+		key := validationIdentity(attempt)
+		if key == "" {
+			continue
+		}
+		if _, observed := firstValidationOutcome[key]; !observed {
+			firstValidationOutcome[key] = *attempt.Success
+			if *attempt.Success {
+				report.FirstPassSuccesses++
+			}
+		}
+	}
+	if len(firstValidationOutcome) > 0 {
+		report.FirstPassEligibleValidations = int64(len(firstValidationOutcome))
+		rate := float64(report.FirstPassSuccesses) / float64(len(firstValidationOutcome))
+		report.FirstPassSuccessRate = &rate
+	}
+
+	episodes := detectFailureEpisodes(validationAttempts)
+	for _, episode := range episodes {
+		if !episode.recurring() {
+			continue
+		}
+		report.RecurringFailureLoops++
+		report.RepeatedFailureAttempts += episode.recurringAttempts()
+		if episode.resolved {
+			report.ResolvedFailureLoops++
+			report.FailureResolutionDuration += positiveDuration(episode.startedAt, episode.endedAt)
+		} else {
+			report.UnresolvedFailureLoops++
+		}
+		report.FailureEpisodes = append(report.FailureEpisodes, mapRecurringFailureEpisode(events, episode))
+	}
+	report.FailureResolutionTokens = aggregateFailureResolutionTokens(events, episodes)
 
 	report.Cycles = detectReworkCycles(events)
 	report.FailFixRetryCycles = int64(len(report.Cycles))
@@ -177,6 +270,245 @@ func AnalyzeRework(summary Session, activities []Activity) ReworkReport {
 	}
 	report.APIRetryWaste = detectAPIRetryWaste(events)
 	return report
+}
+
+type failureEpisode struct {
+	agentID         string
+	startedAt       time.Time
+	endedAt         time.Time
+	resolved        bool
+	failureAttempts int64
+	fingerprints    map[string]int64
+	operation       canonical.Operation
+	target          canonical.EventTarget
+	traceID         string
+	spanID          string
+}
+
+func (episode failureEpisode) recurring() bool {
+	for _, attempts := range episode.fingerprints {
+		if attempts >= 2 {
+			return true
+		}
+	}
+	return false
+}
+
+func (episode failureEpisode) recurringAttempts() int64 {
+	return episode.failureAttempts
+}
+
+func detectFailureEpisodes(events []canonical.Event) []failureEpisode {
+	pending := make(map[string]*failureEpisode)
+	completed := make([]failureEpisode, 0)
+	for _, event := range events {
+		if !isValidationOperation(event.Operation) || event.Success == nil || event.AttemptID == "" {
+			continue
+		}
+		key := validationIdentity(event)
+		if key == "" {
+			continue
+		}
+		if *event.Success {
+			if episode, exists := pending[key]; exists {
+				episode.endedAt = eventEnd(event)
+				episode.resolved = true
+				completed = append(completed, *episode)
+				delete(pending, key)
+			}
+			continue
+		}
+		episode, exists := pending[key]
+		if !exists {
+			episode = &failureEpisode{agentID: event.AgentID, startedAt: eventTime(event), endedAt: eventEnd(event), fingerprints: make(map[string]int64), operation: event.Operation, target: event.Target, traceID: event.TraceID, spanID: event.SpanID}
+			pending[key] = episode
+		}
+		episode.endedAt = eventEnd(event)
+		episode.failureAttempts++
+		if event.ErrorFingerprint != "" {
+			episode.fingerprints[event.ErrorFingerprint]++
+		}
+	}
+	for _, episode := range pending {
+		completed = append(completed, *episode)
+	}
+	sort.SliceStable(completed, func(i, j int) bool { return completed[i].startedAt.Before(completed[j].startedAt) })
+	return completed
+}
+
+func aggregateFailureResolutionTokens(events []canonical.Event, episodes []failureEpisode) canonical.TokenUsage {
+	counted := make(map[string]struct{})
+	var usage canonical.TokenUsage
+	for _, episode := range episodes {
+		if !episode.resolved || !episode.recurring() {
+			continue
+		}
+		usage.Add(tokensInFailureEpisode(events, episode, counted))
+	}
+	return usage
+}
+
+func mapRecurringFailureEpisode(events []canonical.Event, episode failureEpisode) RecurringFailureEpisode {
+	fingerprints := make([]string, 0)
+	for fingerprint, attempts := range episode.fingerprints {
+		if attempts >= 2 {
+			fingerprints = append(fingerprints, fingerprint)
+		}
+	}
+	sort.Strings(fingerprints)
+	result := RecurringFailureEpisode{
+		AgentID: episode.agentID, Operation: episode.operation, ValidationFingerprint: commandFingerprint(episode.target),
+		ErrorFingerprints: fingerprints, FailureAttempts: episode.failureAttempts, Resolved: episode.resolved,
+		TraceID: episode.traceID, SpanID: episode.spanID,
+	}
+	if episode.resolved {
+		result.ResolutionDuration = positiveDuration(episode.startedAt, episode.endedAt)
+		result.ResolutionTokens = tokensInFailureEpisode(events, episode, nil)
+	}
+	return result
+}
+
+func commandFingerprint(target canonical.EventTarget) string {
+	digest := sha256.Sum256([]byte(target.WorkingDirectory + "\x00" + target.Command))
+	return fmt.Sprintf("sha256:%x", digest[:12])
+}
+
+func tokensInFailureEpisode(events []canonical.Event, episode failureEpisode, counted map[string]struct{}) canonical.TokenUsage {
+	var usage canonical.TokenUsage
+	for _, event := range events {
+		if effortAgentID(event.AgentID) != effortAgentID(episode.agentID) || !event.ContributesToTotal {
+			continue
+		}
+		observedAt := event.ObservedAt
+		if observedAt.IsZero() {
+			observedAt = eventEnd(event)
+		}
+		if observedAt.Before(episode.startedAt) || observedAt.After(episode.endedAt) {
+			continue
+		}
+		key := canonicalEvidenceKey(event)
+		if counted != nil {
+			if _, exists := counted[key]; exists {
+				continue
+			}
+			counted[key] = struct{}{}
+		}
+		usage.Add(event.Tokens)
+	}
+	return usage
+}
+
+type validationAttemptProjection struct {
+	attempts                 []canonical.Event
+	idBackedAttempts         int64
+	mergedAttempts           int64
+	uncorrelatedObservations int64
+	conflictingObservations  int64
+	ambiguousFailures        int64
+}
+
+func projectValidationAttempts(events []canonical.Event) validationAttemptProjection {
+	observations := make([]canonical.Event, 0)
+	indexes := make(map[string]int)
+	observationCounts := make(map[string]int64)
+	projection := validationAttemptProjection{}
+	for _, event := range events {
+		identity := event.AttemptID
+		if identity == "" {
+			if isValidationOperation(event.Operation) {
+				observations = append(observations, event)
+				projection.uncorrelatedObservations++
+			}
+			continue
+		}
+		if index, exists := indexes[identity]; exists {
+			merged, conflict := mergeValidationObservations(observations[index], event)
+			if conflict {
+				projection.conflictingObservations++
+				if isValidationOperation(event.Operation) {
+					event.AttemptID = ""
+					observations = append(observations, event)
+					projection.uncorrelatedObservations++
+				}
+				continue
+			}
+			observations[index] = merged
+			observationCounts[identity]++
+			continue
+		}
+		indexes[identity] = len(observations)
+		observations = append(observations, event)
+		observationCounts[identity] = 1
+	}
+	projection.attempts = make([]canonical.Event, 0, len(observations))
+	for _, observation := range observations {
+		if isValidationOperation(observation.Operation) {
+			projection.attempts = append(projection.attempts, observation)
+			if observation.FailureEvidenceAmbiguous {
+				projection.ambiguousFailures++
+			}
+			if observation.AttemptID != "" {
+				projection.idBackedAttempts++
+				if observationCounts[observation.AttemptID] > 1 {
+					projection.mergedAttempts++
+				}
+			}
+		}
+	}
+	return projection
+}
+
+func mergeValidationObservations(current, observation canonical.Event) (canonical.Event, bool) {
+	if isValidationOperation(current.Operation) && isValidationOperation(observation.Operation) && current.Operation != observation.Operation {
+		return current, true
+	}
+	if current.Target.Command != "" && observation.Target.Command != "" && current.Target.Command != observation.Target.Command {
+		return current, true
+	}
+	if current.AgentID != "" && observation.AgentID != "" && current.AgentID != observation.AgentID {
+		return current, true
+	}
+	if !isValidationOperation(current.Operation) && isValidationOperation(observation.Operation) {
+		current.Operation = observation.Operation
+	}
+	if current.Target.Command == "" {
+		current.Target.Command = observation.Target.Command
+	}
+	if current.AgentID == "" {
+		current.AgentID = observation.AgentID
+	}
+	if current.Target.WorkingDirectory == "" {
+		current.Target.WorkingDirectory = observation.Target.WorkingDirectory
+	}
+	if current.FailureEvidenceAmbiguous {
+		// Once conflicting evidence is observed, later ordering cannot restore a
+		// single trustworthy fingerprint for this logical attempt.
+	} else if current.ErrorFingerprint == "" {
+		current.ErrorFingerprint = observation.ErrorFingerprint
+	} else if observation.ErrorFingerprint != "" && current.ErrorFingerprint != observation.ErrorFingerprint {
+		current.ErrorFingerprint = ""
+		current.FailureEvidenceAmbiguous = true
+	}
+	if current.Success == nil || observation.Success != nil && !*observation.Success {
+		current.Success = observation.Success
+	}
+	if current.StartedAt.IsZero() || !observation.StartedAt.IsZero() && observation.StartedAt.Before(current.StartedAt) {
+		current.StartedAt = observation.StartedAt
+	}
+	if observation.EndedAt.After(current.EndedAt) {
+		current.EndedAt = observation.EndedAt
+	}
+	if observation.ObservedAt.After(current.ObservedAt) {
+		current.ObservedAt = observation.ObservedAt
+	}
+	return current, false
+}
+
+func validationIdentity(event canonical.Event) string {
+	if !isValidationOperation(event.Operation) || event.Target.Command == "" {
+		return ""
+	}
+	return effortAgentID(event.AgentID) + "\x00" + string(event.Operation) + "\x00" + event.Target.WorkingDirectory + "\x00" + event.Target.Command
 }
 
 type retryCandidate struct {
@@ -354,6 +686,92 @@ func observedSuccess(activity Activity) *bool {
 		return boolValue(false)
 	}
 	return nil
+}
+
+func canonicalAttemptID(activity Activity) string {
+	namespace := strings.Join([]string{activity.Source, activity.RunID, effortAgentID(activity.AgentID)}, "/")
+	if explicit := firstNestedString(activity.Attributes, "gen_ai.tool.call.id", "tool_use_id", "tool_call_id", "call_id"); explicit != "" {
+		return "tool-call/" + namespace + "/" + explicit
+	}
+	if activity.Signal == canonical.SignalTrace && activity.SpanID != "" && (activity.Kind == canonical.ActivityTool || activity.ToolName != "") {
+		return "tool-span/" + namespace + "/" + activity.TraceID + "/" + activity.SpanID
+	}
+	return ""
+}
+
+var (
+	ansiEscapePattern    = regexp.MustCompile(`\x1b\[[0-9;]*[A-Za-z]`)
+	isoTimestampPattern  = regexp.MustCompile(`(?i)\b\d{4}-\d{2}-\d{2}[t ][0-9:.+-]+z?\b`)
+	uuidPattern          = regexp.MustCompile(`(?i)\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b`)
+	locationPattern      = regexp.MustCompile(`(?i)(?:[a-z]:)?(?:[/\\][^/\\\s:]+)*[/\\]?[a-z0-9_.-]+\.[a-z0-9]+:\d+(?::\d+)?`)
+	absolutePathPattern  = regexp.MustCompile(`(?i)(?:[a-z]:)?[/\\](?:[^/\\\s:]+[/\\])*[^/\\\s:]+`)
+	durationPattern      = regexp.MustCompile(`\b\d+(?:\.\d+)?(?:ns|us|µs|ms|s|min)\b`)
+	hexIdentifierPattern = regexp.MustCompile(`(?i)\b0x[0-9a-f]+\b`)
+	lineSuffixPattern    = regexp.MustCompile(`:\d+(?::\d+)?$`)
+)
+
+func failureFingerprint(activity Activity) string {
+	success := observedSuccess(activity)
+	if success == nil || *success {
+		return ""
+	}
+	evidence := firstNestedString(activity.Attributes, "stderr", "error", "error_message", "exception.message", "message")
+	if evidence == "" {
+		evidence = plainFailureOutput(activity.Attributes, "output", "result")
+	}
+	normalized := normalizeFailureEvidence(evidence)
+	if normalized == "" {
+		return ""
+	}
+	digest := sha256.Sum256([]byte(normalized))
+	return fmt.Sprintf("sha256:%x", digest[:12])
+}
+
+func plainFailureOutput(attributes map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, exists := attributes[key]
+		if !exists {
+			continue
+		}
+		text, ok := value.(string)
+		if !ok {
+			continue
+		}
+		text = strings.TrimSpace(text)
+		if text != "" && decodeObject(text) == nil {
+			return text
+		}
+	}
+	return ""
+}
+
+func normalizeFailureEvidence(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	value = ansiEscapePattern.ReplaceAllString(value, "")
+	value = isoTimestampPattern.ReplaceAllString(value, "<timestamp>")
+	value = uuidPattern.ReplaceAllString(value, "<uuid>")
+	value = locationPattern.ReplaceAllStringFunc(value, normalizeFailureLocation)
+	value = absolutePathPattern.ReplaceAllStringFunc(value, normalizeFailurePath)
+	value = durationPattern.ReplaceAllString(value, "<duration>")
+	value = hexIdentifierPattern.ReplaceAllString(value, "<hex>")
+	return strings.Join(strings.Fields(value), " ")
+}
+
+func normalizeFailureLocation(value string) string {
+	withoutLine := lineSuffixPattern.ReplaceAllString(value, "")
+	return "<file:" + trailingPath(withoutLine, 2) + ">:<line>"
+}
+
+func normalizeFailurePath(value string) string {
+	return "<path>/" + trailingPath(value, 2)
+}
+
+func trailingPath(value string, segments int) string {
+	parts := strings.FieldsFunc(strings.TrimSpace(value), func(r rune) bool { return r == '/' || r == '\\' })
+	if len(parts) > segments {
+		parts = parts[len(parts)-segments:]
+	}
+	return strings.Join(parts, "/")
 }
 
 func firstNestedString(attributes map[string]any, keys ...string) string {

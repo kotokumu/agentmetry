@@ -565,16 +565,41 @@ func mapSessionRework(value query.SessionRework) *v1.GetSessionReworkResponse {
 			ToolAttemptsWithOutcome: report.ToolAttemptsWithOutcome, ToolFailures: report.ToolFailures, ToolFailureRate: report.ToolFailureRate,
 			ApiRetryWaste:    &v1.ApiRetryWaste{Attempts: report.APIRetryWaste.Attempts, DurationMs: report.APIRetryWaste.Duration.Milliseconds(), Tokens: mapTokens(report.APIRetryWaste.Tokens)},
 			RepeatedCommands: report.RepeatedCommands, ReeditedFiles: report.ReeditedFiles,
+			ValidationAttemptsWithOutcome: report.ValidationAttemptsWithOutcome,
+			FirstPassEligibleValidations:  report.FirstPassEligibleValidations, FirstPassSuccesses: report.FirstPassSuccesses, FirstPassSuccessRate: report.FirstPassSuccessRate,
+			RecurringFailureLoops: report.RecurringFailureLoops, RepeatedFailureAttempts: report.RepeatedFailureAttempts,
+			ResolvedFailureLoops: report.ResolvedFailureLoops, UnresolvedFailureLoops: report.UnresolvedFailureLoops,
+			FailureResolutionDurationMs: report.FailureResolutionDuration.Milliseconds(), FailureResolutionTokens: mapTokens(report.FailureResolutionTokens),
 		},
 		Coverage: &v1.ReworkCoverage{
 			ActivityCoverage: report.Coverage.ActivityCoverage, CanonicalEvents: report.Coverage.CanonicalEvents,
 			ClassifiedEvents: report.Coverage.ClassifiedEvents, KnownOutcomes: report.Coverage.KnownOutcomes,
+			ValidationAttempts: report.Coverage.ValidationAttempts, FingerprintedFailures: report.Coverage.FingerprintedFailures,
+			IdentifiedValidationAttempts:       report.Coverage.IdentifiedValidationAttempts,
+			IdBackedValidationAttempts:         report.Coverage.IDBackedValidationAttempts,
+			UncorrelatedValidationObservations: report.Coverage.UncorrelatedValidationObservations,
+			ConflictingAttemptObservations:     report.Coverage.ConflictingAttemptObservations,
+			MergedValidationAttempts:           report.Coverage.MergedValidationAttempts,
+			AmbiguousFailureAttempts:           report.Coverage.AmbiguousFailureAttempts,
 		},
 		Capabilities: &v1.ReworkCapabilities{
 			ChangeRevert:      mapAnalysisCapability(report.Capabilities.ChangeRevert),
 			CrossAgentOverlap: mapAnalysisCapability(report.Capabilities.CrossAgentOverlap),
 		},
+		FailureEpisodes: mapRecurringFailureEpisodes(report.FailureEpisodes),
 	}
+}
+
+func mapRecurringFailureEpisodes(values []query.RecurringFailureEpisode) []*v1.RecurringFailureEpisode {
+	result := make([]*v1.RecurringFailureEpisode, 0, len(values))
+	for _, value := range values {
+		result = append(result, &v1.RecurringFailureEpisode{
+			AgentId: value.AgentID, Operation: string(value.Operation), ValidationFingerprint: value.ValidationFingerprint,
+			ErrorFingerprints: append([]string{}, value.ErrorFingerprints...), FailureAttempts: value.FailureAttempts,
+			Resolved: value.Resolved, ResolutionDurationMs: value.ResolutionDuration.Milliseconds(), ResolutionTokens: mapTokens(value.ResolutionTokens), TraceId: value.TraceID, SpanId: value.SpanID,
+		})
+	}
+	return result
 }
 
 func mapAnalysisCapability(value query.AnalysisCapability) *v1.AnalysisCapability {

@@ -185,9 +185,9 @@ func TestAnalyzeReworkReturnsSessionMetricsAndUnsupportedCapabilities(t *testing
 	reader := &readerStub{
 		summary: query.Session{ID: "run-1", SourceID: "codex", ActivityCount: 3},
 		activityPage: query.ActivityPage{Activities: []query.Activity{
-			{Source: "codex", RunID: "run-1", TraceID: "trace", SpanID: "fail", Name: "exec_command", ToolName: "exec_command", Kind: canonical.ActivityTool, AgentID: "main", StartedAt: start, EndedAt: start.Add(time.Second), ObservedAt: start.Add(time.Second), Attributes: map[string]any{"command": "go test ./...", "exit_code": 1}},
-			{Source: "codex", RunID: "run-1", TraceID: "trace", SpanID: "edit", Name: "apply_patch", ToolName: "apply_patch", Kind: canonical.ActivityTool, AgentID: "main", StartedAt: start.Add(2 * time.Second), EndedAt: start.Add(3 * time.Second), ObservedAt: start.Add(3 * time.Second), Attributes: map[string]any{"file_path": "main.go", "success": true}},
-			{Source: "codex", RunID: "run-1", TraceID: "trace", SpanID: "retry", Name: "exec_command", ToolName: "exec_command", Kind: canonical.ActivityTool, AgentID: "main", StartedAt: start.Add(4 * time.Second), EndedAt: start.Add(5 * time.Second), ObservedAt: start.Add(5 * time.Second), Attributes: map[string]any{"command": "go test ./...", "exit_code": 0}},
+			{Source: "codex", RunID: "run-1", Signal: canonical.SignalTrace, TraceID: "trace", SpanID: "fail", Name: "exec_command", ToolName: "exec_command", Kind: canonical.ActivityTool, AgentID: "main", StartedAt: start, EndedAt: start.Add(time.Second), ObservedAt: start.Add(time.Second), Attributes: map[string]any{"command": "go test ./...", "exit_code": 1}},
+			{Source: "codex", RunID: "run-1", Signal: canonical.SignalTrace, TraceID: "trace", SpanID: "edit", Name: "apply_patch", ToolName: "apply_patch", Kind: canonical.ActivityTool, AgentID: "main", StartedAt: start.Add(2 * time.Second), EndedAt: start.Add(3 * time.Second), ObservedAt: start.Add(3 * time.Second), Attributes: map[string]any{"file_path": "main.go", "success": true}},
+			{Source: "codex", RunID: "run-1", Signal: canonical.SignalTrace, TraceID: "trace", SpanID: "retry", Name: "exec_command", ToolName: "exec_command", Kind: canonical.ActivityTool, AgentID: "main", StartedAt: start.Add(4 * time.Second), EndedAt: start.Add(5 * time.Second), ObservedAt: start.Add(5 * time.Second), Attributes: map[string]any{"command": "go test ./...", "exit_code": 0}},
 		}},
 	}
 	service := testService(reader, time.Now)
@@ -202,6 +202,9 @@ func TestAnalyzeReworkReturnsSessionMetricsAndUnsupportedCapabilities(t *testing
 	}
 	if output.Metrics.ReworkDurationMs != 3000 || output.Metrics.TotalAgentEffortMs != 3000 || output.Metrics.ReworkAgentEffortRate == nil || *output.Metrics.ReworkAgentEffortRate != 1 || len(output.Cycles) != 1 || len(output.Cycles[0].Evidence) != 3 {
 		t.Fatalf("unexpected rework cycle output: %#v", output)
+	}
+	if output.Metrics.ValidationAttemptsWithOutcome != 2 || output.Metrics.FirstPassEligibleValidations != 1 || output.Metrics.FirstPassSuccessRate == nil || *output.Metrics.FirstPassSuccessRate != 0 {
+		t.Fatalf("unexpected first-pass output: %#v", output.Metrics)
 	}
 	if output.Capabilities.ChangeRevert.State != query.CapabilityUnavailable || output.Metadata.RuleVersion != query.AnalysisRuleVersion {
 		t.Fatalf("missing capability/metadata contract: %#v", output)

@@ -18,6 +18,11 @@ export type Session = Readonly<{
   activityOffset?: number; hasEarlier?: boolean; hasMore?: boolean; nextPageToken?: string; previousPageToken?: string;
 }>;
 export type AnalysisCapability = Readonly<{ state: string; reason: string }>;
+export type RecurringFailureEpisode = Readonly<{
+  agentId: string; operation: string; validationFingerprint: string; errorFingerprints: readonly string[];
+  failureAttempts: number; resolved: boolean; resolutionDurationMs: number; resolutionTokens: TokenUsage;
+  traceId: string; spanId: string;
+}>;
 export type ReworkAnalysis = Readonly<{
   sourceId: string;
   sessionId: string;
@@ -34,17 +39,36 @@ export type ReworkAnalysis = Readonly<{
     apiRetryWaste: Readonly<{ attempts: number; durationMs: number; tokens: TokenUsage }>;
     repeatedCommands: number;
     reeditedFiles: number;
+    validationAttemptsWithOutcome: number;
+    firstPassEligibleValidations: number;
+    firstPassSuccesses: number;
+    firstPassSuccessRate: number | null;
+    recurringFailureLoops: number;
+    repeatedFailureAttempts: number;
+    resolvedFailureLoops: number;
+    unresolvedFailureLoops: number;
+    failureResolutionDurationMs: number;
+    failureResolutionTokens: TokenUsage;
   }>;
   coverage: Readonly<{
     activityCoverage: string;
     canonicalEvents: number;
     classifiedEvents: number;
     knownOutcomes: number;
+    validationAttempts: number;
+    fingerprintedFailures: number;
+    identifiedValidationAttempts: number;
+    idBackedValidationAttempts: number;
+    mergedValidationAttempts: number;
+    uncorrelatedValidationObservations: number;
+    conflictingAttemptObservations: number;
+    ambiguousFailureAttempts: number;
   }>;
   capabilities: Readonly<{
     changeRevert: AnalysisCapability;
     crossAgentOverlap: AnalysisCapability;
   }>;
+  failureEpisodes: readonly RecurringFailureEpisode[];
 }>;
 export type ConversationRef = Readonly<{ sourceId: string; id: string }>;
 export type TraceAgent = Readonly<{ sourceId: string; conversationId: string; agentId: string; agentDefinition?: string; agentType?: string; parentAgentId?: string; model?: string }>;

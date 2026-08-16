@@ -78,12 +78,22 @@ const reworkFixture: ReworkAnalysis = {
     toolAttemptsWithOutcome: 4, toolFailures: 1, toolFailureRate: 0.25,
     apiRetryWaste: { attempts: 1, durationMs: 500, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } },
     repeatedCommands: 3, reeditedFiles: 2,
+    validationAttemptsWithOutcome: 4, firstPassEligibleValidations: 2, firstPassSuccesses: 1, firstPassSuccessRate: 0.5,
+    recurringFailureLoops: 1, repeatedFailureAttempts: 3, resolvedFailureLoops: 1, unresolvedFailureLoops: 0,
+    failureResolutionDurationMs: 6_500,
+    failureResolutionTokens: { input: 30, output: 8, cacheRead: null, cacheWrite: null, reasoning: null, total: 38 },
   },
-  coverage: { activityCoverage: "partial_page", canonicalEvents: 8, classifiedEvents: 7, knownOutcomes: 4 },
+  coverage: { activityCoverage: "partial_page", canonicalEvents: 8, classifiedEvents: 7, knownOutcomes: 4, validationAttempts: 4, fingerprintedFailures: 2, identifiedValidationAttempts: 4, idBackedValidationAttempts: 3, mergedValidationAttempts: 1, uncorrelatedValidationObservations: 1, conflictingAttemptObservations: 0, ambiguousFailureAttempts: 0 },
   capabilities: {
     changeRevert: { state: "unavailable", reason: "needs diffs" },
     crossAgentOverlap: { state: "unavailable", reason: "needs identities" },
   },
+  failureEpisodes: [{
+    agentId: "agent-1", operation: "test", validationFingerprint: "sha256:abcdef1234567890", errorFingerprints: ["sha256:1234567890abcdef"],
+    failureAttempts: 3, resolved: true, resolutionDurationMs: 6_500,
+    resolutionTokens: { input: 30, output: 8, cacheRead: null, cacheWrite: null, reasoning: null, total: 38 },
+    traceId: "trace-1", spanId: "span-1",
+  }],
 };
 
 describe("dashboard components", () => {
@@ -101,6 +111,13 @@ describe("dashboard components", () => {
     const cardContent = cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ");
     expect(content).toContain("Development rework");
     expect(cardContent).toContain("Validation failures");
+    expect(cardContent).toContain("Initial validation success");
+    expect(cardContent).toContain("50.0%");
+    expect(cardContent).toContain("Recurring failure loops");
+    expect(cardContent).toContain("Failure attempts in recurring loops");
+    expect(cardContent).toContain("Total loop resolution time");
+    expect(cardContent).toContain("6.5 s");
+    expect(cardContent).toContain("Tokens in resolved loops");
     expect(cardContent).toContain("Detected retry-cycle share");
     expect(cardContent).toContain("35.0%");
     expect(cardContent).toContain("3.5 s of 10 s observed agent-active time");
@@ -109,10 +126,14 @@ describe("dashboard components", () => {
     expect(cardContent).toContain("12.0%");
     expect(cardContent).toContain("120 of 1,000 session tokens");
     expect(content).toContain("Partial evidence");
-    expect(content).toContain("4 of 8 events report outcomes");
+    expect(content).toContain("4 of 4 logical validation attempts report outcomes");
     expect(content).toContain("Change revert");
+    expect(content).toContain("Highest-impact recurring loops");
+    expect(content).toContain("validation abcdef1234");
+    expect(content).toContain("3 failed attempts");
+    expect(panel.shadowRoot?.querySelector<HTMLAnchorElement>('.episode a')?.getAttribute("href")).toBe("/traces/trace-1");
     expect(content).toContain("Not available");
-    expect(cards).toHaveLength(8);
+    expect(cards).toHaveLength(12);
     expect(cards.every((card) => card.description.length > 0)).toBe(true);
     expect(cards.every((card) => card.shadowRoot?.querySelector("button.help"))).toBe(true);
   });
@@ -172,6 +193,47 @@ describe("dashboard components", () => {
     await card?.updateComplete;
     expect(card?.value).toBe("Not reported");
     expect(card?.hint).toBe("Session token total unavailable");
+  });
+
+  it("does not render unresolved recurring loops as zero-time resolutions", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = {
+      ...reworkFixture,
+      metrics: {
+        ...reworkFixture.metrics,
+        resolvedFailureLoops: 0,
+        unresolvedFailureLoops: 1,
+        failureResolutionDurationMs: 0,
+        failureResolutionTokens: { ...reworkFixture.metrics.failureResolutionTokens, total: null },
+      },
+    };
+    document.body.append(panel);
+    await panel.updateComplete;
+
+    const cards = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? []);
+    const duration = cards.find((candidate) => candidate.label === "Total loop resolution time");
+    const tokens = cards.find((candidate) => candidate.label === "Tokens in resolved loops");
+    await Promise.all([duration?.updateComplete, tokens?.updateComplete]);
+    expect(duration?.value).toBe("Not reported");
+    expect(tokens?.value).toBe("Not reported");
+    expect(duration?.hint).toBe("No resolved recurring loops · 1 unresolved");
+  });
+
+  it("labels zero loops as undetected when failure fingerprints are unavailable", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = {
+      ...reworkFixture,
+      metrics: { ...reworkFixture.metrics, recurringFailureLoops: 0, resolvedFailureLoops: 0, unresolvedFailureLoops: 0 },
+      coverage: { ...reworkFixture.coverage, fingerprintedFailures: 0, uncorrelatedValidationObservations: 0 },
+    };
+    document.body.append(panel);
+    await panel.updateComplete;
+
+    const card = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? [])
+      .find((candidate) => candidate.label === "Recurring failure loops");
+    await card?.updateComplete;
+    expect(card?.value).toBe("0 detected");
+    expect(card?.hint).toBe("Insufficient failure evidence for fingerprints");
   });
 
   it("distinguishes missing rework token usage from a missing session total", async () => {

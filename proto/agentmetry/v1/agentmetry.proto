@@ -230,6 +230,16 @@ message ReworkMetrics {
   int64 reedited_files = 10;
   int64 total_agent_effort_ms = 11;
   optional double rework_agent_effort_rate = 12;
+  int64 validation_attempts_with_outcome = 13;
+  int64 first_pass_successes = 14;
+  optional double first_pass_success_rate = 15;
+  int64 recurring_failure_loops = 16;
+  int64 repeated_failure_attempts = 17;
+  int64 resolved_failure_loops = 18;
+  int64 unresolved_failure_loops = 19;
+  int64 failure_resolution_duration_ms = 20;
+  TokenUsage failure_resolution_tokens = 21;
+  int64 first_pass_eligible_validations = 22;
 }
 
 message ReworkCoverage {
@@ -237,6 +247,14 @@ message ReworkCoverage {
   int64 canonical_events = 2;
   int64 classified_events = 3;
   int64 known_outcomes = 4;
+  int64 validation_attempts = 5;
+  int64 fingerprinted_failures = 6;
+  int64 identified_validation_attempts = 7;
+  int64 id_backed_validation_attempts = 8;
+  int64 uncorrelated_validation_observations = 9;
+  int64 conflicting_attempt_observations = 10;
+  int64 merged_validation_attempts = 11;
+  int64 ambiguous_failure_attempts = 12;
 }
 
 message AnalysisCapability {
@@ -249,12 +267,26 @@ message ReworkCapabilities {
   AnalysisCapability cross_agent_overlap = 2;
 }
 
+message RecurringFailureEpisode {
+  string agent_id = 1;
+  string operation = 2;
+  string validation_fingerprint = 3;
+  repeated string error_fingerprints = 4;
+  int64 failure_attempts = 5;
+  bool resolved = 6;
+  int64 resolution_duration_ms = 7;
+  TokenUsage resolution_tokens = 8;
+  string trace_id = 9;
+  string span_id = 10;
+}
+
 message GetSessionReworkResponse {
   string source_id = 1;
   string session_id = 2;
   ReworkMetrics metrics = 3;
   ReworkCoverage coverage = 4;
   ReworkCapabilities capabilities = 5;
+  repeated RecurringFailureEpisode failure_episodes = 6;
 }
 
 message ListSessionActivitiesRequest {

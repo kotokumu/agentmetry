@@ -44,8 +44,9 @@ const (
 )
 
 type EventTarget struct {
-	File    string `json:"file,omitempty"`
-	Command string `json:"command,omitempty"`
+	File             string `json:"file,omitempty"`
+	Command          string `json:"command,omitempty"`
+	WorkingDirectory string `json:"workingDirectory,omitempty"`
 }
 
 // Event is a read-time, producer-neutral projection used by analyzers. Success
@@ -70,6 +71,13 @@ type Event struct {
 	Name               string        `json:"name"`
 	ToolName           string        `json:"toolName,omitempty"`
 	Tool               bool          `json:"-"`
+	AttemptID          string        `json:"attemptId,omitempty"`
+	Signal             Signal        `json:"-"`
+	// ErrorFingerprint is a privacy-preserving signature of observed failure
+	// evidence. An empty value means the source did not provide enough evidence
+	// to compare failures; it must not be interpreted as a unique error.
+	ErrorFingerprint         string `json:"errorFingerprint,omitempty"`
+	FailureEvidenceAmbiguous bool   `json:"-"`
 }
 
 type TokenUsage struct {
