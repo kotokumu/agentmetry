@@ -7,6 +7,7 @@ import { agentmetryClient } from "../api/agentmetry-client";
 import { TraceController } from "../controllers/trace-controller";
 import type { ConversationTarget } from "../model/trace-analysis";
 import { featurePanelStyles } from "./feature-styles";
+import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
 @customElement("am-trace-explorer")
 export class TraceExplorer extends LitElement {
@@ -16,6 +17,16 @@ export class TraceExplorer extends LitElement {
   @property({ attribute: false }) locationForConversation?: (target: ConversationTarget) => string;
   private readonly trace = new TraceController(this, agentmetryClient);
   private lastReadyTraceId = "";
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+    super.disconnectedCallback();
+  }
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
@@ -65,6 +76,12 @@ export class TraceExplorer extends LitElement {
   }
 
   private readonly traceActivitiesNeeded = () => { void this.trace.loadMore(); };
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
+    event.detail.waitUntil(this.trace.applyLiveUpdate(event.detail).then(() => {
+      const traceId = this.trace.takeRemovedTrace();
+      if (traceId) this.dispatchEvent(new CustomEvent("trace-removed", { detail: { traceId }, bubbles: true, composed: true }));
+    }));
+  };
 
   focusRouteHeading() {
     this.shadowRoot?.querySelector<HTMLElement>(".trace-title")?.focus({ preventScroll: true });

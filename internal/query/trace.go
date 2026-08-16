@@ -34,6 +34,7 @@ type TraceAgent struct {
 type TraceFilter struct {
 	TraceID TraceID
 	Page    Page
+	Tail    bool
 }
 
 type Trace struct {

@@ -183,14 +183,20 @@ func (page Page) PreviousOffset() int {
 
 type TimelineDirection string
 
-const TimelineOlder TimelineDirection = "older"
+const (
+	TimelineOlder TimelineDirection = "older"
+	TimelineNewer TimelineDirection = "newer"
+)
 
 func ParseTimelineDirection(value string) (TimelineDirection, error) {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" || value == string(TimelineOlder) {
 		return TimelineOlder, nil
 	}
-	return "", fmt.Errorf("%w: %q is not supported; use older", ErrInvalidTimelineDirection, value)
+	if value == string(TimelineNewer) {
+		return TimelineNewer, nil
+	}
+	return "", fmt.Errorf("%w: %q is not supported", ErrInvalidTimelineDirection, value)
 }
 
 func (direction TimelineDirection) String() string { return string(direction) }

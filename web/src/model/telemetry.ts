@@ -3,7 +3,7 @@ export type ActivityDirection = "newer" | "older";
 export type TelemetrySource = Readonly<{ id: string; label: string }>;
 export type TokenUsage = Readonly<{ input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; reasoning: number | null; total: number | null }>;
 export type Activity = Readonly<{
-  source: string; signal: "trace" | "log" | "metric"; name: string; traceId?: string; spanId?: string; parentSpanId?: string;
+  id?: string; source: string; signal: "trace" | "log" | "metric"; name: string; traceId?: string; spanId?: string; parentSpanId?: string;
   promptId?: string; usageId?: string; relatedTraceId?: string; relatedSpanId?: string;
   kind: "unknown" | "prompt" | "response" | "tool" | "delegation" | "message" | "reasoning";
   toolName?: string; targetAgentId?: string; targetAgentType?: string; content?: string; agentId: string;

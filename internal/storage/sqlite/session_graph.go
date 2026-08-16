@@ -22,7 +22,11 @@ type sessionGraph struct {
 }
 
 func (store *Store) loadSessionGraph(ctx context.Context, sourceID string) (sessionGraph, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT source, session_id, root_session_id, parent_session_id
+	return loadSessionGraphWithReader(ctx, store.readDB, sourceID)
+}
+
+func loadSessionGraphWithReader(ctx context.Context, reader sqlReader, sourceID string) (sessionGraph, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT source, session_id, root_session_id, parent_session_id
 FROM session_memberships
 WHERE (? = '' OR source = ?)
 ORDER BY source, session_id`, sourceID, sourceID)
@@ -33,7 +37,11 @@ ORDER BY source, session_id`, sourceID, sourceID)
 }
 
 func (store *Store) loadSessionGroup(ctx context.Context, ref sessionRef) (sessionGraph, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT source, session_id, root_session_id, parent_session_id
+	return loadSessionGroupWithReader(ctx, store.readDB, ref)
+}
+
+func loadSessionGroupWithReader(ctx context.Context, reader sqlReader, ref sessionRef) (sessionGraph, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT source, session_id, root_session_id, parent_session_id
 FROM session_memberships
 WHERE source = ? AND root_session_id = COALESCE(
   (SELECT root_session_id FROM session_memberships WHERE source = ? AND session_id = ?), ?)
@@ -241,6 +249,9 @@ func (graph sessionGraph) normalizeActivityAgent(activity query.Activity) query.
 
 func (graph sessionGraph) effectiveAgentID(ref sessionRef, nativeAgentID string) string {
 	if !graph.grouped(ref) {
+		if isPrimarySessionAgent(ref, nativeAgentID) {
+			return "main"
+		}
 		return sessionAgentID(nativeAgentID)
 	}
 	if isPrimarySessionAgent(ref, nativeAgentID) {
@@ -251,6 +262,9 @@ func (graph sessionGraph) effectiveAgentID(ref sessionRef, nativeAgentID string)
 
 func (graph sessionGraph) effectiveParentAgentID(ref sessionRef, nativeParentID string) string {
 	if !graph.grouped(ref) {
+		if isPrimarySessionAgent(ref, nativeParentID) {
+			return "main"
+		}
 		return nativeParentID
 	}
 	if nativeParentID == "main" || nativeParentID == ref.sessionID {

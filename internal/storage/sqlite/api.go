@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -14,7 +15,7 @@ import (
 func (store *Store) GetDashboard(ctx context.Context, filter query.DashboardFilter) (query.Overview, error) {
 	since := formatTime(filter.Since)
 	var dashboard query.Overview
-	if err := store.db.QueryRowContext(ctx, `WITH grouped AS (
+	if err := store.readDB.QueryRowContext(ctx, `WITH grouped AS (
   SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id, MAX(r.ended_at) AS ended_at,
     SUM(r.trace_count) AS trace_count, SUM(r.log_count) AS log_count
   FROM session_rollups r
@@ -28,7 +29,7 @@ FROM grouped WHERE ended_at >= ?`, filter.SourceID, filter.SourceID, since).Scan
 	); err != nil {
 		return query.Overview{}, fmt.Errorf("query dashboard signal counts: %w", err)
 	}
-	if err := store.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM metrics WHERE observed_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(&dashboard.SignalCounts.Metrics); err != nil {
+	if err := store.readDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM metrics WHERE observed_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(&dashboard.SignalCounts.Metrics); err != nil {
 		return query.Overview{}, fmt.Errorf("query dashboard metric count: %w", err)
 	}
 
@@ -76,7 +77,7 @@ func (store *Store) ListSessions(ctx context.Context, filter query.SessionListFi
 
 func (store *Store) searchSessionRoots(ctx context.Context, filter query.SessionListFilter, graph sessionGraph) (map[sessionRef]struct{}, error) {
 	branches, args := summaryBranches(formatTime(time.Unix(0, 0)), filter.SourceID, "", filter.Search)
-	rows, err := store.db.QueryContext(ctx, fmt.Sprintf(`WITH activity AS (
+	rows, err := store.readDB.QueryContext(ctx, fmt.Sprintf(`WITH activity AS (
 %s
 )
 SELECT DISTINCT source, run_id FROM activity`, branches), args...)
@@ -95,7 +96,7 @@ SELECT DISTINCT source, run_id FROM activity`, branches), args...)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate matching sessions: %w", err)
 	}
-	activeRows, err := store.db.QueryContext(ctx, `SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id
+	activeRows, err := store.readDB.QueryContext(ctx, `SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id
 FROM session_rollups r
 LEFT JOIN session_memberships m ON m.source = r.source AND m.session_id = r.run_id
 WHERE (? = '' OR r.source = ?)
@@ -134,7 +135,7 @@ func (store *Store) listSessionsFromRollups(ctx context.Context, filter query.Se
 		payload, _ := json.Marshal(keys)
 		matchedJSON = string(payload)
 	}
-	rows, err := store.db.QueryContext(ctx, `WITH grouped AS (
+	rows, err := store.readDB.QueryContext(ctx, `WITH grouped AS (
   SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id,
     MIN(r.started_at) AS started_at, MAX(r.ended_at) AS ended_at,
     SUM(r.activity_count) AS activity_count, SUM(r.agent_count) AS agent_count
@@ -190,70 +191,121 @@ LIMIT ? OFFSET ?`, filter.SourceID, filter.SourceID, formatTime(filter.Since), r
 }
 
 func (store *Store) GetSessionSummary(ctx context.Context, identity query.ConversationIdentity) (query.Session, error) {
-	graph, err := store.loadSessionGroup(ctx, sessionRef{sourceID: identity.SourceID(), sessionID: identity.ConversationID()})
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.Session{}, fmt.Errorf("begin session summary snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	ref := sessionRef{sourceID: identity.SourceID(), sessionID: identity.ConversationID()}
+	graph, err := loadSessionGroupWithReader(ctx, transaction, ref)
 	if err != nil {
 		return query.Session{}, err
 	}
-	root := graph.root(sessionRef{sourceID: identity.SourceID(), sessionID: identity.ConversationID()})
-	return store.loadSessionSummary(ctx, root, graph)
+	session, err := store.loadSessionSummary(ctx, transaction, graph.root(ref), graph)
+	if err != nil {
+		return query.Session{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.Session{}, fmt.Errorf("commit session summary snapshot: %w", err)
+	}
+	return session, nil
 }
 
 func (store *Store) ListSessionActivities(ctx context.Context, filter query.ActivityPageFilter) (query.ActivityPage, error) {
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.ActivityPage{}, fmt.Errorf("begin session activity snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
 	sourceID := filter.Identity.SourceID()
 	conversationID := filter.Identity.ConversationID()
-	graph, err := store.loadSessionGroup(ctx, sessionRef{sourceID: sourceID, sessionID: conversationID})
+	ref := sessionRef{sourceID: sourceID, sessionID: conversationID}
+	graph, err := loadSessionGroupWithReader(ctx, transaction, ref)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}
-	root := graph.root(sessionRef{sourceID: sourceID, sessionID: conversationID})
+	root := graph.root(ref)
 	members := graph.members(root)
 	memberIDs := make([]string, len(members))
 	for index, member := range members {
 		memberIDs[index] = member.sessionID
 	}
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, sourceID, memberIDs, true, "")
-	if err != nil {
-		return query.ActivityPage{}, err
+	since := formatTime(time.Unix(0, 0))
+	spanWhere, spanArgs := activityWhereSessions("ended_at", since, sourceID, memberIDs, filter.AgentID)
+	logWhere, logArgs := activityWhereSessions("observed_at", since, sourceID, memberIDs, filter.AgentID)
+	spanWhere += " AND activity_kind <> 'unknown'"
+	logWhere += " AND activity_kind <> 'unknown'"
+	var total int64
+	countArgs := append(spanArgs, logArgs...)
+	if err := transaction.QueryRowContext(ctx, fmt.Sprintf(`SELECT
+  (SELECT COUNT(*) FROM spans WHERE %s) +
+  (SELECT COUNT(*) FROM logs WHERE %s)`, spanWhere, logWhere), countArgs...).Scan(&total); err != nil {
+		return query.ActivityPage{}, fmt.Errorf("count grouped session activities: %w", err)
 	}
-	if len(activities) == 0 {
-		return query.ActivityPage{}, query.ErrConversationNotFound
-	}
-	activities = enrichActivityRelationships(activities)
-	normalized := make([]query.Activity, 0, len(activities))
-	for _, activity := range activities {
-		activity = graph.normalizeActivityAgent(activity)
-		if filter.AgentID == "" || activity.AgentID == filter.AgentID {
-			normalized = append(normalized, activity)
-		}
-	}
-	activities = normalized
-	if len(activities) == 0 {
+	if total == 0 {
 		return query.ActivityPage{}, query.ErrConversationNotFound
 	}
 	offset := filter.Page.Offset()
 	if offset == 0 && filter.Anchor.Present() {
-		anchorIndex := -1
-		for index, activity := range activities {
-			if activity.TraceID == filter.Anchor.TraceID().String() && activity.SpanID == filter.Anchor.SpanID().String() {
-				anchorIndex = index
-				break
-			}
+		offset, err = store.groupAnchorOffset(ctx, transaction, sourceID, memberIDs, filter.AgentID,
+			filter.Anchor.TraceID().String(), filter.Anchor.SpanID().String(), filter.Page)
+		if err != nil {
+			return query.ActivityPage{}, err
 		}
-		if anchorIndex < 0 {
-			return query.ActivityPage{}, query.ErrConversationTargetNotFound
-		}
-		offset = filter.Page.OffsetAround(anchorIndex)
 	}
-	offset = boundedOffset(len(activities), offset)
-	pageEnd := min(len(activities), filter.Page.WindowEnd(offset))
-	return query.ActivityPage{
-		Activities: activities[offset:pageEnd], Total: int64(len(activities)), Offset: offset,
-		HasEarlier: offset > 0, HasMore: int64(pageEnd) < int64(len(activities)),
-	}, nil
+	offset = boundedOffset(int(total), offset)
+	activities, err := store.activitiesWindowWithReaderSessions(ctx, transaction, since, filter.Page.Size(), offset, sourceID, memberIDs, true, filter.AgentID)
+	if err != nil {
+		return query.ActivityPage{}, err
+	}
+	for index := range activities {
+		activities[index] = graph.normalizeActivityAgent(activities[index])
+	}
+	result := query.ActivityPage{
+		Activities: activities, Total: total, Offset: offset,
+		HasEarlier: offset > 0, HasMore: int64(offset+len(activities)) < total,
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.ActivityPage{}, fmt.Errorf("commit session activity snapshot: %w", err)
+	}
+	return result, nil
+}
+
+func (store *Store) groupAnchorOffset(ctx context.Context, reader sqlReader, sourceID string, memberIDs []string, agentID, traceID, spanID string, page query.Page) (int, error) {
+	since := formatTime(time.Unix(0, 0))
+	spanWhere, spanArgs := activityWhereSessions("ended_at", since, sourceID, memberIDs, agentID)
+	logWhere, logArgs := activityWhereSessions("observed_at", since, sourceID, memberIDs, agentID)
+	spanWhere += " AND activity_kind <> 'unknown'"
+	logWhere += " AND activity_kind <> 'unknown'"
+	statement := fmt.Sprintf(`WITH activity AS (
+  SELECT ended_at AS observed_at, 'span:' || trace_id || ':' || span_id AS activity_key, trace_id, span_id
+  FROM spans WHERE %s
+  UNION ALL
+  SELECT observed_at, 'log:' || id, trace_id, span_id
+  FROM logs WHERE %s
+), anchor AS (
+  SELECT observed_at, activity_key FROM activity
+  WHERE trace_id = ? AND span_id = ?
+  ORDER BY observed_at DESC, activity_key ASC LIMIT 1
+)
+SELECT (SELECT COUNT(*) FROM anchor),
+  (SELECT COUNT(*) FROM activity, anchor
+   WHERE activity.observed_at > anchor.observed_at
+      OR (activity.observed_at = anchor.observed_at AND activity.activity_key < anchor.activity_key))`, spanWhere, logWhere)
+	args := append(spanArgs, logArgs...)
+	args = append(args, traceID, spanID)
+	var found, before int64
+	if err := reader.QueryRowContext(ctx, statement, args...).Scan(&found, &before); err != nil {
+		return 0, fmt.Errorf("query grouped activity anchor: %w", err)
+	}
+	if found == 0 {
+		return 0, query.ErrConversationTargetNotFound
+	}
+	return page.OffsetAround(int(before)), nil
 }
 
 func (store *Store) dashboardSources(ctx context.Context, since, sourceID string) ([]query.TelemetrySource, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT source FROM (
+	rows, err := store.readDB.QueryContext(ctx, `SELECT source FROM (
   SELECT DISTINCT source FROM spans WHERE ended_at >= ? AND (? = '' OR source = ?)
   UNION
   SELECT DISTINCT source FROM logs WHERE observed_at >= ? AND (? = '' OR source = ?)
@@ -322,7 +374,7 @@ SELECT COUNT(*), COALESCE(SUM(agent_count), 0),
 FROM selected`
 	var input, output, cacheRead, cacheWrite, reasoning int64
 	var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported int
-	err = store.db.QueryRowContext(ctx, statement, sourceID, sourceID, since, matchedJSON, matchedJSON).Scan(&runCount, &agentCount, &input, &output, &cacheRead, &cacheWrite, &reasoning, &inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported)
+	err = store.readDB.QueryRowContext(ctx, statement, sourceID, sourceID, since, matchedJSON, matchedJSON).Scan(&runCount, &agentCount, &input, &output, &cacheRead, &cacheWrite, &reasoning, &inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported)
 	if err != nil {
 		return 0, 0, canonical.TokenUsage{}, fmt.Errorf("query dashboard aggregates: %w", err)
 	}

@@ -180,7 +180,15 @@ func TestMigrateIfNeededSupportsFreshCurrentAndNewerDatabases(t *testing.T) {
 	})
 }
 
-func TestGenerationThreeMigrationRebuildsCodexSessionMemberships(t *testing.T) {
+func TestReleaseAndAggregationGenerationsRebuildCodexSessionMemberships(t *testing.T) {
+	for _, generation := range []int{2, 3} {
+		t.Run(fmt.Sprintf("generation-%d", generation), func(t *testing.T) {
+			testGenerationRebuildsCodexSessionMemberships(t, generation)
+		})
+	}
+}
+
+func testGenerationRebuildsCodexSessionMemberships(t *testing.T, generation int) {
 	path := createCurrentDatabase(t)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	logs := plog.NewLogs()
@@ -224,7 +232,7 @@ func TestGenerationThreeMigrationRebuildsCodexSessionMemberships(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := legacy.Exec(`DELETE FROM session_memberships; DELETE FROM session_links; PRAGMA user_version=2`); err != nil {
+	if _, err := legacy.Exec(fmt.Sprintf(`DELETE FROM session_memberships; DELETE FROM session_links; PRAGMA user_version=%d`, generation)); err != nil {
 		t.Fatal(err)
 	}
 	if err := legacy.Close(); err != nil {

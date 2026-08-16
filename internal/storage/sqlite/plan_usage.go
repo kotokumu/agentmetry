@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/planusage"
+	"github.com/theoden9014/agentmetry/internal/query"
 )
 
 func (store *Store) PutPlanUsage(ctx context.Context, snapshot planusage.Snapshot) error {
@@ -21,7 +22,14 @@ func (store *Store) PutPlanUsage(ctx context.Context, snapshot planusage.Snapsho
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
-	_, err := store.db.ExecContext(ctx, `INSERT OR IGNORE INTO plan_usage_snapshots (
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	transaction, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin plan usage commit: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	result, err := transaction.ExecContext(ctx, `INSERT OR IGNORE INTO plan_usage_snapshots (
   source, account_id, plan, window_id, window_duration_minutes, used_percent,
   resets_at, captured_at, authority, raw_json
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -32,11 +40,28 @@ func (store *Store) PutPlanUsage(ctx context.Context, snapshot planusage.Snapsho
 	if err != nil {
 		return fmt.Errorf("insert plan usage snapshot: %w", err)
 	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("read plan usage result: %w", err)
+	}
+	var sequence int64
+	if changed > 0 {
+		sequence, err = appendProjectionChange(ctx, transaction, []query.ChangeTarget{query.OverviewTarget(), query.PlanUsageTarget(snapshot.Source)})
+		if err != nil {
+			return err
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit plan usage snapshot: %w", err)
+	}
+	if sequence > 0 {
+		store.signalProjectionChange()
+	}
 	return nil
 }
 
 func (store *Store) LatestPlanUsage(ctx context.Context) ([]planusage.Snapshot, error) {
-	rows, err := store.db.QueryContext(ctx, `SELECT source, account_id, plan, window_id,
+	rows, err := store.readDB.QueryContext(ctx, `SELECT source, account_id, plan, window_id,
   window_duration_minutes, used_percent, resets_at, captured_at, authority, raw_json
 FROM plan_usage_snapshots AS current
 WHERE NOT EXISTS (

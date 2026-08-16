@@ -23,6 +23,7 @@ export class ActivityTable extends LitElement {
   private pagingObserver?: IntersectionObserver;
   private lastScrollTop = 0;
   private revealedTarget = "";
+	private renderOffset = 0;
 
   static styles = css`
     :host { display: block; max-width: 100%; overflow: visible; }
@@ -74,17 +75,23 @@ export class ActivityTable extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues<this>) {
-    if (!changed.has("pagingContext")) return;
-    this.pagingLatched.newer = false;
-    this.pagingLatched.older = false;
-    this.lastScrollTop = this.scrollTop;
-    this.revealedTarget = "";
+	if (changed.has("pagingContext")) {
+	  this.pagingLatched.newer = false;
+	  this.pagingLatched.older = false;
+	  this.lastScrollTop = this.scrollTop;
+	  this.revealedTarget = "";
+	  this.renderOffset = 0;
+	}
+	if (changed.has("activities") && this.renderOffset >= this.activities.length) {
+	  this.renderOffset = Math.max(0, this.activities.length - 200);
+	}
   }
 
   render() {
+	const visibleActivities = this.activities.slice(this.renderOffset, this.renderOffset + 200);
     return html`${this.continuation("newer")}<div class="table-scroll"><table>
       <thead><tr><th>Time</th><th>Agent</th><th>Type</th><th>Operation / message</th><th>Source</th><th>Model</th><th>Tokens</th><th>Trace</th></tr></thead>
-      <tbody>${this.activities.map((activity) => {
+	  <tbody>${visibleActivities.map((activity) => {
         const highlighted = Boolean(this.highlightedTraceId && this.highlightedSpanId)
           && activity.signal === "trace"
           && activity.traceId === this.highlightedTraceId
@@ -148,18 +155,30 @@ export class ActivityTable extends LitElement {
 
   private requestMore(direction: ActivityDirection) {
     if (this.loading) return;
+	if (direction === "newer" && this.renderOffset > 0) {
+	  this.renderOffset = Math.max(0, this.renderOffset - 200);
+	  this.requestUpdate();
+	  return;
+	}
+	if (direction === "older" && this.renderOffset + 200 < this.activities.length) {
+	  this.renderOffset = Math.min(this.activities.length - 1, this.renderOffset + 200);
+	  this.requestUpdate();
+	  return;
+	}
     this.pagingLatched[direction] = true;
     this.lastScrollTop = this.scrollTop;
     this.dispatchEvent(new CustomEvent("activities-needed", { detail: { direction }, bubbles: true, composed: true }));
   }
 
   private continuation(direction: ActivityDirection) {
-    const available = direction === "newer" ? this.hasEarlier : this.hasMore;
+	const buffered = direction === "newer" ? this.renderOffset > 0 : this.renderOffset + 200 < this.activities.length;
+	const available = buffered || (direction === "newer" ? this.hasEarlier : this.hasMore);
     const current = this.pageDirection === direction;
     if (!available && !(current && (this.loading || this.loadError))) return null;
     if (current && this.loading) return html`<div class="loading" data-paging=${direction} role="status">Loading ${direction} observations…</div>`;
     if (current && this.loadError) return html`<div class="continuation" data-paging=${direction}><span role="alert">${this.loadError}</span><button type="button" data-direction=${direction} @click=${() => this.requestMore(direction)}>Retry loading</button></div>`;
-    return html`<div class="continuation" data-paging=${direction} aria-hidden="true"></div>`;
+	if (buffered) return html`<div class="continuation" data-paging=${direction}><button type="button" @click=${() => this.requestMore(direction)}>Show ${direction} loaded activities</button></div>`;
+	return html`<div class="continuation" data-paging=${direction} aria-hidden="true"></div>`;
   }
 
   private traceView(activity: Activity) {

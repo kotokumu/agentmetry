@@ -11,6 +11,8 @@ import type { TraceExplorer } from "../components/trace-explorer";
 import type { RangeSelectedDetail } from "../components/time-range-filter";
 import { conversationTargetFromLocation, type ConversationTarget } from "../model/trace-analysis";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
+import { agentmetryClient } from "../api/agentmetry-client";
+import { LIVE_UPDATE_EVENT, LiveUpdateController, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 import {
   conversationLocation,
   dashboardLocation,
@@ -44,6 +46,12 @@ export class AgentmetryApp extends LitElement {
   private scrollSaveGeneration = 0;
   private scrollSaveScheduled = false;
   private previousScrollRestoration: ScrollRestoration = "auto";
+  private readonly liveUpdates = new LiveUpdateController(agentmetryClient, async (windowValue) => {
+    const pending: Promise<unknown>[] = [];
+    const detail: LiveUpdateDelivery = { ...windowValue, waitUntil: (promise) => pending.push(promise) };
+    window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail }));
+    await Promise.all(pending);
+  });
 
   connectedCallback() {
     super.connectedCallback();
@@ -52,12 +60,14 @@ export class AgentmetryApp extends LitElement {
     window.addEventListener("popstate", this.popState);
     window.addEventListener("scroll", this.scrollChanged, { passive: true });
     this.readRoute();
+    this.liveUpdates.start();
   }
 
   disconnectedCallback() {
     window.removeEventListener("popstate", this.popState);
     window.removeEventListener("scroll", this.scrollChanged);
     history.scrollRestoration = this.previousScrollRestoration;
+    this.liveUpdates.stop();
     super.disconnectedCallback();
   }
 
@@ -145,6 +155,7 @@ export class AgentmetryApp extends LitElement {
         .returnLabel=${this.traceReturn?.label ?? "Conversations"}
         .locationForConversation=${(target: ConversationTarget) => conversationLocation(target, this.filters)}
         @trace-close-requested=${this.closeTrace}
+        @trace-removed=${this.traceRemoved}
         @conversation-selected-from-trace=${this.conversationSelectedFromTrace}
         @trace-view-ready=${this.traceViewReady}
       ></am-trace-explorer>` : null}
@@ -158,6 +169,7 @@ export class AgentmetryApp extends LitElement {
         .returnHref=${this.conversationReturn?.href ?? ""}
         .returnLabel=${this.conversationReturn?.label ?? ""}
         .requestedAgentId=${this.requestedAgentId}
+        .active=${!traceActive}
         ?hidden=${traceActive}
         .locationForSession=${(sourceId: string, sessionId: string) =>
           conversationLocation({ sourceId, conversationId: sessionId }, this.filters)}
@@ -166,7 +178,9 @@ export class AgentmetryApp extends LitElement {
         @search-submitted=${this.searchSubmitted}
         @session-selected=${this.sessionSelected}
         @trace-selected=${this.traceSelected}
-        @conversation-return-requested=${this.conversationReturnRequested}
+		@conversation-return-requested=${this.conversationReturnRequested}
+		@conversation-canonicalized=${this.conversationCanonicalized}
+		@conversation-removed=${this.conversationRemoved}
         @conversation-view-ready=${this.conversationViewReady}
         @conversation-view-state-changed=${this.conversationViewStateChanged}
         @conversation-summary-changed=${this.conversationSummaryChanged}
@@ -186,6 +200,13 @@ export class AgentmetryApp extends LitElement {
 
   private searchSubmitted(event: CustomEvent<{ search: string }>) {
     this.search = event.detail.search.trim();
+    if (this.requestedConversation) {
+      const href = conversationLocation(this.requestedConversation, this.filters);
+      this.beginNavigation();
+      history.replaceState({}, "", href);
+      this.readRoute(true, true);
+      return;
+    }
     this.showFilteredDashboard();
   }
 
@@ -263,6 +284,38 @@ export class AgentmetryApp extends LitElement {
       return;
     }
     this.showFilteredDashboard();
+  };
+
+	private readonly conversationRemoved = (event: CustomEvent<{ sourceId: string; conversationId: string }>) => {
+    if (this.requestedConversation?.sourceId !== event.detail.sourceId || this.requestedConversation.conversationId !== event.detail.conversationId) return;
+    if (this.selectedTraceId) {
+      // The trace remains a valid standalone view even when its navigation
+      // origin disappears. Drop only the stale return target and keep the
+      // currently visible trace mounted.
+      this.requestedConversation = undefined;
+      this.traceReturn = undefined;
+      const state = history.state && typeof history.state === "object" ? history.state : {};
+      history.replaceState({ ...state, origin: undefined }, "", `${location.pathname}${location.search}`);
+      return;
+    }
+    this.beginNavigation();
+    history.replaceState({}, "", dashboardLocation(this.filters));
+    this.readRoute(true, true);
+	};
+
+	private readonly conversationCanonicalized = (event: CustomEvent<ConversationTarget>) => {
+	  const requested = this.requestedConversation;
+	  if (!requested || requested.sourceId !== event.detail.sourceId || requested.conversationId === event.detail.conversationId) return;
+	  const state = history.state && typeof history.state === "object" ? history.state : {};
+	  history.replaceState(state, "", conversationLocation(event.detail, this.filters));
+	  this.readRoute();
+	};
+
+  private readonly traceRemoved = (event: CustomEvent<{ traceId: string }>) => {
+    if (this.selectedTraceId !== event.detail.traceId) return;
+    this.beginNavigation();
+    history.replaceState({}, "", dashboardLocation(this.filters));
+    this.readRoute(true, true);
   };
 
   private readonly popState = () => this.readRoute(true);

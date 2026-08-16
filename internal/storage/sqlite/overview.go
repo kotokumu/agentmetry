@@ -17,7 +17,7 @@ func (store *Store) GetOverview(ctx context.Context, filter query.OverviewFilter
 	since := formatTime(filter.Since)
 	var overview query.Overview
 
-	if err := store.db.QueryRowContext(ctx, `SELECT
+	if err := store.readDB.QueryRowContext(ctx, `SELECT
   (SELECT COUNT(*) FROM spans WHERE ended_at >= ?),
   (SELECT COUNT(*) FROM logs WHERE observed_at >= ?),
   (SELECT COUNT(*) FROM metrics WHERE observed_at >= ?)`, since, since, since).Scan(
@@ -119,22 +119,38 @@ func (store *Store) activitiesWindow(ctx context.Context, since string, limit, o
 }
 
 func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since string, limit, offset int, sourceID string, conversationIDs []string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
+	return store.activitiesWindowWithReaderSessions(ctx, store.readDB, since, limit, offset, sourceID, conversationIDs, meaningfulOnly, agentID)
+}
+
+func (store *Store) activitiesWindowWithReader(ctx context.Context, reader sqlReader, since string, limit, offset int, sourceID, conversationID string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
+	var conversationIDs []string
+	if conversationID != "" {
+		conversationIDs = []string{conversationID}
+	}
+	return store.activitiesWindowWithReaderSessions(ctx, reader, since, limit, offset, sourceID, conversationIDs, meaningfulOnly, agentID)
+}
+
+func (store *Store) activitiesWindowWithReaderSessions(ctx context.Context, reader sqlReader, since string, limit, offset int, sourceID string, conversationIDs []string, meaningfulOnly bool, agentID string) ([]query.Activity, error) {
+	return store.activitiesWindowWithReaderSessionSelection(ctx, reader, since, limit, offset, sourceID, conversationIDs, meaningfulOnly, agentID, "", "")
+}
+
+func (store *Store) activitiesWindowWithReaderSessionSelection(ctx context.Context, reader sqlReader, since string, limit, offset int, sourceID string, conversationIDs []string, meaningfulOnly bool, agentID, anchorTraceID, anchorSpanID string) ([]query.Activity, error) {
 	spanWhere, spanArgs := activityWhereSessions("ended_at", since, sourceID, conversationIDs, agentID)
 	logWhere, logArgs := activityWhereSessions("observed_at", since, sourceID, conversationIDs, agentID)
 	metricWhere, metricArgs := activityWhereSessions("observed_at", since, sourceID, conversationIDs, agentID)
 	if meaningfulOnly {
-		spanWhere += " AND activity_kind <> 'unknown'"
-		logWhere += " AND activity_kind <> 'unknown'"
+		spanWhere, spanArgs = restrictMeaningfulActivity(spanWhere, spanArgs, anchorTraceID, anchorSpanID)
+		logWhere, logArgs = restrictMeaningfulActivity(logWhere, logArgs, anchorTraceID, anchorSpanID)
 		metricWhere += " AND 0"
 	}
-	statement := fmt.Sprintf(`SELECT source, signal, trace_id, span_id, parent_span_id, name,
+	statement := fmt.Sprintf(`SELECT stored_activity_id, activity_key, source, signal, trace_id, span_id, parent_span_id, name,
   activity_kind, tool_name, target_agent_id, target_agent_type, content,
   agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, started_at, ended_at, observed_at, status, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
   cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id
 FROM (
-  SELECT source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
+  SELECT activity_id AS stored_activity_id, 'span:' || trace_id || ':' || span_id AS activity_key, source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, started_at, ended_at, ended_at AS observed_at, status, cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
@@ -148,10 +164,10 @@ FROM (
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, started_at, ended_at, status, cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json
-    FROM spans WHERE %s ORDER BY ended_at DESC LIMIT ?)
+    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json, activity_id
+    FROM spans WHERE %s ORDER BY ended_at DESC, trace_id ASC, span_id ASC LIMIT ?)
   UNION ALL
-  SELECT source, 'log', trace_id, span_id, '', name,
+  SELECT activity_id, 'log:' || id AS activity_key, source, 'log', trace_id, span_id, '', name,
     activity_kind, tool_name, target_agent_id, target_agent_type, body,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, observed_at, observed_at, observed_at, '', cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
@@ -160,33 +176,33 @@ FROM (
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
-  FROM (SELECT source, trace_id, span_id, name, body,
+  FROM (SELECT id, source, trace_id, span_id, name, body,
     activity_kind, tool_name, target_agent_id, target_agent_type,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, observed_at, cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json
-    FROM logs WHERE %s ORDER BY observed_at DESC LIMIT ?)
+    cache_write_tokens_reported, reasoning_tokens_reported, attributes_json, activity_id
+    FROM logs WHERE %s ORDER BY observed_at DESC, CAST(id AS TEXT) ASC LIMIT ?)
   UNION ALL
-  SELECT source, 'metric', '', '', '', name,
+  SELECT NULL, 'metric:' || id AS activity_key, source, 'metric', '', '', '', name,
     'unknown', '', '', '', CAST(value AS TEXT),
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, observed_at, observed_at, observed_at, '', cost_usd,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), 'aggregate'),
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
-  FROM (SELECT source, name, value, agent_id, agent_definition, agent_type, parent_agent_id,
+  FROM (SELECT id, source, name, value, agent_id, agent_definition, agent_type, parent_agent_id,
     run_id, model, observed_at, cost_usd, attributes_json
-    FROM metrics WHERE %s ORDER BY observed_at DESC LIMIT ?)
+    FROM metrics WHERE %s ORDER BY observed_at DESC, CAST(id AS TEXT) ASC LIMIT ?)
 )
-ORDER BY observed_at DESC
+ORDER BY observed_at DESC, activity_key ASC
 LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 	branchLimit := limit
 	if limit >= 0 {
 		branchLimit = offset + limit
 	}
 	args := append(append(append(append(append(append(spanArgs, branchLimit), logArgs...), branchLimit), metricArgs...), branchLimit), limit, offset)
-	rows, err := store.db.QueryContext(ctx, statement, args...)
+	rows, err := reader.QueryContext(ctx, statement, args...)
 	if err != nil {
 		return nil, fmt.Errorf("query recent activity: %w", err)
 	}
@@ -204,6 +220,14 @@ LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 		return nil, fmt.Errorf("iterate recent activity: %w", err)
 	}
 	return enrichActivityRelationships(activities), nil
+}
+
+func restrictMeaningfulActivity(where string, args []any, anchorTraceID, anchorSpanID string) (string, []any) {
+	if anchorTraceID == "" || anchorSpanID == "" {
+		return where + " AND activity_kind <> 'unknown'", args
+	}
+	where += " AND (activity_kind <> 'unknown' OR (trace_id = ? AND span_id = ?))"
+	return where, append(args, anchorTraceID, anchorSpanID)
 }
 
 // activityWhere only interpolates trusted SQL fragments while keeping all
@@ -226,8 +250,28 @@ func activityWhereSessions(timeColumn, since, sourceID string, conversationIDs [
 		args = append(args, memberArgs...)
 	}
 	if agentID != "" {
-		where += " AND CASE WHEN agent_id = '' THEN 'main' ELSE agent_id END = ?"
-		args = append(args, agentID)
+		clauses := make([]string, 0, len(conversationIDs))
+		for _, conversationID := range conversationIDs {
+			switch {
+			case agentID == conversationID || (len(conversationIDs) == 1 && agentID == "main"):
+				clauses = append(clauses, "(run_id = ? AND (agent_id = '' OR agent_id = 'main' OR agent_id = run_id))")
+				args = append(args, conversationID)
+			case strings.HasPrefix(agentID, conversationID+"/"):
+				nativeAgentID := strings.TrimPrefix(agentID, conversationID+"/")
+				if nativeAgentID != "" {
+					clauses = append(clauses, "(run_id = ? AND agent_id = ?)")
+					args = append(args, conversationID, nativeAgentID)
+				}
+			case len(conversationIDs) == 1:
+				clauses = append(clauses, "(run_id = ? AND agent_id = ?)")
+				args = append(args, conversationID, agentID)
+			}
+		}
+		if len(clauses) == 0 {
+			where += " AND 0"
+		} else {
+			where += " AND (" + strings.Join(clauses, " OR ") + ")"
+		}
 	}
 	return where, args
 }
@@ -238,12 +282,14 @@ type rowScanner interface {
 
 func (store *Store) scanActivity(row rowScanner) (query.Activity, error) {
 	var activity query.Activity
+	var storedActivityID sql.NullString
+	var activityKey string
 	var signal string
 	var startedAt, endedAt, observedAt string
 	var cost sql.NullFloat64
 	var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported bool
 	if err := row.Scan(
-		&activity.Source, &signal, &activity.TraceID, &activity.SpanID, &activity.ParentSpanID, &activity.Name,
+		&storedActivityID, &activityKey, &activity.Source, &signal, &activity.TraceID, &activity.SpanID, &activity.ParentSpanID, &activity.Name,
 		&activity.Kind, &activity.ToolName, &activity.TargetAgentID, &activity.TargetAgentType, &activity.Content,
 		&activity.AgentID, &activity.AgentDefinition, &activity.AgentType, &activity.ParentAgentID, &activity.RunID, &activity.Model,
 		&startedAt, &endedAt, &observedAt, &activity.Status, &cost,
@@ -252,6 +298,10 @@ func (store *Store) scanActivity(row rowScanner) (query.Activity, error) {
 		&activity.UsageRole, &activity.PromptID, &activity.UsageID,
 	); err != nil {
 		return query.Activity{}, err
+	}
+	activity.ID = store.activityID(activityKey)
+	if storedActivityID.Valid && storedActivityID.String != "" {
+		activity.ID = storedActivityID.String
 	}
 	activity.Signal = canonical.Signal(signal)
 	activity.Tokens.Presence = canonical.TokenPresence{

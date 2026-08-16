@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -131,6 +132,63 @@ func TestCommitBatchReplacesSpanRevisionAndBuildsOverview(t *testing.T) {
 	}
 	if summary.ActivityCount != 2 || summary.Tokens.Total() != 32 || len(summary.Agents) != 1 || summary.Agents[0].AgentID != "reviewer" {
 		t.Fatalf("unexpected session summary: %#v", summary)
+	}
+}
+
+func TestSpanRevisionRepairsSessionTimeExtrema(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef",
+		Kind: canonical.ActivityResponse, StartedAt: now.Add(-time.Second), EndedAt: now,
+		Agent: canonical.AgentContext{RunID: "revised-session", AgentID: "main"},
+	}
+	ctx := context.Background()
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.EndedAt = now.Add(time.Minute)
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	session, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "revised-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !session.StartedAt.Equal(span.EndedAt) || !session.EndedAt.Equal(span.EndedAt) || session.ActivityCount != 1 {
+		t.Fatalf("revised session extrema = %s..%s count=%d, want %s", session.StartedAt, session.EndedAt, session.ActivityCount, span.EndedAt)
+	}
+}
+
+func TestSpanRevisionToUnknownRemovesEmptySessionAndTraceRollups(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "0123456789abcdef0123456789abcdef", SpanID: "0123456789abcdef",
+		Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now,
+		Agent: canonical.AgentContext{RunID: "kind-session", AgentID: "main"},
+	}
+	ctx := context.Background()
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.Kind = canonical.ActivityUnknown
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "kind-session")); !errors.Is(err, query.ErrConversationNotFound) {
+		t.Fatalf("session error = %v, want not found", err)
+	}
+	if _, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, span.TraceID), Page: mustPage(t, 0, 100)}); !errors.Is(err, query.ErrTraceNotFound) {
+		t.Fatalf("trace error = %v, want not found", err)
 	}
 }
 
@@ -874,6 +932,53 @@ func TestListSessionActivitiesKeepsAnchorInsideSmallPage(t *testing.T) {
 		}
 	}
 	t.Fatal("anchor fell outside the bounded activity page")
+}
+
+func TestSessionActivityPagesHaveStableTotalOrderForEqualTimestamps(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC()
+	logs := make([]canonical.Log, 205)
+	for index := range logs {
+		logs[index] = canonical.Log{
+			Source: "example", ObservedAt: now, Name: fmt.Sprintf("equal-%03d", index),
+			Kind: canonical.ActivityMessage, Agent: canonical.AgentContext{RunID: "equal-time"},
+		}
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Logs: logs}); err != nil {
+		t.Fatal(err)
+	}
+	identity := mustConversationIdentity(t, "example", "equal-time")
+	readIDs := func() []string {
+		result := make([]string, 0, len(logs))
+		for offset := 0; offset < len(logs); offset += 100 {
+			page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+				Identity: identity,
+				Page:     mustPage(t, offset, min(100, len(logs)-offset)),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, activity := range page.Activities {
+				result = append(result, activity.ID)
+			}
+		}
+		return result
+	}
+	first, second := readIDs(), readIDs()
+	if !reflect.DeepEqual(first, second) {
+		t.Fatalf("equal-time order changed: first=%v second=%v", first, second)
+	}
+	unique := make(map[string]struct{}, len(first))
+	for _, id := range first {
+		unique[id] = struct{}{}
+	}
+	if len(first) != len(logs) || len(unique) != len(logs) {
+		t.Fatalf("equal-time page identities: total=%d unique=%d", len(first), len(unique))
+	}
 }
 
 func TestOverviewCountsOneAuthoritativeUsageContribution(t *testing.T) {

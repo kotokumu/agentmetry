@@ -13,6 +13,7 @@ import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../model/telemetry";
 import { NOT_REPORTED } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
+import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
 export type ConversationSummaryDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -43,8 +44,19 @@ export class ConversationWorkspace extends LitElement {
     () => this.active,
   );
   private lastSummaryKey = "";
-  private restoredAgentKey = "";
-  private lastReadyKey = "";
+	private restoredAgentKey = "";
+	private lastReadyKey = "";
+	private lastCanonicalKey = "";
+
+  connectedCallback() {
+    super.connectedCallback();
+    window.addEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+  }
+
+  disconnectedCallback() {
+    window.removeEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+    super.disconnectedCallback();
+  }
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
@@ -100,13 +112,21 @@ export class ConversationWorkspace extends LitElement {
 
   protected willUpdate(changed: PropertyValues<this>) {
     if (changed.has("range") || changed.has("sourceId") || changed.has("search")) this.conversations.filtersChanged();
-    if (changed.has("requestedConversation")) {
-      this.restoredAgentKey = "";
-      this.lastReadyKey = "";
+	  if (changed.has("requestedConversation")) {
+		this.restoredAgentKey = "";
+		this.lastReadyKey = "";
+		this.lastCanonicalKey = "";
       if (this.requestedConversation) this.conversations.select(this.requestedConversation);
       else this.conversations.clearRoute();
     }
   }
+
+  private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
+    event.detail.waitUntil(this.conversations.applyLiveUpdate(event.detail).then(() => {
+      const removed = this.conversations.takeRemovedSession();
+      if (removed) this.dispatchEvent(new CustomEvent("conversation-removed", { detail: removed, bubbles: true, composed: true }));
+    }));
+  };
 
   render() {
     const sessions = this.conversations.sessions;
@@ -141,8 +161,9 @@ export class ConversationWorkspace extends LitElement {
     </section>`;
   }
 
-  protected updated() {
-    this.restoreRequestedAgent();
+	protected updated() {
+	  this.reportCanonicalConversation();
+	  this.restoreRequestedAgent();
     this.reportViewReady();
     const status = this.conversations.listFailed ? "failed" : this.conversations.loadingList ? "loading" : "ready";
     const sessions = this.conversations.sessions;
@@ -155,7 +176,18 @@ export class ConversationWorkspace extends LitElement {
     if (key === this.lastSummaryKey) return;
     this.lastSummaryKey = key;
     this.dispatchEvent(new CustomEvent<ConversationSummaryDetail>("conversation-summary-changed", { detail, bubbles: true, composed: true }));
-  }
+	}
+
+	private reportCanonicalConversation() {
+	  const requested = this.requestedConversation;
+	  const selected = this.conversations.selected;
+	  if (!requested || !selected || requested.sourceId !== selected.sourceId || requested.conversationId === selected.id) return;
+	  const canonical: ConversationTarget = { ...requested, sourceId: selected.sourceId, conversationId: selected.id };
+	  const key = `${canonical.sourceId}:${canonical.conversationId}:${canonical.traceId ?? ""}:${canonical.spanId ?? ""}`;
+	  if (this.lastCanonicalKey === key) return;
+	  this.lastCanonicalKey = key;
+	  this.dispatchEvent(new CustomEvent<ConversationTarget>("conversation-canonicalized", { detail: canonical, bubbles: true, composed: true }));
+	}
 
   private renderSelected(selected: Session, selectedAgentId: string, activities: Session["activities"]) {
     return html`
@@ -212,9 +244,9 @@ export class ConversationWorkspace extends LitElement {
   }
 
   focusRouteHeading(view: "detail" | "list") {
-    if (view === "detail" && this.requestedConversation) {
-      const selected = this.conversations.selected;
-      if (!selected || selected.id !== this.requestedConversation.conversationId || selected.sourceId !== this.requestedConversation.sourceId) return false;
+	  if (view === "detail" && this.requestedConversation) {
+		const selected = this.conversations.selected;
+		if (!selected || selected.sourceId !== this.requestedConversation.sourceId) return false;
     }
     const selector = view === "detail" ? ".session-id, .detail h2" : ".list-heading";
     const heading = this.shadowRoot?.querySelector<HTMLElement>(selector);
