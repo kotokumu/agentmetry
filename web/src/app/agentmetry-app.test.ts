@@ -9,6 +9,7 @@ import type { TimeRangeFilter } from "../components/time-range-filter";
 import type { SessionList } from "../components/session-list";
 import type { ActivityTable } from "../components/activity-table";
 import type { KpiCard } from "../components/kpi-card";
+import type { ReworkComparison } from "../components/rework-comparison";
 import type { ConversationWorkspace } from "../components/conversation-workspace";
 import type { TraceExplorer } from "../components/trace-explorer";
 import type { DashboardSummary } from "../components/dashboard-summary";
@@ -133,13 +134,14 @@ const traceRootOf = (app: AgentmetryApp) => traceExplorerOf(app)?.shadowRoot;
 const dashboardOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<DashboardSummary>("am-dashboard-summary");
 
 const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
-  const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { agentId?: string } : {};
+  const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { agentId?: string; sessionId?: string } : {};
+  const requestedSession = overview.sessions.find(({ id }) => id === body.sessionId) ?? overview.sessions[0];
   switch (connectPath(url).split("/").at(-1)) {
     case "GetDashboard": return connectResponse(dashboardResponse(overview));
     case "ListSessions": return connectResponse(sessionsResponse(overview));
-    case "GetSession": return connectResponse(overview.sessions[0] ? { session: sessionSummary(overview.sessions[0]), traceIds: overview.sessions[0].traceIds ?? [] } : {});
-    case "ListSessionActivities": return connectResponse(overview.sessions[0] ? activitiesResponse(overview.sessions[0], body.agentId) : { activities: [], page: { hasMore: false }, total: 0 });
-    case "GetSessionRework": return connectResponse(overview.sessions[0] ? reworkResponse(overview.sessions[0]) : {});
+    case "GetSession": return connectResponse(requestedSession ? { session: sessionSummary(requestedSession), traceIds: requestedSession.traceIds ?? [] } : {});
+    case "ListSessionActivities": return connectResponse(requestedSession ? activitiesResponse(requestedSession, body.agentId) : { activities: [], page: { hasMore: false }, total: 0 });
+    case "GetSessionRework": return connectResponse(requestedSession ? reworkResponse(requestedSession) : {});
     default: return connectResponse({});
   }
 });
@@ -185,6 +187,34 @@ describe("Agentmetry app composition", () => {
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("35.0%");
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("12.0%");
     expect(panel?.shadowRoot?.textContent).toContain("Partial evidence");
+  });
+
+  it("shows an automatic same-source Before / After comparison without replacing current diagnostics", async () => {
+    const current: TestSession = {
+      id: "session-current", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: "2026-08-11T10:00:00Z", endedAt: "2026-08-11T10:30:00Z", activityCount: 4,
+      tokens: { ...emptyOverview.tokens, total: 1_000 }, agents: [], activities: [],
+    };
+    const baseline: TestSession = {
+      ...current,
+      id: "session-baseline",
+      startedAt: "2026-08-11T08:00:00Z",
+      endedAt: "2026-08-11T09:00:00Z",
+    };
+    vi.stubGlobal("fetch", overviewFetch({ ...emptyOverview, sessions: [current, baseline] } as TestOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    const panel = await vi.waitFor(() => {
+      const result = workspaceRootOf(app)?.querySelector<ReworkComparison>("am-rework-comparison");
+      expect(result?.shadowRoot?.textContent).toContain("Before / After diagnostics");
+      expect(result?.shadowRoot?.textContent).toContain("Initial validation success proxy");
+      return result;
+    });
+
+    expect(panel?.state.status === "ready" ? panel.state.selectedBaselineId : "").toBe("session-baseline");
+    expect(panel?.shadowRoot?.querySelector("table")).not.toBeNull();
+    expect(workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.textContent).toContain("Development rework");
   });
 
   it("returns a removed trace route to the filtered dashboard", async () => {

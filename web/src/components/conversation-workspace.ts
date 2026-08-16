@@ -3,12 +3,15 @@ import { customElement, property } from "lit/decorators.js";
 import "./activity-table";
 import "./agent-tree";
 import "./kpi-card";
+import "./rework-comparison";
+import type { ComparisonBaselineSelectedDetail } from "./rework-comparison";
 import "./rework-summary";
 import "./session-filter";
 import "./session-list";
 import "./token-chart";
 import { agentmetryClient } from "../api/agentmetry-client";
 import { ConversationsController } from "../controllers/conversations-controller";
+import { SessionComparisonController } from "../controllers/session-comparison-controller";
 import { agentDisplayLabel } from "../model/agent-label";
 import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../model/telemetry";
@@ -43,6 +46,15 @@ export class ConversationWorkspace extends LitElement {
     agentmetryClient,
     () => ({ range: this.range, sourceId: this.sourceId, search: this.search }),
     () => this.active,
+  );
+  private readonly comparison = new SessionComparisonController(
+    this,
+    {
+      reader: agentmetryClient,
+      current: () => this.conversations.selected,
+      sessions: () => this.conversations.sessions,
+      isActive: () => this.active,
+    },
   );
   private lastSummaryKey = "";
 	private restoredAgentKey = "";
@@ -79,7 +91,7 @@ export class ConversationWorkspace extends LitElement {
       scrollbar-gutter: stable;
     }
     .detail { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; min-width: 0; }
-    .session-head-panel, .operations-panel, .detail > .empty, .detail > am-rework-summary { grid-column: 1 / -1; }
+    .session-head-panel, .operations-panel, .detail > .empty, .detail > am-rework-summary, .detail > am-rework-comparison { grid-column: 1 / -1; }
     .traffic-panel { grid-column: span 5; padding-bottom: 12px; }
     .topology-panel { grid-column: span 7; padding-bottom: 12px; }
     .session-head-panel { padding-top: 12px; padding-bottom: 12px; }
@@ -123,7 +135,10 @@ export class ConversationWorkspace extends LitElement {
   }
 
   private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
-    event.detail.waitUntil(this.conversations.applyLiveUpdate(event.detail).then(() => {
+    event.detail.waitUntil(Promise.all([
+      this.conversations.applyLiveUpdate(event.detail),
+      this.comparison.applyLiveUpdate(event.detail),
+    ]).then(() => {
       const removed = this.conversations.takeRemovedSession();
       if (removed) this.dispatchEvent(new CustomEvent("conversation-removed", { detail: removed, bubbles: true, composed: true }));
     }));
@@ -205,6 +220,11 @@ export class ConversationWorkspace extends LitElement {
         .error=${this.conversations.reworkFailed ? String(this.conversations.reworkError ?? "Rework analysis unavailable") : ""}
         @rework-retry-requested=${this.retryRework}
       ></am-rework-summary>
+      <am-rework-comparison
+        .state=${this.comparison.viewState(this.conversations.rework, this.conversations.reworkFailed)}
+        @comparison-baseline-selected=${this.comparisonBaselineSelected}
+        @comparison-retry-requested=${this.retryComparison}
+      ></am-rework-comparison>
       <section class="panel traffic-panel"><h2>Observed model traffic</h2><am-token-chart .usage=${selected.tokens}></am-token-chart></section>
       <section class="panel topology-panel"><h2>Agent topology</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section>
       ${this.renderOperations(selected, selectedAgentId, activities)}
@@ -240,6 +260,8 @@ export class ConversationWorkspace extends LitElement {
   };
   private readonly retryConversation = () => this.conversations.refreshSelected();
   private readonly retryRework = () => this.conversations.refreshRework();
+  private readonly comparisonBaselineSelected = (event: CustomEvent<ComparisonBaselineSelectedDetail>) => this.comparison.selectBaseline(event.detail.sessionId);
+  private readonly retryComparison = () => this.comparison.refresh();
   private readonly returnToOrigin = (event: MouseEvent) => this.requestReturn(event, "origin");
   private readonly returnToList = (event: MouseEvent) => this.requestReturn(event, "list");
   private requestReturn(event: MouseEvent, to: "origin" | "list") {
