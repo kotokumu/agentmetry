@@ -15,6 +15,16 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify release tag belongs to main
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          RELEASE_SHA: ${{ github.sha }}
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$RELEASE_SHA" origin/main
 
       - name: Verify release configuration
         if: startsWith(github.ref, 'refs/tags/')

@@ -12,9 +12,11 @@ GitHub Release when the shell starts. A newer semantic version is downloaded
 and verified while the Go sidecar continues collecting telemetry. The shell
 stops the sidecar only after verification, installs the bundle, and restarts.
 
-Git tags remain the release contract. A tag `vX.Y.Z` must exactly match the
-version in `src-tauri/tauri.conf.json`. The release workflow uses Tauri's native
-updater artifacts and publishes `latest.json` alongside the platform bundles.
+Git tags remain the release contract. Release Please owns the Release PR,
+updates the version in `src-tauri/tauri.conf.json`, and creates the matching
+`vX.Y.Z` tag from the merged `main` commit. The release workflow uses Tauri's
+native updater artifacts and publishes `latest.json` alongside the platform
+bundles.
 
 ## Requirements
 
@@ -46,6 +48,7 @@ updater artifacts and publishes `latest.json` alongside the platform bundles.
 | --- | --- |
 | Version comparison, download, signature verification, installation | Tauri Updater |
 | Startup scheduling, error isolation, sidecar stop/restart | Desktop shell |
+| Release version, changelog PR, tag, draft GitHub Release | Release Please |
 | Native builds, signing, `latest.json`, Release assets | GitHub Actions |
 | Release version and public update configuration | Tauri configuration |
 | Private signing material | GitHub repository secret |
@@ -66,14 +69,18 @@ Web UI do not depend on Tauri updater types or GitHub release formats.
 
 ## Release workflow
 
-The `release` workflow runs on `v*` tags and manual dispatch. Its preflight
-validates the tag/version contract and requires the updater and Apple signing
-secrets before any native build begins. Tauri Action builds each platform,
-uploads signed updater assets to a draft Release, and merges their metadata
-into `latest.json`. On macOS the workflow imports a Developer ID Application
-certificate into an ephemeral keychain, signs and notarizes the app, then signs,
-notarizes, staples, and Gatekeeper-assesses the human-installable DMG. The draft
-is published only after every platform and the complete asset-set check pass.
+The `release-please` workflow runs on pushes to `main`. It maintains a Release
+PR from Conventional Commits and, when that PR is merged, creates the tag and a
+draft GitHub Release. The `release` workflow runs on that `v*` tag and manual
+dispatch. Its preflight fetches `main`, verifies the tagged commit is in its
+history, validates the tag/version contract, and requires the updater and Apple
+signing secrets before any native build begins. Tauri Action builds each
+platform, uploads signed updater assets to the draft Release, and merges their
+metadata into `latest.json`. On macOS the workflow imports a Developer ID
+Application certificate into an ephemeral keychain, signs and notarizes the
+app, then signs, notarizes, staples, and Gatekeeper-assesses the
+human-installable DMG. The draft is published only after every platform and the
+complete asset-set check pass.
 
 ## Consequences
 

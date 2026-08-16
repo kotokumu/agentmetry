@@ -9,6 +9,9 @@
 Continuous integration and continuous delivery are separate workflows:
 
 - `.github/workflows/ci.yml` validates pull requests and pushes to `main`.
+- `.github/workflows/release-please.yml` maintains a version and changelog PR
+  from Conventional Commits on `main`, then creates the release tag when that
+  PR is merged.
 - `.github/workflows/release.yml` builds and publishes packages only for `v*`
   tags, with manual execution available for build-only diagnostics.
 
@@ -31,8 +34,10 @@ generated assets into the Go build stage.
 ## Release gates
 
 The tag workflow remains responsible for native macOS, Windows, and Linux
-package generation and GitHub Release publication. It verifies that the tag
-version matches the Tauri application version before building. Its preflight
-requires updater and Apple signing credentials. macOS Developer ID signing,
-notarization, stapling, and Gatekeeper assessment are mandatory release gates;
-the GitHub Release remains a draft until every platform succeeds.
+package generation and GitHub Release publication. Release Please creates tags
+from merged `main` release PRs. The tag workflow independently verifies that
+the tagged commit belongs to `main` and that the tag version matches the Tauri
+application version before building. Its preflight requires updater and Apple
+signing credentials. macOS Developer ID signing, notarization, stapling, and
+Gatekeeper assessment are mandatory release gates; the GitHub Release remains
+a draft until every platform succeeds.
