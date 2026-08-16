@@ -1643,6 +1643,482 @@ func (x *GetSessionResponse) GetTraceIds() []string {
 	return nil
 }
 
+type GetSessionReworkRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceId      string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionReworkRequest) Reset() {
+	*x = GetSessionReworkRequest{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionReworkRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionReworkRequest) ProtoMessage() {}
+
+func (x *GetSessionReworkRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionReworkRequest.ProtoReflect.Descriptor instead.
+func (*GetSessionReworkRequest) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *GetSessionReworkRequest) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *GetSessionReworkRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type ApiRetryWaste struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Attempts      int64                  `protobuf:"varint,1,opt,name=attempts,proto3" json:"attempts,omitempty"`
+	DurationMs    int64                  `protobuf:"varint,2,opt,name=duration_ms,json=durationMs,proto3" json:"duration_ms,omitempty"`
+	Tokens        *TokenUsage            `protobuf:"bytes,3,opt,name=tokens,proto3" json:"tokens,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ApiRetryWaste) Reset() {
+	*x = ApiRetryWaste{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ApiRetryWaste) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ApiRetryWaste) ProtoMessage() {}
+
+func (x *ApiRetryWaste) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ApiRetryWaste.ProtoReflect.Descriptor instead.
+func (*ApiRetryWaste) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *ApiRetryWaste) GetAttempts() int64 {
+	if x != nil {
+		return x.Attempts
+	}
+	return 0
+}
+
+func (x *ApiRetryWaste) GetDurationMs() int64 {
+	if x != nil {
+		return x.DurationMs
+	}
+	return 0
+}
+
+func (x *ApiRetryWaste) GetTokens() *TokenUsage {
+	if x != nil {
+		return x.Tokens
+	}
+	return nil
+}
+
+type ReworkMetrics struct {
+	state                   protoimpl.MessageState `protogen:"open.v1"`
+	ValidationFailures      int64                  `protobuf:"varint,1,opt,name=validation_failures,json=validationFailures,proto3" json:"validation_failures,omitempty"`
+	FailFixRetryCycles      int64                  `protobuf:"varint,2,opt,name=fail_fix_retry_cycles,json=failFixRetryCycles,proto3" json:"fail_fix_retry_cycles,omitempty"`
+	ReworkDurationMs        int64                  `protobuf:"varint,3,opt,name=rework_duration_ms,json=reworkDurationMs,proto3" json:"rework_duration_ms,omitempty"`
+	ReworkTokens            *TokenUsage            `protobuf:"bytes,4,opt,name=rework_tokens,json=reworkTokens,proto3" json:"rework_tokens,omitempty"`
+	ToolAttemptsWithOutcome int64                  `protobuf:"varint,5,opt,name=tool_attempts_with_outcome,json=toolAttemptsWithOutcome,proto3" json:"tool_attempts_with_outcome,omitempty"`
+	ToolFailures            int64                  `protobuf:"varint,6,opt,name=tool_failures,json=toolFailures,proto3" json:"tool_failures,omitempty"`
+	ToolFailureRate         *float64               `protobuf:"fixed64,7,opt,name=tool_failure_rate,json=toolFailureRate,proto3,oneof" json:"tool_failure_rate,omitempty"`
+	ApiRetryWaste           *ApiRetryWaste         `protobuf:"bytes,8,opt,name=api_retry_waste,json=apiRetryWaste,proto3" json:"api_retry_waste,omitempty"`
+	RepeatedCommands        int64                  `protobuf:"varint,9,opt,name=repeated_commands,json=repeatedCommands,proto3" json:"repeated_commands,omitempty"`
+	ReeditedFiles           int64                  `protobuf:"varint,10,opt,name=reedited_files,json=reeditedFiles,proto3" json:"reedited_files,omitempty"`
+	unknownFields           protoimpl.UnknownFields
+	sizeCache               protoimpl.SizeCache
+}
+
+func (x *ReworkMetrics) Reset() {
+	*x = ReworkMetrics{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReworkMetrics) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReworkMetrics) ProtoMessage() {}
+
+func (x *ReworkMetrics) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReworkMetrics.ProtoReflect.Descriptor instead.
+func (*ReworkMetrics) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *ReworkMetrics) GetValidationFailures() int64 {
+	if x != nil {
+		return x.ValidationFailures
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetFailFixRetryCycles() int64 {
+	if x != nil {
+		return x.FailFixRetryCycles
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetReworkDurationMs() int64 {
+	if x != nil {
+		return x.ReworkDurationMs
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetReworkTokens() *TokenUsage {
+	if x != nil {
+		return x.ReworkTokens
+	}
+	return nil
+}
+
+func (x *ReworkMetrics) GetToolAttemptsWithOutcome() int64 {
+	if x != nil {
+		return x.ToolAttemptsWithOutcome
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetToolFailures() int64 {
+	if x != nil {
+		return x.ToolFailures
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetToolFailureRate() float64 {
+	if x != nil && x.ToolFailureRate != nil {
+		return *x.ToolFailureRate
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetApiRetryWaste() *ApiRetryWaste {
+	if x != nil {
+		return x.ApiRetryWaste
+	}
+	return nil
+}
+
+func (x *ReworkMetrics) GetRepeatedCommands() int64 {
+	if x != nil {
+		return x.RepeatedCommands
+	}
+	return 0
+}
+
+func (x *ReworkMetrics) GetReeditedFiles() int64 {
+	if x != nil {
+		return x.ReeditedFiles
+	}
+	return 0
+}
+
+type ReworkCoverage struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ActivityCoverage string                 `protobuf:"bytes,1,opt,name=activity_coverage,json=activityCoverage,proto3" json:"activity_coverage,omitempty"`
+	CanonicalEvents  int64                  `protobuf:"varint,2,opt,name=canonical_events,json=canonicalEvents,proto3" json:"canonical_events,omitempty"`
+	ClassifiedEvents int64                  `protobuf:"varint,3,opt,name=classified_events,json=classifiedEvents,proto3" json:"classified_events,omitempty"`
+	KnownOutcomes    int64                  `protobuf:"varint,4,opt,name=known_outcomes,json=knownOutcomes,proto3" json:"known_outcomes,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ReworkCoverage) Reset() {
+	*x = ReworkCoverage{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReworkCoverage) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReworkCoverage) ProtoMessage() {}
+
+func (x *ReworkCoverage) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReworkCoverage.ProtoReflect.Descriptor instead.
+func (*ReworkCoverage) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *ReworkCoverage) GetActivityCoverage() string {
+	if x != nil {
+		return x.ActivityCoverage
+	}
+	return ""
+}
+
+func (x *ReworkCoverage) GetCanonicalEvents() int64 {
+	if x != nil {
+		return x.CanonicalEvents
+	}
+	return 0
+}
+
+func (x *ReworkCoverage) GetClassifiedEvents() int64 {
+	if x != nil {
+		return x.ClassifiedEvents
+	}
+	return 0
+}
+
+func (x *ReworkCoverage) GetKnownOutcomes() int64 {
+	if x != nil {
+		return x.KnownOutcomes
+	}
+	return 0
+}
+
+type AnalysisCapability struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         string                 `protobuf:"bytes,1,opt,name=state,proto3" json:"state,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AnalysisCapability) Reset() {
+	*x = AnalysisCapability{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AnalysisCapability) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AnalysisCapability) ProtoMessage() {}
+
+func (x *AnalysisCapability) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AnalysisCapability.ProtoReflect.Descriptor instead.
+func (*AnalysisCapability) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *AnalysisCapability) GetState() string {
+	if x != nil {
+		return x.State
+	}
+	return ""
+}
+
+func (x *AnalysisCapability) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
+type ReworkCapabilities struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	ChangeRevert      *AnalysisCapability    `protobuf:"bytes,1,opt,name=change_revert,json=changeRevert,proto3" json:"change_revert,omitempty"`
+	CrossAgentOverlap *AnalysisCapability    `protobuf:"bytes,2,opt,name=cross_agent_overlap,json=crossAgentOverlap,proto3" json:"cross_agent_overlap,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ReworkCapabilities) Reset() {
+	*x = ReworkCapabilities{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReworkCapabilities) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReworkCapabilities) ProtoMessage() {}
+
+func (x *ReworkCapabilities) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReworkCapabilities.ProtoReflect.Descriptor instead.
+func (*ReworkCapabilities) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ReworkCapabilities) GetChangeRevert() *AnalysisCapability {
+	if x != nil {
+		return x.ChangeRevert
+	}
+	return nil
+}
+
+func (x *ReworkCapabilities) GetCrossAgentOverlap() *AnalysisCapability {
+	if x != nil {
+		return x.CrossAgentOverlap
+	}
+	return nil
+}
+
+type GetSessionReworkResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SourceId      string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Metrics       *ReworkMetrics         `protobuf:"bytes,3,opt,name=metrics,proto3" json:"metrics,omitempty"`
+	Coverage      *ReworkCoverage        `protobuf:"bytes,4,opt,name=coverage,proto3" json:"coverage,omitempty"`
+	Capabilities  *ReworkCapabilities    `protobuf:"bytes,5,opt,name=capabilities,proto3" json:"capabilities,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSessionReworkResponse) Reset() {
+	*x = GetSessionReworkResponse{}
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSessionReworkResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSessionReworkResponse) ProtoMessage() {}
+
+func (x *GetSessionReworkResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSessionReworkResponse.ProtoReflect.Descriptor instead.
+func (*GetSessionReworkResponse) Descriptor() ([]byte, []int) {
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *GetSessionReworkResponse) GetSourceId() string {
+	if x != nil {
+		return x.SourceId
+	}
+	return ""
+}
+
+func (x *GetSessionReworkResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *GetSessionReworkResponse) GetMetrics() *ReworkMetrics {
+	if x != nil {
+		return x.Metrics
+	}
+	return nil
+}
+
+func (x *GetSessionReworkResponse) GetCoverage() *ReworkCoverage {
+	if x != nil {
+		return x.Coverage
+	}
+	return nil
+}
+
+func (x *GetSessionReworkResponse) GetCapabilities() *ReworkCapabilities {
+	if x != nil {
+		return x.Capabilities
+	}
+	return nil
+}
+
 type ListSessionActivitiesRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	SourceId      string                 `protobuf:"bytes,1,opt,name=source_id,json=sourceId,proto3" json:"source_id,omitempty"`
@@ -1657,7 +2133,7 @@ type ListSessionActivitiesRequest struct {
 
 func (x *ListSessionActivitiesRequest) Reset() {
 	*x = ListSessionActivitiesRequest{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[18]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1669,7 +2145,7 @@ func (x *ListSessionActivitiesRequest) String() string {
 func (*ListSessionActivitiesRequest) ProtoMessage() {}
 
 func (x *ListSessionActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[18]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1682,7 +2158,7 @@ func (x *ListSessionActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*ListSessionActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{18}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ListSessionActivitiesRequest) GetSourceId() string {
@@ -1738,7 +2214,7 @@ type ListSessionActivitiesResponse struct {
 
 func (x *ListSessionActivitiesResponse) Reset() {
 	*x = ListSessionActivitiesResponse{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[19]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1750,7 +2226,7 @@ func (x *ListSessionActivitiesResponse) String() string {
 func (*ListSessionActivitiesResponse) ProtoMessage() {}
 
 func (x *ListSessionActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[19]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1763,7 +2239,7 @@ func (x *ListSessionActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListSessionActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*ListSessionActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{19}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ListSessionActivitiesResponse) GetActivities() []*Activity {
@@ -1799,7 +2275,7 @@ type GetTraceRequest struct {
 
 func (x *GetTraceRequest) Reset() {
 	*x = GetTraceRequest{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[20]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1811,7 +2287,7 @@ func (x *GetTraceRequest) String() string {
 func (*GetTraceRequest) ProtoMessage() {}
 
 func (x *GetTraceRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[20]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1824,7 +2300,7 @@ func (x *GetTraceRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTraceRequest.ProtoReflect.Descriptor instead.
 func (*GetTraceRequest) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{20}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *GetTraceRequest) GetTraceId() string {
@@ -1867,7 +2343,7 @@ type GetTraceResponse struct {
 
 func (x *GetTraceResponse) Reset() {
 	*x = GetTraceResponse{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[21]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1879,7 +2355,7 @@ func (x *GetTraceResponse) String() string {
 func (*GetTraceResponse) ProtoMessage() {}
 
 func (x *GetTraceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[21]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1892,7 +2368,7 @@ func (x *GetTraceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTraceResponse.ProtoReflect.Descriptor instead.
 func (*GetTraceResponse) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{21}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *GetTraceResponse) GetTraceId() string {
@@ -1984,7 +2460,7 @@ type ProjectionChangeTarget struct {
 
 func (x *ProjectionChangeTarget) Reset() {
 	*x = ProjectionChangeTarget{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[22]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1996,7 +2472,7 @@ func (x *ProjectionChangeTarget) String() string {
 func (*ProjectionChangeTarget) ProtoMessage() {}
 
 func (x *ProjectionChangeTarget) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[22]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2009,7 +2485,7 @@ func (x *ProjectionChangeTarget) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectionChangeTarget.ProtoReflect.Descriptor instead.
 func (*ProjectionChangeTarget) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{22}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ProjectionChangeTarget) GetKind() ProjectionTargetKind {
@@ -2050,7 +2526,7 @@ type WatchProjectionChangesRequest struct {
 
 func (x *WatchProjectionChangesRequest) Reset() {
 	*x = WatchProjectionChangesRequest{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[23]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2062,7 +2538,7 @@ func (x *WatchProjectionChangesRequest) String() string {
 func (*WatchProjectionChangesRequest) ProtoMessage() {}
 
 func (x *WatchProjectionChangesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[23]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2075,7 +2551,7 @@ func (x *WatchProjectionChangesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchProjectionChangesRequest.ProtoReflect.Descriptor instead.
 func (*WatchProjectionChangesRequest) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{23}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *WatchProjectionChangesRequest) GetAfterCursor() string {
@@ -2098,7 +2574,7 @@ type WatchProjectionChangesResponse struct {
 
 func (x *WatchProjectionChangesResponse) Reset() {
 	*x = WatchProjectionChangesResponse{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[24]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2110,7 +2586,7 @@ func (x *WatchProjectionChangesResponse) String() string {
 func (*WatchProjectionChangesResponse) ProtoMessage() {}
 
 func (x *WatchProjectionChangesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[24]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2123,7 +2599,7 @@ func (x *WatchProjectionChangesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchProjectionChangesResponse.ProtoReflect.Descriptor instead.
 func (*WatchProjectionChangesResponse) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{24}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *WatchProjectionChangesResponse) GetThroughCursor() string {
@@ -2165,7 +2641,7 @@ type ActivityMutation struct {
 
 func (x *ActivityMutation) Reset() {
 	*x = ActivityMutation{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[25]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2177,7 +2653,7 @@ func (x *ActivityMutation) String() string {
 func (*ActivityMutation) ProtoMessage() {}
 
 func (x *ActivityMutation) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[25]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2190,7 +2666,7 @@ func (x *ActivityMutation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ActivityMutation.ProtoReflect.Descriptor instead.
 func (*ActivityMutation) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{25}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *ActivityMutation) GetOperation() ActivityMutationOperation {
@@ -2227,7 +2703,7 @@ type SyncSessionActivitiesRequest struct {
 
 func (x *SyncSessionActivitiesRequest) Reset() {
 	*x = SyncSessionActivitiesRequest{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[26]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2239,7 +2715,7 @@ func (x *SyncSessionActivitiesRequest) String() string {
 func (*SyncSessionActivitiesRequest) ProtoMessage() {}
 
 func (x *SyncSessionActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[26]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2252,7 +2728,7 @@ func (x *SyncSessionActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncSessionActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*SyncSessionActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{26}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SyncSessionActivitiesRequest) GetSourceId() string {
@@ -2302,7 +2778,7 @@ type SyncTraceActivitiesRequest struct {
 
 func (x *SyncTraceActivitiesRequest) Reset() {
 	*x = SyncTraceActivitiesRequest{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[27]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2314,7 +2790,7 @@ func (x *SyncTraceActivitiesRequest) String() string {
 func (*SyncTraceActivitiesRequest) ProtoMessage() {}
 
 func (x *SyncTraceActivitiesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[27]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2327,7 +2803,7 @@ func (x *SyncTraceActivitiesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncTraceActivitiesRequest.ProtoReflect.Descriptor instead.
 func (*SyncTraceActivitiesRequest) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{27}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *SyncTraceActivitiesRequest) GetTraceId() string {
@@ -2371,7 +2847,7 @@ type SyncSessionActivitiesResponse struct {
 
 func (x *SyncSessionActivitiesResponse) Reset() {
 	*x = SyncSessionActivitiesResponse{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[28]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2383,7 +2859,7 @@ func (x *SyncSessionActivitiesResponse) String() string {
 func (*SyncSessionActivitiesResponse) ProtoMessage() {}
 
 func (x *SyncSessionActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[28]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2396,7 +2872,7 @@ func (x *SyncSessionActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncSessionActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*SyncSessionActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{28}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *SyncSessionActivitiesResponse) GetMutations() []*ActivityMutation {
@@ -2447,7 +2923,7 @@ type SyncTraceActivitiesResponse struct {
 
 func (x *SyncTraceActivitiesResponse) Reset() {
 	*x = SyncTraceActivitiesResponse{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[29]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2459,7 +2935,7 @@ func (x *SyncTraceActivitiesResponse) String() string {
 func (*SyncTraceActivitiesResponse) ProtoMessage() {}
 
 func (x *SyncTraceActivitiesResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[29]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2472,7 +2948,7 @@ func (x *SyncTraceActivitiesResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SyncTraceActivitiesResponse.ProtoReflect.Descriptor instead.
 func (*SyncTraceActivitiesResponse) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{29}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *SyncTraceActivitiesResponse) GetMutations() []*ActivityMutation {
@@ -2520,7 +2996,7 @@ type ConversationRef struct {
 
 func (x *ConversationRef) Reset() {
 	*x = ConversationRef{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[30]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2532,7 +3008,7 @@ func (x *ConversationRef) String() string {
 func (*ConversationRef) ProtoMessage() {}
 
 func (x *ConversationRef) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[30]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2545,7 +3021,7 @@ func (x *ConversationRef) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ConversationRef.ProtoReflect.Descriptor instead.
 func (*ConversationRef) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{30}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *ConversationRef) GetSourceId() string {
@@ -2577,7 +3053,7 @@ type TraceAgent struct {
 
 func (x *TraceAgent) Reset() {
 	*x = TraceAgent{}
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[31]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2589,7 +3065,7 @@ func (x *TraceAgent) String() string {
 func (*TraceAgent) ProtoMessage() {}
 
 func (x *TraceAgent) ProtoReflect() protoreflect.Message {
-	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[31]
+	mi := &file_agentmetry_v1_agentmetry_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2602,7 +3078,7 @@ func (x *TraceAgent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TraceAgent.ProtoReflect.Descriptor instead.
 func (*TraceAgent) Descriptor() ([]byte, []int) {
-	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{31}
+	return file_agentmetry_v1_agentmetry_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *TraceAgent) GetSourceId() string {
@@ -2799,7 +3275,47 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tR\tsessionId\"j\n" +
 	"\x12GetSessionResponse\x127\n" +
 	"\asession\x18\x01 \x01(\v2\x1d.agentmetry.v1.SessionSummaryR\asession\x12\x1b\n" +
-	"\ttrace_ids\x18\x02 \x03(\tR\btraceIds\"\x98\x02\n" +
+	"\ttrace_ids\x18\x02 \x03(\tR\btraceIds\"U\n" +
+	"\x17GetSessionReworkRequest\x12\x1b\n" +
+	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\"\x7f\n" +
+	"\rApiRetryWaste\x12\x1a\n" +
+	"\battempts\x18\x01 \x01(\x03R\battempts\x12\x1f\n" +
+	"\vduration_ms\x18\x02 \x01(\x03R\n" +
+	"durationMs\x121\n" +
+	"\x06tokens\x18\x03 \x01(\v2\x19.agentmetry.v1.TokenUsageR\x06tokens\"\xa4\x04\n" +
+	"\rReworkMetrics\x12/\n" +
+	"\x13validation_failures\x18\x01 \x01(\x03R\x12validationFailures\x121\n" +
+	"\x15fail_fix_retry_cycles\x18\x02 \x01(\x03R\x12failFixRetryCycles\x12,\n" +
+	"\x12rework_duration_ms\x18\x03 \x01(\x03R\x10reworkDurationMs\x12>\n" +
+	"\rrework_tokens\x18\x04 \x01(\v2\x19.agentmetry.v1.TokenUsageR\freworkTokens\x12;\n" +
+	"\x1atool_attempts_with_outcome\x18\x05 \x01(\x03R\x17toolAttemptsWithOutcome\x12#\n" +
+	"\rtool_failures\x18\x06 \x01(\x03R\ftoolFailures\x12/\n" +
+	"\x11tool_failure_rate\x18\a \x01(\x01H\x00R\x0ftoolFailureRate\x88\x01\x01\x12D\n" +
+	"\x0fapi_retry_waste\x18\b \x01(\v2\x1c.agentmetry.v1.ApiRetryWasteR\rapiRetryWaste\x12+\n" +
+	"\x11repeated_commands\x18\t \x01(\x03R\x10repeatedCommands\x12%\n" +
+	"\x0ereedited_files\x18\n" +
+	" \x01(\x03R\rreeditedFilesB\x14\n" +
+	"\x12_tool_failure_rate\"\xbc\x01\n" +
+	"\x0eReworkCoverage\x12+\n" +
+	"\x11activity_coverage\x18\x01 \x01(\tR\x10activityCoverage\x12)\n" +
+	"\x10canonical_events\x18\x02 \x01(\x03R\x0fcanonicalEvents\x12+\n" +
+	"\x11classified_events\x18\x03 \x01(\x03R\x10classifiedEvents\x12%\n" +
+	"\x0eknown_outcomes\x18\x04 \x01(\x03R\rknownOutcomes\"B\n" +
+	"\x12AnalysisCapability\x12\x14\n" +
+	"\x05state\x18\x01 \x01(\tR\x05state\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\xaf\x01\n" +
+	"\x12ReworkCapabilities\x12F\n" +
+	"\rchange_revert\x18\x01 \x01(\v2!.agentmetry.v1.AnalysisCapabilityR\fchangeRevert\x12Q\n" +
+	"\x13cross_agent_overlap\x18\x02 \x01(\v2!.agentmetry.v1.AnalysisCapabilityR\x11crossAgentOverlap\"\x90\x02\n" +
+	"\x18GetSessionReworkResponse\x12\x1b\n" +
+	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x126\n" +
+	"\ametrics\x18\x03 \x01(\v2\x1c.agentmetry.v1.ReworkMetricsR\ametrics\x129\n" +
+	"\bcoverage\x18\x04 \x01(\v2\x1d.agentmetry.v1.ReworkCoverageR\bcoverage\x12E\n" +
+	"\fcapabilities\x18\x05 \x01(\v2!.agentmetry.v1.ReworkCapabilitiesR\fcapabilities\"\x98\x02\n" +
 	"\x1cListSessionActivitiesRequest\x12\x1b\n" +
 	"\tsource_id\x18\x01 \x01(\tR\bsourceId\x12\x1d\n" +
 	"\n" +
@@ -2911,12 +3427,13 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"\x19ActivityMutationOperation\x12+\n" +
 	"'ACTIVITY_MUTATION_OPERATION_UNSPECIFIED\x10\x00\x12&\n" +
 	"\"ACTIVITY_MUTATION_OPERATION_UPSERT\x10\x01\x12&\n" +
-	"\"ACTIVITY_MUTATION_OPERATION_REMOVE\x10\x022\xb9\x06\n" +
+	"\"ACTIVITY_MUTATION_OPERATION_REMOVE\x10\x022\x9e\a\n" +
 	"\x16AgentmetryQueryService\x12W\n" +
 	"\fGetDashboard\x12\".agentmetry.v1.GetDashboardRequest\x1a#.agentmetry.v1.GetDashboardResponse\x12W\n" +
 	"\fListSessions\x12\".agentmetry.v1.ListSessionsRequest\x1a#.agentmetry.v1.ListSessionsResponse\x12Q\n" +
 	"\n" +
-	"GetSession\x12 .agentmetry.v1.GetSessionRequest\x1a!.agentmetry.v1.GetSessionResponse\x12r\n" +
+	"GetSession\x12 .agentmetry.v1.GetSessionRequest\x1a!.agentmetry.v1.GetSessionResponse\x12c\n" +
+	"\x10GetSessionRework\x12&.agentmetry.v1.GetSessionReworkRequest\x1a'.agentmetry.v1.GetSessionReworkResponse\x12r\n" +
 	"\x15ListSessionActivities\x12+.agentmetry.v1.ListSessionActivitiesRequest\x1a,.agentmetry.v1.ListSessionActivitiesResponse\x12K\n" +
 	"\bGetTrace\x12\x1e.agentmetry.v1.GetTraceRequest\x1a\x1f.agentmetry.v1.GetTraceResponse\x12w\n" +
 	"\x16WatchProjectionChanges\x12,.agentmetry.v1.WatchProjectionChangesRequest\x1a-.agentmetry.v1.WatchProjectionChangesResponse0\x01\x12r\n" +
@@ -2937,7 +3454,7 @@ func file_agentmetry_v1_agentmetry_proto_rawDescGZIP() []byte {
 }
 
 var file_agentmetry_v1_agentmetry_proto_enumTypes = make([]protoimpl.EnumInfo, 4)
-var file_agentmetry_v1_agentmetry_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
+var file_agentmetry_v1_agentmetry_proto_msgTypes = make([]protoimpl.MessageInfo, 39)
 var file_agentmetry_v1_agentmetry_proto_goTypes = []any{
 	(TimeRange)(0),                         // 0: agentmetry.v1.TimeRange
 	(PageDirection)(0),                     // 1: agentmetry.v1.PageDirection
@@ -2961,32 +3478,39 @@ var file_agentmetry_v1_agentmetry_proto_goTypes = []any{
 	(*ListSessionsResponse)(nil),           // 19: agentmetry.v1.ListSessionsResponse
 	(*GetSessionRequest)(nil),              // 20: agentmetry.v1.GetSessionRequest
 	(*GetSessionResponse)(nil),             // 21: agentmetry.v1.GetSessionResponse
-	(*ListSessionActivitiesRequest)(nil),   // 22: agentmetry.v1.ListSessionActivitiesRequest
-	(*ListSessionActivitiesResponse)(nil),  // 23: agentmetry.v1.ListSessionActivitiesResponse
-	(*GetTraceRequest)(nil),                // 24: agentmetry.v1.GetTraceRequest
-	(*GetTraceResponse)(nil),               // 25: agentmetry.v1.GetTraceResponse
-	(*ProjectionChangeTarget)(nil),         // 26: agentmetry.v1.ProjectionChangeTarget
-	(*WatchProjectionChangesRequest)(nil),  // 27: agentmetry.v1.WatchProjectionChangesRequest
-	(*WatchProjectionChangesResponse)(nil), // 28: agentmetry.v1.WatchProjectionChangesResponse
-	(*ActivityMutation)(nil),               // 29: agentmetry.v1.ActivityMutation
-	(*SyncSessionActivitiesRequest)(nil),   // 30: agentmetry.v1.SyncSessionActivitiesRequest
-	(*SyncTraceActivitiesRequest)(nil),     // 31: agentmetry.v1.SyncTraceActivitiesRequest
-	(*SyncSessionActivitiesResponse)(nil),  // 32: agentmetry.v1.SyncSessionActivitiesResponse
-	(*SyncTraceActivitiesResponse)(nil),    // 33: agentmetry.v1.SyncTraceActivitiesResponse
-	(*ConversationRef)(nil),                // 34: agentmetry.v1.ConversationRef
-	(*TraceAgent)(nil),                     // 35: agentmetry.v1.TraceAgent
-	(*timestamppb.Timestamp)(nil),          // 36: google.protobuf.Timestamp
+	(*GetSessionReworkRequest)(nil),        // 22: agentmetry.v1.GetSessionReworkRequest
+	(*ApiRetryWaste)(nil),                  // 23: agentmetry.v1.ApiRetryWaste
+	(*ReworkMetrics)(nil),                  // 24: agentmetry.v1.ReworkMetrics
+	(*ReworkCoverage)(nil),                 // 25: agentmetry.v1.ReworkCoverage
+	(*AnalysisCapability)(nil),             // 26: agentmetry.v1.AnalysisCapability
+	(*ReworkCapabilities)(nil),             // 27: agentmetry.v1.ReworkCapabilities
+	(*GetSessionReworkResponse)(nil),       // 28: agentmetry.v1.GetSessionReworkResponse
+	(*ListSessionActivitiesRequest)(nil),   // 29: agentmetry.v1.ListSessionActivitiesRequest
+	(*ListSessionActivitiesResponse)(nil),  // 30: agentmetry.v1.ListSessionActivitiesResponse
+	(*GetTraceRequest)(nil),                // 31: agentmetry.v1.GetTraceRequest
+	(*GetTraceResponse)(nil),               // 32: agentmetry.v1.GetTraceResponse
+	(*ProjectionChangeTarget)(nil),         // 33: agentmetry.v1.ProjectionChangeTarget
+	(*WatchProjectionChangesRequest)(nil),  // 34: agentmetry.v1.WatchProjectionChangesRequest
+	(*WatchProjectionChangesResponse)(nil), // 35: agentmetry.v1.WatchProjectionChangesResponse
+	(*ActivityMutation)(nil),               // 36: agentmetry.v1.ActivityMutation
+	(*SyncSessionActivitiesRequest)(nil),   // 37: agentmetry.v1.SyncSessionActivitiesRequest
+	(*SyncTraceActivitiesRequest)(nil),     // 38: agentmetry.v1.SyncTraceActivitiesRequest
+	(*SyncSessionActivitiesResponse)(nil),  // 39: agentmetry.v1.SyncSessionActivitiesResponse
+	(*SyncTraceActivitiesResponse)(nil),    // 40: agentmetry.v1.SyncTraceActivitiesResponse
+	(*ConversationRef)(nil),                // 41: agentmetry.v1.ConversationRef
+	(*TraceAgent)(nil),                     // 42: agentmetry.v1.TraceAgent
+	(*timestamppb.Timestamp)(nil),          // 43: google.protobuf.Timestamp
 }
 var file_agentmetry_v1_agentmetry_proto_depIdxs = []int32{
 	0,  // 0: agentmetry.v1.TimeFilter.range:type_name -> agentmetry.v1.TimeRange
-	36, // 1: agentmetry.v1.Activity.started_at:type_name -> google.protobuf.Timestamp
-	36, // 2: agentmetry.v1.Activity.ended_at:type_name -> google.protobuf.Timestamp
-	36, // 3: agentmetry.v1.Activity.observed_at:type_name -> google.protobuf.Timestamp
+	43, // 1: agentmetry.v1.Activity.started_at:type_name -> google.protobuf.Timestamp
+	43, // 2: agentmetry.v1.Activity.ended_at:type_name -> google.protobuf.Timestamp
+	43, // 3: agentmetry.v1.Activity.observed_at:type_name -> google.protobuf.Timestamp
 	9,  // 4: agentmetry.v1.Activity.tokens:type_name -> agentmetry.v1.TokenUsage
 	9,  // 5: agentmetry.v1.AgentSummary.tokens:type_name -> agentmetry.v1.TokenUsage
 	7,  // 6: agentmetry.v1.SessionSummary.sources:type_name -> agentmetry.v1.TelemetrySource
-	36, // 7: agentmetry.v1.SessionSummary.started_at:type_name -> google.protobuf.Timestamp
-	36, // 8: agentmetry.v1.SessionSummary.ended_at:type_name -> google.protobuf.Timestamp
+	43, // 7: agentmetry.v1.SessionSummary.started_at:type_name -> google.protobuf.Timestamp
+	43, // 8: agentmetry.v1.SessionSummary.ended_at:type_name -> google.protobuf.Timestamp
 	9,  // 9: agentmetry.v1.SessionSummary.tokens:type_name -> agentmetry.v1.TokenUsage
 	11, // 10: agentmetry.v1.SessionSummary.agents:type_name -> agentmetry.v1.AgentSummary
 	7,  // 11: agentmetry.v1.Dashboard.sources:type_name -> agentmetry.v1.TelemetrySource
@@ -2994,8 +3518,8 @@ var file_agentmetry_v1_agentmetry_proto_depIdxs = []int32{
 	9,  // 13: agentmetry.v1.Dashboard.tokens:type_name -> agentmetry.v1.TokenUsage
 	10, // 14: agentmetry.v1.Dashboard.recent_activity:type_name -> agentmetry.v1.Activity
 	14, // 15: agentmetry.v1.Dashboard.plan_usage:type_name -> agentmetry.v1.PlanUsageSnapshot
-	36, // 16: agentmetry.v1.PlanUsageSnapshot.resets_at:type_name -> google.protobuf.Timestamp
-	36, // 17: agentmetry.v1.PlanUsageSnapshot.captured_at:type_name -> google.protobuf.Timestamp
+	43, // 16: agentmetry.v1.PlanUsageSnapshot.resets_at:type_name -> google.protobuf.Timestamp
+	43, // 17: agentmetry.v1.PlanUsageSnapshot.captured_at:type_name -> google.protobuf.Timestamp
 	4,  // 18: agentmetry.v1.GetDashboardRequest.filter:type_name -> agentmetry.v1.TimeFilter
 	13, // 19: agentmetry.v1.GetDashboardResponse.dashboard:type_name -> agentmetry.v1.Dashboard
 	4,  // 20: agentmetry.v1.ListSessionsRequest.filter:type_name -> agentmetry.v1.TimeFilter
@@ -3003,49 +3527,59 @@ var file_agentmetry_v1_agentmetry_proto_depIdxs = []int32{
 	12, // 22: agentmetry.v1.ListSessionsResponse.sessions:type_name -> agentmetry.v1.SessionSummary
 	6,  // 23: agentmetry.v1.ListSessionsResponse.page:type_name -> agentmetry.v1.PageInfo
 	12, // 24: agentmetry.v1.GetSessionResponse.session:type_name -> agentmetry.v1.SessionSummary
-	5,  // 25: agentmetry.v1.ListSessionActivitiesRequest.page:type_name -> agentmetry.v1.PageRequest
-	1,  // 26: agentmetry.v1.ListSessionActivitiesRequest.direction:type_name -> agentmetry.v1.PageDirection
-	15, // 27: agentmetry.v1.ListSessionActivitiesRequest.anchor:type_name -> agentmetry.v1.ActivityAnchor
-	10, // 28: agentmetry.v1.ListSessionActivitiesResponse.activities:type_name -> agentmetry.v1.Activity
-	6,  // 29: agentmetry.v1.ListSessionActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
-	5,  // 30: agentmetry.v1.GetTraceRequest.page:type_name -> agentmetry.v1.PageRequest
-	36, // 31: agentmetry.v1.GetTraceResponse.started_at:type_name -> google.protobuf.Timestamp
-	36, // 32: agentmetry.v1.GetTraceResponse.ended_at:type_name -> google.protobuf.Timestamp
-	34, // 33: agentmetry.v1.GetTraceResponse.conversations:type_name -> agentmetry.v1.ConversationRef
-	35, // 34: agentmetry.v1.GetTraceResponse.agents:type_name -> agentmetry.v1.TraceAgent
-	10, // 35: agentmetry.v1.GetTraceResponse.activities:type_name -> agentmetry.v1.Activity
-	6,  // 36: agentmetry.v1.GetTraceResponse.page:type_name -> agentmetry.v1.PageInfo
-	2,  // 37: agentmetry.v1.ProjectionChangeTarget.kind:type_name -> agentmetry.v1.ProjectionTargetKind
-	26, // 38: agentmetry.v1.WatchProjectionChangesResponse.targets:type_name -> agentmetry.v1.ProjectionChangeTarget
-	3,  // 39: agentmetry.v1.ActivityMutation.operation:type_name -> agentmetry.v1.ActivityMutationOperation
-	10, // 40: agentmetry.v1.ActivityMutation.activity:type_name -> agentmetry.v1.Activity
-	5,  // 41: agentmetry.v1.SyncSessionActivitiesRequest.page:type_name -> agentmetry.v1.PageRequest
-	5,  // 42: agentmetry.v1.SyncTraceActivitiesRequest.page:type_name -> agentmetry.v1.PageRequest
-	29, // 43: agentmetry.v1.SyncSessionActivitiesResponse.mutations:type_name -> agentmetry.v1.ActivityMutation
-	6,  // 44: agentmetry.v1.SyncSessionActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
-	29, // 45: agentmetry.v1.SyncTraceActivitiesResponse.mutations:type_name -> agentmetry.v1.ActivityMutation
-	6,  // 46: agentmetry.v1.SyncTraceActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
-	16, // 47: agentmetry.v1.AgentmetryQueryService.GetDashboard:input_type -> agentmetry.v1.GetDashboardRequest
-	18, // 48: agentmetry.v1.AgentmetryQueryService.ListSessions:input_type -> agentmetry.v1.ListSessionsRequest
-	20, // 49: agentmetry.v1.AgentmetryQueryService.GetSession:input_type -> agentmetry.v1.GetSessionRequest
-	22, // 50: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:input_type -> agentmetry.v1.ListSessionActivitiesRequest
-	24, // 51: agentmetry.v1.AgentmetryQueryService.GetTrace:input_type -> agentmetry.v1.GetTraceRequest
-	27, // 52: agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges:input_type -> agentmetry.v1.WatchProjectionChangesRequest
-	30, // 53: agentmetry.v1.AgentmetryQueryService.SyncSessionActivities:input_type -> agentmetry.v1.SyncSessionActivitiesRequest
-	31, // 54: agentmetry.v1.AgentmetryQueryService.SyncTraceActivities:input_type -> agentmetry.v1.SyncTraceActivitiesRequest
-	17, // 55: agentmetry.v1.AgentmetryQueryService.GetDashboard:output_type -> agentmetry.v1.GetDashboardResponse
-	19, // 56: agentmetry.v1.AgentmetryQueryService.ListSessions:output_type -> agentmetry.v1.ListSessionsResponse
-	21, // 57: agentmetry.v1.AgentmetryQueryService.GetSession:output_type -> agentmetry.v1.GetSessionResponse
-	23, // 58: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:output_type -> agentmetry.v1.ListSessionActivitiesResponse
-	25, // 59: agentmetry.v1.AgentmetryQueryService.GetTrace:output_type -> agentmetry.v1.GetTraceResponse
-	28, // 60: agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges:output_type -> agentmetry.v1.WatchProjectionChangesResponse
-	32, // 61: agentmetry.v1.AgentmetryQueryService.SyncSessionActivities:output_type -> agentmetry.v1.SyncSessionActivitiesResponse
-	33, // 62: agentmetry.v1.AgentmetryQueryService.SyncTraceActivities:output_type -> agentmetry.v1.SyncTraceActivitiesResponse
-	55, // [55:63] is the sub-list for method output_type
-	47, // [47:55] is the sub-list for method input_type
-	47, // [47:47] is the sub-list for extension type_name
-	47, // [47:47] is the sub-list for extension extendee
-	0,  // [0:47] is the sub-list for field type_name
+	9,  // 25: agentmetry.v1.ApiRetryWaste.tokens:type_name -> agentmetry.v1.TokenUsage
+	9,  // 26: agentmetry.v1.ReworkMetrics.rework_tokens:type_name -> agentmetry.v1.TokenUsage
+	23, // 27: agentmetry.v1.ReworkMetrics.api_retry_waste:type_name -> agentmetry.v1.ApiRetryWaste
+	26, // 28: agentmetry.v1.ReworkCapabilities.change_revert:type_name -> agentmetry.v1.AnalysisCapability
+	26, // 29: agentmetry.v1.ReworkCapabilities.cross_agent_overlap:type_name -> agentmetry.v1.AnalysisCapability
+	24, // 30: agentmetry.v1.GetSessionReworkResponse.metrics:type_name -> agentmetry.v1.ReworkMetrics
+	25, // 31: agentmetry.v1.GetSessionReworkResponse.coverage:type_name -> agentmetry.v1.ReworkCoverage
+	27, // 32: agentmetry.v1.GetSessionReworkResponse.capabilities:type_name -> agentmetry.v1.ReworkCapabilities
+	5,  // 33: agentmetry.v1.ListSessionActivitiesRequest.page:type_name -> agentmetry.v1.PageRequest
+	1,  // 34: agentmetry.v1.ListSessionActivitiesRequest.direction:type_name -> agentmetry.v1.PageDirection
+	15, // 35: agentmetry.v1.ListSessionActivitiesRequest.anchor:type_name -> agentmetry.v1.ActivityAnchor
+	10, // 36: agentmetry.v1.ListSessionActivitiesResponse.activities:type_name -> agentmetry.v1.Activity
+	6,  // 37: agentmetry.v1.ListSessionActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
+	5,  // 38: agentmetry.v1.GetTraceRequest.page:type_name -> agentmetry.v1.PageRequest
+	43, // 39: agentmetry.v1.GetTraceResponse.started_at:type_name -> google.protobuf.Timestamp
+	43, // 40: agentmetry.v1.GetTraceResponse.ended_at:type_name -> google.protobuf.Timestamp
+	41, // 41: agentmetry.v1.GetTraceResponse.conversations:type_name -> agentmetry.v1.ConversationRef
+	42, // 42: agentmetry.v1.GetTraceResponse.agents:type_name -> agentmetry.v1.TraceAgent
+	10, // 43: agentmetry.v1.GetTraceResponse.activities:type_name -> agentmetry.v1.Activity
+	6,  // 44: agentmetry.v1.GetTraceResponse.page:type_name -> agentmetry.v1.PageInfo
+	2,  // 45: agentmetry.v1.ProjectionChangeTarget.kind:type_name -> agentmetry.v1.ProjectionTargetKind
+	33, // 46: agentmetry.v1.WatchProjectionChangesResponse.targets:type_name -> agentmetry.v1.ProjectionChangeTarget
+	3,  // 47: agentmetry.v1.ActivityMutation.operation:type_name -> agentmetry.v1.ActivityMutationOperation
+	10, // 48: agentmetry.v1.ActivityMutation.activity:type_name -> agentmetry.v1.Activity
+	5,  // 49: agentmetry.v1.SyncSessionActivitiesRequest.page:type_name -> agentmetry.v1.PageRequest
+	5,  // 50: agentmetry.v1.SyncTraceActivitiesRequest.page:type_name -> agentmetry.v1.PageRequest
+	36, // 51: agentmetry.v1.SyncSessionActivitiesResponse.mutations:type_name -> agentmetry.v1.ActivityMutation
+	6,  // 52: agentmetry.v1.SyncSessionActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
+	36, // 53: agentmetry.v1.SyncTraceActivitiesResponse.mutations:type_name -> agentmetry.v1.ActivityMutation
+	6,  // 54: agentmetry.v1.SyncTraceActivitiesResponse.page:type_name -> agentmetry.v1.PageInfo
+	16, // 55: agentmetry.v1.AgentmetryQueryService.GetDashboard:input_type -> agentmetry.v1.GetDashboardRequest
+	18, // 56: agentmetry.v1.AgentmetryQueryService.ListSessions:input_type -> agentmetry.v1.ListSessionsRequest
+	20, // 57: agentmetry.v1.AgentmetryQueryService.GetSession:input_type -> agentmetry.v1.GetSessionRequest
+	22, // 58: agentmetry.v1.AgentmetryQueryService.GetSessionRework:input_type -> agentmetry.v1.GetSessionReworkRequest
+	29, // 59: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:input_type -> agentmetry.v1.ListSessionActivitiesRequest
+	31, // 60: agentmetry.v1.AgentmetryQueryService.GetTrace:input_type -> agentmetry.v1.GetTraceRequest
+	34, // 61: agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges:input_type -> agentmetry.v1.WatchProjectionChangesRequest
+	37, // 62: agentmetry.v1.AgentmetryQueryService.SyncSessionActivities:input_type -> agentmetry.v1.SyncSessionActivitiesRequest
+	38, // 63: agentmetry.v1.AgentmetryQueryService.SyncTraceActivities:input_type -> agentmetry.v1.SyncTraceActivitiesRequest
+	17, // 64: agentmetry.v1.AgentmetryQueryService.GetDashboard:output_type -> agentmetry.v1.GetDashboardResponse
+	19, // 65: agentmetry.v1.AgentmetryQueryService.ListSessions:output_type -> agentmetry.v1.ListSessionsResponse
+	21, // 66: agentmetry.v1.AgentmetryQueryService.GetSession:output_type -> agentmetry.v1.GetSessionResponse
+	28, // 67: agentmetry.v1.AgentmetryQueryService.GetSessionRework:output_type -> agentmetry.v1.GetSessionReworkResponse
+	30, // 68: agentmetry.v1.AgentmetryQueryService.ListSessionActivities:output_type -> agentmetry.v1.ListSessionActivitiesResponse
+	32, // 69: agentmetry.v1.AgentmetryQueryService.GetTrace:output_type -> agentmetry.v1.GetTraceResponse
+	35, // 70: agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges:output_type -> agentmetry.v1.WatchProjectionChangesResponse
+	39, // 71: agentmetry.v1.AgentmetryQueryService.SyncSessionActivities:output_type -> agentmetry.v1.SyncSessionActivitiesResponse
+	40, // 72: agentmetry.v1.AgentmetryQueryService.SyncTraceActivities:output_type -> agentmetry.v1.SyncTraceActivitiesResponse
+	64, // [64:73] is the sub-list for method output_type
+	55, // [55:64] is the sub-list for method input_type
+	55, // [55:55] is the sub-list for extension type_name
+	55, // [55:55] is the sub-list for extension extendee
+	0,  // [0:55] is the sub-list for field type_name
 }
 
 func init() { file_agentmetry_v1_agentmetry_proto_init() }
@@ -3057,13 +3591,14 @@ func file_agentmetry_v1_agentmetry_proto_init() {
 	file_agentmetry_v1_agentmetry_proto_msgTypes[6].OneofWrappers = []any{}
 	file_agentmetry_v1_agentmetry_proto_msgTypes[8].OneofWrappers = []any{}
 	file_agentmetry_v1_agentmetry_proto_msgTypes[10].OneofWrappers = []any{}
+	file_agentmetry_v1_agentmetry_proto_msgTypes[20].OneofWrappers = []any{}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_agentmetry_v1_agentmetry_proto_rawDesc), len(file_agentmetry_v1_agentmetry_proto_rawDesc)),
 			NumEnums:      4,
-			NumMessages:   32,
+			NumMessages:   39,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

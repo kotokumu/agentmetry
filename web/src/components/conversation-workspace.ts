@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import "./activity-table";
 import "./agent-tree";
 import "./kpi-card";
+import "./rework-summary";
 import "./session-filter";
 import "./session-list";
 import "./token-chart";
@@ -78,7 +79,7 @@ export class ConversationWorkspace extends LitElement {
       scrollbar-gutter: stable;
     }
     .detail { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; min-width: 0; }
-    .session-head-panel, .operations-panel, .detail > .empty { grid-column: 1 / -1; }
+    .session-head-panel, .operations-panel, .detail > .empty, .detail > am-rework-summary { grid-column: 1 / -1; }
     .traffic-panel { grid-column: span 5; padding-bottom: 12px; }
     .topology-panel { grid-column: span 7; padding-bottom: 12px; }
     .session-head-panel { padding-top: 12px; padding-bottom: 12px; }
@@ -197,6 +198,12 @@ export class ConversationWorkspace extends LitElement {
         <am-kpi-card label="Output tokens" .value=${formatOptionalNumber(selected.tokens.output)} hint="Reported by model calls"></am-kpi-card>
         <am-kpi-card label="Estimated cost" .value=${formatCost(selected.costUsd)} .hint=${selected.costUsd === undefined ? "Not reported" : "Observed telemetry"}></am-kpi-card>
       </div></section>
+      <am-rework-summary
+        .analysis=${this.conversations.rework}
+        .loading=${this.conversations.loadingRework}
+        .error=${this.conversations.reworkFailed ? String(this.conversations.reworkError ?? "Rework analysis unavailable") : ""}
+        @rework-retry-requested=${this.retryRework}
+      ></am-rework-summary>
       <section class="panel traffic-panel"><h2>Observed model traffic</h2><am-token-chart .usage=${selected.tokens}></am-token-chart></section>
       <section class="panel topology-panel"><h2>Agent topology</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section>
       ${this.renderOperations(selected, selectedAgentId, activities)}
@@ -231,6 +238,7 @@ export class ConversationWorkspace extends LitElement {
     this.reportViewStateChanged();
   };
   private readonly retryConversation = () => this.conversations.refreshSelected();
+  private readonly retryRework = () => this.conversations.refreshRework();
   private readonly returnToOrigin = (event: MouseEvent) => this.requestReturn(event, "origin");
   private readonly returnToList = (event: MouseEvent) => this.requestReturn(event, "list");
   private requestReturn(event: MouseEvent, to: "origin" | "list") {

@@ -271,6 +271,61 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 	return result, nil
 }
 
+func (store *Store) GetSessionRework(ctx context.Context, identity query.ConversationIdentity) (query.SessionRework, error) {
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.SessionRework{}, fmt.Errorf("begin session rework snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	ref := sessionRef{sourceID: identity.SourceID(), sessionID: identity.ConversationID()}
+	graph, err := loadSessionGroupWithReader(ctx, transaction, ref)
+	if err != nil {
+		return query.SessionRework{}, err
+	}
+	root := graph.root(ref)
+	summary, err := store.loadSessionSummary(ctx, transaction, root, graph)
+	if err != nil {
+		return query.SessionRework{}, err
+	}
+	activities, err := store.loadSessionReworkActivities(ctx, transaction, root, graph)
+	if err != nil {
+		return query.SessionRework{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.SessionRework{}, fmt.Errorf("commit session rework snapshot: %w", err)
+	}
+	return query.SessionRework{
+		SourceID: root.sourceID,
+		RunID:    root.sessionID,
+		Report:   query.AnalyzeRework(summary, activities),
+	}, nil
+}
+
+func (store *Store) loadSessionReworkActivities(ctx context.Context, reader sqlReader, root sessionRef, graph sessionGraph) ([]query.Activity, error) {
+	members := graph.members(root)
+	memberIDs := make([]string, len(members))
+	for index, member := range members {
+		memberIDs[index] = member.sessionID
+	}
+	activities, err := store.activitiesWindowWithReaderSessions(
+		ctx, reader, formatTime(time.Unix(0, 0)), -1, 0, root.sourceID, memberIDs, true, "",
+	)
+	if err != nil {
+		return nil, err
+	}
+	if len(activities) == 0 {
+		return nil, query.ErrConversationNotFound
+	}
+	for index := range activities {
+		activities[index] = graph.normalizeActivityAgent(activities[index])
+	}
+	usageContributions := selectUsageContributions(activities)
+	for index := range activities {
+		activities[index].ContributesToTotal = usageContributions[index]
+	}
+	return activities, nil
+}
+
 func (store *Store) groupAnchorOffset(ctx context.Context, reader sqlReader, sourceID string, memberIDs []string, agentID, traceID, spanID string, page query.Page) (int, error) {
 	since := formatTime(time.Unix(0, 0))
 	spanWhere, spanArgs := activityWhereSessions("ended_at", since, sourceID, memberIDs, agentID)

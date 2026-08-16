@@ -26,6 +26,7 @@ type Reader interface {
 	query.SessionListReader
 	query.SessionSummaryReader
 	query.SessionActivitiesReader
+	query.SessionReworkReader
 	query.TraceReader
 }
 
@@ -349,6 +350,21 @@ func (server *Server) GetSession(ctx context.Context, request *connect.Request[v
 	}), nil
 }
 
+func (server *Server) GetSessionRework(ctx context.Context, request *connect.Request[v1.GetSessionReworkRequest]) (*connect.Response[v1.GetSessionReworkResponse], error) {
+	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	analysis, err := server.reader.GetSessionRework(ctx, identity)
+	if errors.Is(err, query.ErrConversationNotFound) || errors.Is(err, query.ErrConversationTargetNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(mapSessionRework(analysis)), nil
+}
+
 func (server *Server) ListSessionActivities(ctx context.Context, request *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
 	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
 	if err != nil {
@@ -536,6 +552,32 @@ func mapSession(value query.Session) *v1.SessionSummary {
 		result.CostUsd = value.CostUSD
 	}
 	return result
+}
+
+func mapSessionRework(value query.SessionRework) *v1.GetSessionReworkResponse {
+	report := value.Report
+	return &v1.GetSessionReworkResponse{
+		SourceId: value.SourceID, SessionId: value.RunID,
+		Metrics: &v1.ReworkMetrics{
+			ValidationFailures: report.ValidationFailures, FailFixRetryCycles: report.FailFixRetryCycles,
+			ReworkDurationMs: report.ReworkDuration.Milliseconds(), ReworkTokens: mapTokens(report.ReworkTokens),
+			ToolAttemptsWithOutcome: report.ToolAttemptsWithOutcome, ToolFailures: report.ToolFailures, ToolFailureRate: report.ToolFailureRate,
+			ApiRetryWaste:    &v1.ApiRetryWaste{Attempts: report.APIRetryWaste.Attempts, DurationMs: report.APIRetryWaste.Duration.Milliseconds(), Tokens: mapTokens(report.APIRetryWaste.Tokens)},
+			RepeatedCommands: report.RepeatedCommands, ReeditedFiles: report.ReeditedFiles,
+		},
+		Coverage: &v1.ReworkCoverage{
+			ActivityCoverage: report.Coverage.ActivityCoverage, CanonicalEvents: report.Coverage.CanonicalEvents,
+			ClassifiedEvents: report.Coverage.ClassifiedEvents, KnownOutcomes: report.Coverage.KnownOutcomes,
+		},
+		Capabilities: &v1.ReworkCapabilities{
+			ChangeRevert:      mapAnalysisCapability(report.Capabilities.ChangeRevert),
+			CrossAgentOverlap: mapAnalysisCapability(report.Capabilities.CrossAgentOverlap),
+		},
+	}
+}
+
+func mapAnalysisCapability(value query.AnalysisCapability) *v1.AnalysisCapability {
+	return &v1.AnalysisCapability{State: value.State, Reason: value.Reason}
 }
 
 func mapActivities(values []query.Activity) []*v1.Activity {

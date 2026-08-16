@@ -17,6 +17,33 @@ export type Session = Readonly<{
   activityCount: number; agentCount?: number; tokens: TokenUsage; costUsd?: number; agents: readonly AgentSession[]; activities: readonly Activity[];
   activityOffset?: number; hasEarlier?: boolean; hasMore?: boolean; nextPageToken?: string; previousPageToken?: string;
 }>;
+export type AnalysisCapability = Readonly<{ state: string; reason: string }>;
+export type ReworkAnalysis = Readonly<{
+  sourceId: string;
+  sessionId: string;
+  metrics: Readonly<{
+    validationFailures: number;
+    failFixRetryCycles: number;
+    reworkDurationMs: number;
+    reworkTokens: TokenUsage;
+    toolAttemptsWithOutcome: number;
+    toolFailures: number;
+    toolFailureRate: number | null;
+    apiRetryWaste: Readonly<{ attempts: number; durationMs: number; tokens: TokenUsage }>;
+    repeatedCommands: number;
+    reeditedFiles: number;
+  }>;
+  coverage: Readonly<{
+    activityCoverage: string;
+    canonicalEvents: number;
+    classifiedEvents: number;
+    knownOutcomes: number;
+  }>;
+  capabilities: Readonly<{
+    changeRevert: AnalysisCapability;
+    crossAgentOverlap: AnalysisCapability;
+  }>;
+}>;
 export type ConversationRef = Readonly<{ sourceId: string; id: string }>;
 export type TraceAgent = Readonly<{ sourceId: string; conversationId: string; agentId: string; agentDefinition?: string; agentType?: string; parentAgentId?: string; model?: string }>;
 export type Trace = Readonly<{

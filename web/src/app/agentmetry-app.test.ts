@@ -86,6 +86,28 @@ const activitiesResponse = (session: TestSession, agentId = "") => ({
   total: session.activityCount,
 });
 
+const reworkResponse = (session: TestSession) => ({
+  sourceId: session.sourceId,
+  sessionId: session.id,
+  metrics: {
+    validationFailures: 2,
+    failFixRetryCycles: 1,
+    reworkDurationMs: "3500",
+    reworkTokens: { input: "100", output: "20", total: "120" },
+    toolAttemptsWithOutcome: 4,
+    toolFailures: 1,
+    toolFailureRate: 0.25,
+    apiRetryWaste: { attempts: 1, durationMs: "500", tokens: {} },
+    repeatedCommands: 3,
+    reeditedFiles: 2,
+  },
+  coverage: { activityCoverage: "partial_page", canonicalEvents: 8, classifiedEvents: 7, knownOutcomes: 4 },
+  capabilities: {
+    changeRevert: { state: "unavailable", reason: "needs diffs" },
+    crossAgentOverlap: { state: "unavailable", reason: "needs identities" },
+  },
+});
+
 const connectPath = (url: string) => new URL(url, "http://localhost").pathname;
 const connectBody = (call: readonly unknown[]) => JSON.parse(new TextDecoder().decode((call[1] as { body: Uint8Array }).body));
 const workspaceOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<ConversationWorkspace>("am-conversation-workspace");
@@ -101,6 +123,7 @@ const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(asy
     case "ListSessions": return connectResponse(sessionsResponse(overview));
     case "GetSession": return connectResponse(overview.sessions[0] ? { session: sessionSummary(overview.sessions[0]), traceIds: overview.sessions[0].traceIds ?? [] } : {});
     case "ListSessionActivities": return connectResponse(overview.sessions[0] ? activitiesResponse(overview.sessions[0], body.agentId) : { activities: [], page: { hasMore: false }, total: 0 });
+    case "GetSessionRework": return connectResponse(overview.sessions[0] ? reworkResponse(overview.sessions[0]) : {});
     default: return connectResponse({});
   }
 });
@@ -113,6 +136,39 @@ afterEach(() => {
 });
 
 describe("Agentmetry app composition", () => {
+  it("shows normalized rework indicators in the selected conversation", async () => {
+    const overview = {
+      ...emptyOverview,
+      sessions: [{
+        id: "session-rework",
+        sourceId: "codex",
+        sources: [{ id: "codex", label: "Codex" }],
+        startedAt: "2026-08-11T00:00:00Z",
+        endedAt: "2026-08-11T00:01:00Z",
+        activityCount: 8,
+        tokens: emptyOverview.tokens,
+        agents: [],
+        activities: [],
+      }],
+    } as TestOverview;
+    vi.stubGlobal("fetch", overviewFetch(overview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    const panel = await vi.waitFor(() => {
+      const result = workspaceRootOf(app)?.querySelector("am-rework-summary");
+      expect(result).not.toBeNull();
+      expect((result?.shadowRoot?.textContent ?? "")).toContain("Development rework");
+      return result;
+    });
+    const cards = Array.from(panel?.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? []);
+    await Promise.all(cards.map((card) => card.updateComplete));
+
+    expect(cards).toHaveLength(8);
+    expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("25.0%");
+    expect(panel?.shadowRoot?.textContent).toContain("Partial evidence");
+  });
+
   it("returns a removed trace route to the filtered dashboard", async () => {
     history.replaceState({}, "", "/traces/trace-gone?range=7d");
     vi.stubGlobal("fetch", overviewFetch(emptyOverview));

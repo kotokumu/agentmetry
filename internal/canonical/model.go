@@ -15,6 +15,11 @@ type Signal string
 
 type ActivityKind string
 
+// Operation is the producer-neutral development action used by session
+// efficiency analysis. It is intentionally smaller than the provider tool
+// vocabulary so Claude and Codex activities can be compared.
+type Operation string
+
 const (
 	SignalTrace  Signal = "trace"
 	SignalLog    Signal = "log"
@@ -27,7 +32,45 @@ const (
 	ActivityDelegation ActivityKind = "delegation"
 	ActivityMessage    ActivityKind = "message"
 	ActivityReasoning  ActivityKind = "reasoning"
+
+	OperationRead    Operation = "read"
+	OperationEdit    Operation = "edit"
+	OperationExecute Operation = "execute"
+	OperationTest    Operation = "test"
+	OperationBuild   Operation = "build"
+	OperationLint    Operation = "lint"
+	OperationAPICall Operation = "api_call"
+	OperationOther   Operation = "other"
 )
+
+type EventTarget struct {
+	File    string `json:"file,omitempty"`
+	Command string `json:"command,omitempty"`
+}
+
+// Event is a read-time, producer-neutral projection used by analyzers. Success
+// is optional because missing outcome telemetry must not be interpreted as a
+// successful attempt.
+type Event struct {
+	Source             string        `json:"source"`
+	RunID              string        `json:"runId"`
+	AgentID            string        `json:"agentId,omitempty"`
+	ParentAgentID      string        `json:"parentAgentId,omitempty"`
+	Operation          Operation     `json:"operation"`
+	Target             EventTarget   `json:"target"`
+	Success            *bool         `json:"success"`
+	StartedAt          time.Time     `json:"startedAt"`
+	EndedAt            time.Time     `json:"endedAt"`
+	ObservedAt         time.Time     `json:"observedAt"`
+	Duration           time.Duration `json:"duration"`
+	Tokens             TokenUsage    `json:"tokenUsage"`
+	ContributesToTotal bool          `json:"-"`
+	TraceID            string        `json:"traceId,omitempty"`
+	SpanID             string        `json:"spanId,omitempty"`
+	Name               string        `json:"name"`
+	ToolName           string        `json:"toolName,omitempty"`
+	Tool               bool          `json:"-"`
+}
 
 type TokenUsage struct {
 	// Input is the complete input count. Provider adapters must include cache

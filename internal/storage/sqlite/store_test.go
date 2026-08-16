@@ -135,6 +135,102 @@ func TestCommitBatchReplacesSpanRevisionAndBuildsOverview(t *testing.T) {
 	}
 }
 
+func TestListSessionActivitiesHydratesInternalAnalysisAttributes(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	span := canonical.Span{
+		Source: "codex", TraceID: "trace-attributes", SpanID: "span-attributes",
+		Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command",
+		StartedAt: now.Add(-time.Second), EndedAt: now,
+		Attributes: map[string]any{"arguments": map[string]any{"cmd": "go test ./..."}, "exit_code": 1, "gen_ai.usage.role": "authoritative_call"},
+		Agent: canonical.AgentContext{
+			RunID:  "run-attributes",
+			Tokens: canonical.TokenUsage{Input: 10, Presence: canonical.TokenPresence{Output: true}},
+		},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+
+	page, err := database.ListSessionActivities(context.Background(), query.ActivityPageFilter{
+		Identity: mustConversationIdentity(t, "codex", "run-attributes"), Page: mustPage(t, 0, 100),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Activities) != 1 {
+		t.Fatalf("activities = %#v", page.Activities)
+	}
+	arguments, ok := page.Activities[0].Attributes["arguments"].(map[string]any)
+	if !ok || arguments["cmd"] != "go test ./..." {
+		t.Fatalf("analysis attributes were not hydrated: %#v", page.Activities[0].Attributes)
+	}
+}
+
+func TestGetSessionReworkAnalyzesTheCompleteStoredSession(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	start := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	spans := []canonical.Span{
+		{Source: "codex", TraceID: "trace-rework", SpanID: "fail", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start, EndedAt: start.Add(time.Second), Status: "Error", Attributes: map[string]any{"command": "go test ./..."}, Agent: canonical.AgentContext{RunID: "run-rework"}},
+		{Source: "codex", TraceID: "trace-rework", SpanID: "edit", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "apply_patch", StartedAt: start.Add(2 * time.Second), EndedAt: start.Add(3 * time.Second), Status: "Ok", Attributes: map[string]any{"file_path": "main.go"}, Agent: canonical.AgentContext{RunID: "run-rework"}},
+		{Source: "codex", TraceID: "trace-rework", SpanID: "retry", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start.Add(4 * time.Second), EndedAt: start.Add(5 * time.Second), Status: "Ok", Attributes: map[string]any{"command": "go test ./..."}, Agent: canonical.AgentContext{RunID: "run-rework"}},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalTrace, Spans: spans}); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := database.GetSessionRework(context.Background(), mustConversationIdentity(t, "codex", "run-rework"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.SourceID != "codex" || analysis.RunID != "run-rework" || analysis.Report.ValidationFailures != 1 || analysis.Report.FailFixRetryCycles != 1 {
+		t.Fatalf("unexpected session rework analysis: %#v", analysis)
+	}
+	if analysis.Report.ReworkDuration != 3*time.Second || analysis.Report.Coverage.ActivityCoverage != query.ActivityCoverageComplete {
+		t.Fatalf("unexpected effort/coverage: %#v", analysis.Report)
+	}
+}
+
+func TestGetSessionReworkAggregatesChildActivitiesIntoCanonicalRoot(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	start := time.Date(2026, 8, 16, 0, 0, 0, 0, time.UTC)
+	spans := []canonical.Span{
+		{Source: "codex", TraceID: "trace-child-rework", SpanID: "fail", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start, EndedAt: start.Add(time.Second), Status: "Error", Attributes: map[string]any{"command": "go test ./..."}, Agent: canonical.AgentContext{RunID: "child"}},
+		{Source: "codex", TraceID: "trace-child-rework", SpanID: "edit", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "apply_patch", StartedAt: start.Add(2 * time.Second), EndedAt: start.Add(3 * time.Second), Status: "Ok", Attributes: map[string]any{"file_path": "main.go"}, Agent: canonical.AgentContext{RunID: "child"}},
+		{Source: "codex", TraceID: "trace-child-rework", SpanID: "retry", Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start.Add(4 * time.Second), EndedAt: start.Add(5 * time.Second), Status: "Ok", Attributes: map[string]any{"command": "go test ./..."}, Agent: canonical.AgentContext{RunID: "child"}},
+	}
+	batch := canonical.Batch{
+		Signal: canonical.SignalTrace,
+		Spans:  spans,
+		SessionLinks: []canonical.SessionLink{{
+			Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: start,
+		}},
+	}
+	if err := database.CommitBatch(context.Background(), batch); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := database.GetSessionRework(context.Background(), mustConversationIdentity(t, "codex", "child"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if analysis.RunID != "parent" || analysis.Report.ValidationFailures != 1 || analysis.Report.FailFixRetryCycles != 1 {
+		t.Fatalf("aggregated child rework = %#v", analysis)
+	}
+}
+
 func TestSpanRevisionRepairsSessionTimeExtrema(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

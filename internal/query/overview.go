@@ -58,6 +58,7 @@ type Activity struct {
 	RelatedTraceID     string                 `json:"relatedTraceId,omitempty"`
 	RelatedSpanID      string                 `json:"relatedSpanId,omitempty"`
 	UsageRole          string                 `json:"-"`
+	Attributes         map[string]any         `json:"-"`
 }
 
 type AgentSession struct {

@@ -46,6 +46,34 @@ customElements.define("test-trace-host", TraceHost);
 afterEach(() => document.body.replaceChildren());
 
 describe("Lit data controllers", () => {
+
+  it("loads rework for the selected source-qualified conversation and never exposes stale identity", async () => {
+    const first = session([]);
+    const second = { ...first, id: "session-2" };
+    const getSessionRework = vi.fn().mockImplementation((_sourceId: string, sessionId: string) => Promise.resolve({
+      sourceId: "codex", sessionId,
+      metrics: { validationFailures: sessionId === "session-2" ? 2 : 1, failFixRetryCycles: 0, reworkDurationMs: 0, reworkTokens: tokens, toolAttemptsWithOutcome: 0, toolFailures: 0, toolFailureRate: null, apiRetryWaste: { attempts: 0, durationMs: 0, tokens }, repeatedCommands: 0, reeditedFiles: 0 },
+      coverage: { activityCoverage: "observed_projection_complete", canonicalEvents: 1, classifiedEvents: 1, knownOutcomes: 0 },
+      capabilities: { changeRevert: { state: "unavailable", reason: "needs diffs" }, crossAgentOverlap: { state: "unavailable", reason: "needs identities" } },
+    }));
+    const client = {
+      listSessions: vi.fn().mockResolvedValue([first, second]),
+      getSession: vi.fn().mockImplementation((_sourceId: string, sessionId: string) => Promise.resolve(sessionId === "session-2" ? second : first)),
+      getSessionRework,
+    } as unknown as AgentmetryClient;
+    conversationsClient = client;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+
+    await vi.waitFor(() => expect(host.conversations.rework?.sessionId).toBe("session-1"));
+    host.conversations.select({ sourceId: "codex", conversationId: "session-2" });
+    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-2"));
+    await vi.waitFor(() => expect(host.conversations.rework?.sessionId).toBe("session-2"));
+
+    expect(host.conversations.rework?.metrics.validationFailures).toBe(2);
+    expect(getSessionRework).toHaveBeenLastCalledWith("codex", "session-2", expect.any(AbortSignal));
+  });
+
   it("does not expose sessions from the previous filter while reloading", async () => {
     let resolveFiltered!: (sessions: readonly Session[]) => void;
     const filtered = new Promise<readonly Session[]>((resolve) => { resolveFiltered = resolve; });
@@ -174,6 +202,34 @@ describe("Lit data controllers", () => {
     await host.conversations.applyLiveUpdate({ resyncRequired: false, throughCursor: "cursor-1", targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "session-1", traceId: "" }] });
 
 	expect(host.conversations.selected?.activities.map(({ name }) => name)).toEqual(["new", "updated", "older"]);
+  });
+
+  it("refreshes the selected session rework analysis after a live update", async () => {
+    const current = session([{ ...activity("current"), id: "current" }]);
+    const rework = (validationFailures: number) => ({
+      sourceId: "codex", sessionId: "session-1",
+      metrics: { validationFailures, failFixRetryCycles: 0, reworkDurationMs: 0, reworkTokens: tokens, toolAttemptsWithOutcome: 0, toolFailures: 0, toolFailureRate: null, apiRetryWaste: { attempts: 0, durationMs: 0, tokens }, repeatedCommands: 0, reeditedFiles: 0 },
+      coverage: { activityCoverage: "observed_projection_complete", canonicalEvents: 1, classifiedEvents: 1, knownOutcomes: 0 },
+      capabilities: { changeRevert: { state: "unavailable", reason: "needs diffs" }, crossAgentOverlap: { state: "unavailable", reason: "needs identities" } },
+    });
+    const getSessionRework = vi.fn().mockResolvedValueOnce(rework(1)).mockResolvedValueOnce(rework(2));
+    conversationsClient = {
+      listSessions: vi.fn().mockResolvedValue([current]),
+      getSession: vi.fn().mockResolvedValue(current),
+      getSessionRework,
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+    await vi.waitFor(() => expect(host.conversations.rework?.metrics.validationFailures).toBe(1));
+
+    await host.conversations.applyLiveUpdate({
+      resyncRequired: false,
+      throughCursor: "cursor-1",
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "session-1", traceId: "" }],
+    });
+
+    await vi.waitFor(() => expect(host.conversations.rework?.metrics.validationFailures).toBe(2));
+    expect(getSessionRework).toHaveBeenCalledTimes(2);
   });
 
   it("keeps an agent-filtered resident page populated while establishing live sync", async () => {

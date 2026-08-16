@@ -167,7 +167,7 @@ const activityByIDStatement = `SELECT stored_activity_id, activity_key, source, 
   started_at, ended_at, observed_at, status, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id
+  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id, attributes_json
 FROM (
   SELECT activity_id AS stored_activity_id, 'span:' || trace_id || ':' || span_id AS activity_key, source, 'trace' AS signal,
     trace_id, span_id, parent_span_id, name, activity_kind, tool_name, target_agent_id,
@@ -178,7 +178,8 @@ FROM (
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') AS usage_role,
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), '') AS prompt_id,
-    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '') AS usage_id
+    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '') AS usage_id,
+    attributes_json
   FROM spans WHERE activity_id = ?
   UNION ALL
   SELECT activity_id, 'log:' || id, source, 'log', trace_id, span_id, '', name, activity_kind,
@@ -189,7 +190,8 @@ FROM (
     cache_read_tokens_reported, cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
-    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
+    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), ''),
+    attributes_json
   FROM logs WHERE activity_id = ?
 )`
 

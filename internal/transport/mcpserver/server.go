@@ -140,6 +140,35 @@ type FindingsOutput struct {
 	Metadata AnalysisMetadataOutput `json:"metadata"`
 }
 
+type APIRetryWasteOutput struct {
+	Attempts   int64            `json:"attempts"`
+	DurationMs int64            `json:"durationMs"`
+	Tokens     TokenUsageOutput `json:"tokens"`
+}
+
+type ReworkMetricsOutput struct {
+	ValidationFailures      int64               `json:"validationFailures"`
+	FailFixRetryCycles      int64               `json:"failFixRetryCycles"`
+	ReworkDurationMs        int64               `json:"reworkDurationMs"`
+	ReworkTokens            TokenUsageOutput    `json:"reworkTokens"`
+	ToolAttemptsWithOutcome int64               `json:"toolAttemptsWithOutcome"`
+	ToolFailures            int64               `json:"toolFailures"`
+	ToolFailureRate         *float64            `json:"toolFailureRate"`
+	APIRetryWaste           APIRetryWasteOutput `json:"apiRetryWaste"`
+	RepeatedCommands        int64               `json:"repeatedCommands"`
+	ReeditedFiles           int64               `json:"reeditedFiles"`
+}
+
+type ReworkAnalysisOutput struct {
+	SourceID     string                   `json:"sourceId"`
+	RunID        string                   `json:"runId"`
+	Metrics      ReworkMetricsOutput      `json:"metrics"`
+	Cycles       []query.ReworkCycle      `json:"cycles"`
+	Coverage     query.ReworkCoverage     `json:"coverage"`
+	Capabilities query.ReworkCapabilities `json:"capabilities"`
+	Metadata     AnalysisMetadataOutput   `json:"metadata"`
+}
+
 type CompareRunsInput struct {
 	Runs       []RunReference `json:"runs" jsonschema:"Required list of source-qualified runs. Maximum 10."`
 	Dimensions []string       `json:"dimensions,omitempty" jsonschema:"Optional metrics: wallDuration, activityCount, agentCount, totalTokens, costUsd."`
@@ -395,6 +424,10 @@ func New(reader Reader, now Clock) http.Handler {
 		Description: "Finds only explicit error and missing-delegation-target evidence for one run; it does not infer hidden coordination failures.",
 	}, service.findCoordinationRisks)
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "analyze_rework", Title: "Analyze session rework",
+		Description: "Normalizes producer telemetry and calculates evidence-backed failure, retry, rework, tool failure, API waste, repeated-command, and repeated-file-edit indicators for one explicit run.",
+	}, service.analyzeRework)
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "compare_runs", Title: "Compare development runs",
 		Description: "Compares up to 10 explicitly named source-qualified runs using observed summary metrics.",
 	}, service.compareRuns)
@@ -454,6 +487,7 @@ func (service *Service) getAgentContext(context.Context, *mcp.CallToolRequest, A
 			{Name: "get_token_usage", Purpose: "Compare observed token usage", Required: []string{"source", "runId"}, Returns: []string{"run total", "agent breakdown"}},
 			{Name: "find_bottlenecks", Purpose: "Find long observed activities", Required: []string{"source", "runId"}, Returns: []string{"evidence-backed findings"}},
 			{Name: "find_coordination_risks", Purpose: "Find explicit coordination evidence", Required: []string{"source", "runId"}, Returns: []string{"error and missing-target findings"}},
+			{Name: "analyze_rework", Purpose: "Measure observed development rework", Required: []string{"source", "runId"}, Returns: []string{"validation failures", "fail-fix-retry cycles", "rework duration and tokens", "tool failure rate", "API retry waste", "repeated commands and file edits", "capability limits"}},
 			{Name: "compare_runs", Purpose: "Compare explicitly selected runs", Required: []string{"runs"}, Optional: []string{"dimensions"}, Returns: []string{"observed summary metrics"}},
 			{Name: "get_source_capabilities", Purpose: "Explain source observability limits", Optional: []string{"source"}, Returns: []string{"available/conditional/unavailable capability matrix"}},
 		},
@@ -521,6 +555,29 @@ func (service *Service) findCoordinationRisks(ctx context.Context, _ *mcp.CallTo
 		return nil, FindingsOutput{}, err
 	}
 	return nil, FindingsOutput{SourceID: summary.SourceID, RunID: summary.ID, Findings: mapFindings(query.FindCoordinationRisks(summary, activities)), Metadata: analysisMetadata(query.ActivityCoverage(summary, activities), "Only explicit error and delegation-target evidence is reported; hidden coordination failures are not inferred.")}, nil
+}
+
+func (service *Service) analyzeRework(ctx context.Context, _ *mcp.CallToolRequest, input RunContextInput) (*mcp.CallToolResult, ReworkAnalysisOutput, error) {
+	summary, activities, err := service.loadRunAnalysis(ctx, input)
+	if err != nil {
+		return nil, ReworkAnalysisOutput{}, err
+	}
+	report := query.AnalyzeRework(summary, activities)
+	return nil, ReworkAnalysisOutput{
+		SourceID: summary.SourceID,
+		RunID:    summary.ID,
+		Metrics: ReworkMetricsOutput{
+			ValidationFailures: report.ValidationFailures, FailFixRetryCycles: report.FailFixRetryCycles,
+			ReworkDurationMs: report.ReworkDuration.Milliseconds(), ReworkTokens: mapTokens(report.ReworkTokens),
+			ToolAttemptsWithOutcome: report.ToolAttemptsWithOutcome, ToolFailures: report.ToolFailures,
+			ToolFailureRate:  report.ToolFailureRate,
+			APIRetryWaste:    APIRetryWasteOutput{Attempts: report.APIRetryWaste.Attempts, DurationMs: report.APIRetryWaste.Duration.Milliseconds(), Tokens: mapTokens(report.APIRetryWaste.Tokens)},
+			RepeatedCommands: report.RepeatedCommands, ReeditedFiles: report.ReeditedFiles,
+		},
+		Cycles: append([]query.ReworkCycle{}, report.Cycles...), Coverage: report.Coverage,
+		Capabilities: report.Capabilities,
+		Metadata:     analysisMetadata(report.Coverage.ActivityCoverage, "Rework is an observed operational proxy. Missing outcomes are excluded; retry matching is heuristic and source attribute coverage may vary."),
+	}, nil
 }
 
 func (service *Service) compareRuns(ctx context.Context, _ *mcp.CallToolRequest, input CompareRunsInput) (*mcp.CallToolResult, CompareRunsOutput, error) {

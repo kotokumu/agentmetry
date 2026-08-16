@@ -20,6 +20,7 @@ import type {
   AgentSession,
   DashboardSummary,
   PlanUsageSnapshot as PlanUsage,
+  ReworkAnalysis,
   Session,
   TimeRange as UiTimeRange,
   TokenUsage,
@@ -87,6 +88,44 @@ export const agentmetryClient = {
 	const session = await this.getSessionSummary(sourceId, sessionId, signal);
     const page = await this.listSessionActivities(sourceId, sessionId, "older", 0, 100, "", traceId, spanId, undefined, signal);
     return { ...session, activities: page.activities, activityOffset: page.offset, hasEarlier: page.hasEarlier, hasMore: page.hasMore, nextPageToken: page.nextPageToken, previousPageToken: page.previousPageToken };
+  },
+
+  async getSessionRework(sourceId: string, sessionId: string, signal?: AbortSignal): Promise<ReworkAnalysis> {
+    const response = await client.getSessionRework({ sourceId, sessionId }, signal ? { signal } : undefined);
+    if (!response.metrics || !response.coverage || !response.capabilities?.changeRevert || !response.capabilities.crossAgentOverlap) {
+      throw new Error("Session rework response was incomplete");
+    }
+    const metrics = response.metrics;
+    return {
+      sourceId: response.sourceId,
+      sessionId: response.sessionId,
+      metrics: {
+        validationFailures: Number(metrics.validationFailures),
+        failFixRetryCycles: Number(metrics.failFixRetryCycles),
+        reworkDurationMs: Number(metrics.reworkDurationMs),
+        reworkTokens: mapTokens(metrics.reworkTokens),
+        toolAttemptsWithOutcome: Number(metrics.toolAttemptsWithOutcome),
+        toolFailures: Number(metrics.toolFailures),
+        toolFailureRate: metrics.toolFailureRate === undefined ? null : metrics.toolFailureRate,
+        apiRetryWaste: {
+          attempts: Number(metrics.apiRetryWaste?.attempts ?? 0),
+          durationMs: Number(metrics.apiRetryWaste?.durationMs ?? 0),
+          tokens: mapTokens(metrics.apiRetryWaste?.tokens),
+        },
+        repeatedCommands: Number(metrics.repeatedCommands),
+        reeditedFiles: Number(metrics.reeditedFiles),
+      },
+      coverage: {
+        activityCoverage: response.coverage.activityCoverage,
+        canonicalEvents: Number(response.coverage.canonicalEvents),
+        classifiedEvents: Number(response.coverage.classifiedEvents),
+        knownOutcomes: Number(response.coverage.knownOutcomes),
+      },
+      capabilities: {
+        changeRevert: { state: response.capabilities.changeRevert.state, reason: response.capabilities.changeRevert.reason },
+        crossAgentOverlap: { state: response.capabilities.crossAgentOverlap.state, reason: response.capabilities.crossAgentOverlap.reason },
+      },
+    };
   },
 
   async getSessionSummary(sourceId: string, sessionId: string, signal?: AbortSignal): Promise<Session> {
