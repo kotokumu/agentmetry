@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.8.0](https://github.com/kotokumu/agentmetry/compare/v1.7.0...v1.8.0) (2026-08-16)
+
+
+### Features
+
+* **diagnostics:** compare session rework ([cfb6510](https://github.com/kotokumu/agentmetry/commit/cfb65100a28883dd591e60f12899adac81e2146f))
+* **diagnostics:** compare session rework ([f48ef38](https://github.com/kotokumu/agentmetry/commit/f48ef3834c04f290f37b27ce4c556cc28035657e))
+* **rework:** detect recurring failure episodes ([d0fbb66](https://github.com/kotokumu/agentmetry/commit/d0fbb660bccc6921f50e220b0f5b76ef4adb1927))
+* **rework:** detect recurring failure episodes ([5181790](https://github.com/kotokumu/agentmetry/commit/518179078a20828f3ba8b8281788a8d2326d993b))
+
 ## [1.7.0](https://github.com/kotokumu/agentmetry/compare/v1.6.0...v1.7.0) (2026-08-16)
 
 
