@@ -194,6 +194,7 @@ export class ConversationsController {
     const session = this.selected;
     if (!session || (!window.resyncRequired && !affectsSession(window.targets, session.sourceId, session.id))) return;
     const request = ++this.liveRequest;
+    const agentPage = this.agentActivityPage;
     this.activityRequest += 1;
     this.activityAbort?.abort();
     this.activityPage = undefined;
@@ -228,9 +229,9 @@ export class ConversationsController {
           pageToken = page.nextPageToken;
         }
       }
-      // A fresh, bounded head window also refreshes the paging boundary. This
-      // prevents an insertion/removal racing with "load older" from creating
-      // offset gaps while keeping the transfer capped at 100 activities.
+      // The bounded head is authoritative for overlapping activity IDs. Loaded
+      // history stays resident during a normal incremental refresh so reading
+      // context is not replaced by the head-only snapshot.
       let latest: Session;
       try {
         latest = await this.client.getSession(session.sourceId, session.id, undefined, undefined, abort.signal);
@@ -241,24 +242,39 @@ export class ConversationsController {
         return;
       }
       if (request !== this.liveRequest || abort.signal.aborted || this.target?.sourceId !== session.sourceId || this.target.conversationId !== session.id) return;
-      const mergedActivities = incremental
+      const preserveResidentWindow = !window.resyncRequired && !membershipMayHaveChanged && (incremental || !this.syncCursor);
+      const activities = preserveResidentWindow
         ? applyActivityMutations([...session.activities, ...latest.activities], mutations)
         : latest.activities;
-      // Once the resident cap is reached, old pages can no longer share the
-      // bounded head's opaque continuation token. Replace with the contiguous
-      // authoritative head instead of publishing mismatched paging metadata.
-      const activities = incremental && (session.activities.length >= 2000 || mergedActivities.length >= 2000)
-        ? latest.activities
-        : mergedActivities;
       this.sessionOverride = {
         ...latest,
         activities,
         activityOffset: 0,
         hasEarlier: false,
         hasMore: activities.length < latest.activityCount,
+        nextPageToken: preserveResidentWindow ? session.nextPageToken ?? latest.nextPageToken : latest.nextPageToken,
       };
       if (this.removedSessionKey === sessionKey(session.sourceId, session.id)) this.removedSessionKey = "";
-      this.agentActivityPage = undefined;
+      if (agentPage?.sessionId === session.id && agentPage.sourceId === session.sourceId && agentPage.agentId === this.selectedAgentId) {
+        const agent = latest.agents.find(({ agentId }) => agentId === agentPage.agentId);
+        const agentActivities = preserveResidentWindow
+          ? applyActivityMutations(
+            [...agentPage.activities, ...latest.activities.filter(({ agentId }) => agentId === agentPage.agentId)],
+            mutations,
+            ({ agentId }) => agentId === agentPage.agentId,
+          )
+          : latest.activities.filter(({ agentId }) => agentId === agentPage.agentId);
+        this.agentActivityPage = {
+          ...agentPage,
+          activities: agentActivities,
+          total: agent?.activityCount ?? agentActivities.length,
+          offset: 0,
+          hasEarlier: false,
+          hasMore: agentActivities.length < (agent?.activityCount ?? agentActivities.length),
+          loading: false,
+          error: undefined,
+        };
+      }
       this.syncCursor = convergedCursor;
       this.host.requestUpdate();
     } catch (error) {
@@ -413,16 +429,18 @@ export class ConversationsController {
 const activityIdentity = (activity: Session["activities"][number]) => activity.id ?? `${activity.signal}\u0000${activity.traceId ?? ""}\u0000${activity.spanId ?? ""}\u0000${activity.observedAt}\u0000${activity.name}`;
 const sessionKey = (sourceId: string, sessionId: string) => `${sourceId}\u0000${sessionId}`;
 
-const applyActivityMutations = (current: Session["activities"], mutations: readonly ActivityMutation[]) => {
+const applyActivityMutations = (
+  current: Session["activities"],
+  mutations: readonly ActivityMutation[],
+  accepts: (activity: Session["activities"][number]) => boolean = () => true,
+) => {
   const values = new Map(current.map((activity) => [activityIdentity(activity), activity]));
   for (const mutation of mutations) {
-    if (mutation.operation === "remove") values.delete(mutation.activityId);
-    else if (mutation.activity) values.set(mutation.activityId, mutation.activity);
+    if (mutation.operation === "remove" || !mutation.activity || !accepts(mutation.activity)) values.delete(mutation.activityId);
+    else values.set(mutation.activityId, mutation.activity);
   }
-  const result = [...values.values()];
-  if (mutations.length > 0) {
-    result.sort((left, right) => right.observedAt.localeCompare(left.observedAt) || activityIdentity(left).localeCompare(activityIdentity(right)));
-  }
+  const result = [...values.values()].filter(accepts);
+  result.sort((left, right) => right.observedAt.localeCompare(left.observedAt) || activityIdentity(left).localeCompare(activityIdentity(right)));
   return result.slice(0, 2000);
 };
 

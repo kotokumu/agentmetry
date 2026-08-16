@@ -145,11 +145,17 @@ non-OTLP projections can participate in the same ordered stream.
   and returns to the filtered list. Removing only the conversation that opened
   a still-valid trace clears that return origin without closing the trace.
 - Activity pagination and live synchronization are serialized per view. A live
-  update cancels an in-flight page and obtains a new bounded head/token before
-  paging resumes, so stale offsets are never continued after a mutation window.
-- When a resident activity set has reached 2,000 items, the next live update
-  replaces it with the contiguous authoritative head. This keeps opaque paging
-  tokens aligned with the represented window.
+  update cancels an in-flight page and obtains a new bounded head before paging
+  resumes. A normal incremental update retains the resident continuation
+  boundary; keyed page merging absorbs any overlap caused by a live insertion.
+  An explicit resync replaces both resident rows and continuation metadata.
+- A live update merges the authoritative head and keyed mutations into the
+  resident activity set without discarding loaded history. At the 2,000-item
+  limit, the newest keyed items remain resident and only the oldest tail is
+  evicted.
+- While a user is reading away from the live edge, the activity table preserves
+  the first visible stable activity identity and its viewport position. Keyed
+  rows also preserve local interaction state such as expanded message content.
 
 ## Acceptance Criteria
 
@@ -418,8 +424,8 @@ stream cancellation, sync paging cancellation, and unavailable reconnects.
    snapshot and adopts the server-provided through cursor.
 13. Keyed state keeps at most 2,000 activities and ActivityTable renders at most
    200 rows. Loaded sub-windows are navigated without mounting the entire
-   resident collection. At capacity, a live mutation replaces resident state
-   with a contiguous head window so its opaque continuation remains valid.
+   resident collection. Live head mutations retain the loaded reading window;
+   at capacity they evict only the oldest resident activities.
 14. The store uses a single writer connection and a four-connection read pool.
    Live streams are capped at eight. Notification queue memory is O(1), while the
    explicitly bounded subscriber state is O(N).
