@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.7.0](https://github.com/kotokumu/agentmetry/compare/v1.6.0...v1.7.0) (2026-08-16)
+
+
+### Features
+
+* **rework:** normalize session rework rates ([a1eb370](https://github.com/kotokumu/agentmetry/commit/a1eb370b927235dd5fe7cd41ff85f37c028ee655))
+* **rework:** normalize session rework rates ([8cdf5b8](https://github.com/kotokumu/agentmetry/commit/8cdf5b8221d23a74526a61a201d3f859caf9b04b))
+
+
+### Bug Fixes
+
+* **product:** establish production identity and documentation ([cfa2280](https://github.com/kotokumu/agentmetry/commit/cfa228075cddf7ac09ef8d88a2269a9f479de9ef))
+* **product:** establish production identity and documentation ([37210cb](https://github.com/kotokumu/agentmetry/commit/37210cbe159d8cc4ce070eb92ebfe81473bb42f8))
+* **release:** align product metadata with 1.6.0 ([d17c880](https://github.com/kotokumu/agentmetry/commit/d17c880987de29ed90749c109dced32e6fec5dfd))
+
 ## [1.6.0](https://github.com/kotokumu/agentmetry/compare/v1.5.1...v1.6.0) (2026-08-16)
 
 
