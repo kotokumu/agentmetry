@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.6.0](https://github.com/kotokumu/agentmetry/compare/v1.5.1...v1.6.0) (2026-08-16)
+
+
+### Features
+
+* **rework:** add session diagnostics dashboard ([b57fe8b](https://github.com/kotokumu/agentmetry/commit/b57fe8b9f8b4604b1f70f9c76a869f6e338a5878))
+* **rework:** add session diagnostics dashboard ([ea18a15](https://github.com/kotokumu/agentmetry/commit/ea18a157ab19f7004b35263db992caea485b1ffe))
+
 ## [1.5.1](https://github.com/theoden9014/agentmetry/compare/v1.5.0...v1.5.1) (2026-08-16)
 
 
