@@ -17,6 +17,8 @@ func DeriveActivity(name string, attributes map[string]any) (ActivityKind, strin
 		return ActivityPrompt, toolName, targetAgentID, content
 	case strings.Contains(combined, "reasoning"):
 		return ActivityReasoning, toolName, targetAgentID, content
+	case strings.Contains(combined, "model.error"), strings.Contains(combined, "api_error"):
+		return ActivityResponse, toolName, targetAgentID, content
 	case strings.Contains(combined, "response"), strings.Contains(combined, "assistant"):
 		return ActivityResponse, toolName, targetAgentID, content
 	case strings.Contains(combined, "model.request"), strings.Contains(combined, "llm_request"):

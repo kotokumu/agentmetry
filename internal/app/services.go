@@ -23,6 +23,7 @@ type Backend interface {
 	query.SessionListReader
 	query.SessionSummaryReader
 	query.SessionActivitiesReader
+	query.SessionReworkReader
 	query.TraceReader
 	planusage.Writer
 }

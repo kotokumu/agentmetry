@@ -1,17 +1,25 @@
 import { LitElement, css, html } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { customElement, property, state } from "lit/decorators.js";
+
+let nextHelpID = 0;
 
 @customElement("am-kpi-card")
 export class KpiCard extends LitElement {
   @property() label = "";
   @property() value = "0";
   @property() hint = "";
+  @property() description = "";
+  @state() private helpOpen = false;
+  private helpPinned = false;
+  private readonly helpID = `am-kpi-help-${++nextHelpID}`;
 
   static styles = css`
     :host {
       display: block;
+      position: relative;
       min-width: 0;
     }
+    :host(:hover), :host(:focus-within) { z-index: 10; }
 
     article {
       position: relative;
@@ -54,6 +62,46 @@ export class KpiCard extends LitElement {
       line-height: 1.45;
     }
 
+    .help-wrap { position: absolute; z-index: 3; top: 10px; right: 10px; }
+    .help {
+      display: grid;
+      width: 22px;
+      height: 22px;
+      place-items: center;
+      border: 1px solid var(--am-border, #25314a);
+      border-radius: 50%;
+      background: rgba(8, 13, 20, .84);
+      color: var(--am-muted, #91a0b8);
+      cursor: help;
+      font: 700 .68rem/1 "SFMono-Regular", "Cascadia Code", monospace;
+    }
+    .help:hover, .help:focus-visible, .help[aria-expanded="true"] {
+      border-color: var(--am-accent, #6df4d6);
+      color: var(--am-accent, #6df4d6);
+      outline: 2px solid var(--am-accent-soft, rgba(109, 244, 214, .16));
+      outline-offset: 2px;
+    }
+    .tooltip {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      width: min(270px, calc(100vw - 56px));
+      visibility: hidden;
+      border: 1px solid var(--am-border-strong, var(--am-border, #25314a));
+      border-radius: 9px;
+      padding: 10px 11px;
+      background: #0b1119;
+      box-shadow: 0 16px 36px rgba(0, 0, 0, .42);
+      color: var(--am-text, #f3f7ff);
+      font-size: .7rem;
+      line-height: 1.5;
+      opacity: 0;
+      pointer-events: none;
+      transform: translateY(-3px);
+      transition: opacity .14s ease, transform .14s ease, visibility .14s;
+    }
+    .tooltip[data-open] { visibility: visible; opacity: 1; transform: translateY(0); }
+
     @media (max-width: 480px) {
       article { min-height: 100px; padding: 14px; }
       strong { font-size: 1.35rem; }
@@ -68,8 +116,40 @@ export class KpiCard extends LitElement {
         <strong>${this.value}</strong>
         ${this.hint ? html`<small>${this.hint}</small>` : null}
       </article>
+      ${this.description ? html`<span class="help-wrap">
+        <button
+          class="help"
+          type="button"
+          aria-label=${`Explain ${this.label}`}
+          aria-controls=${this.helpID}
+          aria-expanded=${String(this.helpOpen)}
+          @mouseenter=${this.previewHelp}
+          @mouseleave=${this.leaveHelp}
+          @focus=${this.previewHelp}
+          @blur=${this.closeHelp}
+          @click=${this.toggleHelp}
+          @keydown=${this.helpKeydown}
+        >?</button>
+        <span id=${this.helpID} class="tooltip" role="tooltip" aria-hidden=${String(!this.helpOpen)} ?data-open=${this.helpOpen}>${this.description}</span>
+      </span>` : null}
     `;
   }
+
+  private previewHelp = () => { this.helpOpen = true; };
+  private leaveHelp = () => { if (!this.helpPinned) this.helpOpen = false; };
+  private toggleHelp = () => {
+    this.helpPinned = !this.helpPinned;
+    this.helpOpen = this.helpPinned;
+  };
+  private closeHelp = () => {
+    this.helpPinned = false;
+    this.helpOpen = false;
+  };
+  private helpKeydown = (event: KeyboardEvent) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    this.closeHelp();
+  };
 }
 
 declare global {

@@ -156,31 +156,45 @@ func (store *Store) ListSessionActivities(ctx context.Context, filter query.Acti
 			return query.ActivityPage{}, err
 		}
 	}
-	spanWhere, spanArgs := activityWhere("ended_at", formatTime(time.Unix(0, 0)), sourceID, conversationID, filter.AgentID)
-	logWhere, logArgs := activityWhere("observed_at", formatTime(time.Unix(0, 0)), sourceID, conversationID, filter.AgentID)
-	spanWhere += " AND activity_kind <> 'unknown'"
-	logWhere += " AND activity_kind <> 'unknown'"
-	var total int64
-	countArgs := append(spanArgs, logArgs...)
-	if err := store.db.QueryRowContext(ctx, fmt.Sprintf(`SELECT
-	  (SELECT COUNT(*) FROM spans WHERE %s) +
-	  (SELECT COUNT(*) FROM logs WHERE %s)`, spanWhere, logWhere), countArgs...).Scan(&total); err != nil {
-		return query.ActivityPage{}, fmt.Errorf("count session activities: %w", err)
-	}
-	if total == 0 {
-		return query.ActivityPage{}, query.ErrConversationNotFound
-	}
-	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, sourceID, conversationID, true, filter.AgentID)
+	activities, err := store.loadSessionActivities(ctx, sourceID, conversationID, filter.AgentID)
 	if err != nil {
 		return query.ActivityPage{}, err
 	}
-	activities = enrichActivityRelationships(activities)
 	offset = boundedOffset(len(activities), offset)
 	pageEnd := min(len(activities), filter.Page.WindowEnd(offset))
 	return query.ActivityPage{
 		Activities: activities[offset:pageEnd], Total: int64(len(activities)), Offset: offset,
 		HasEarlier: offset > 0, HasMore: int64(pageEnd) < int64(len(activities)),
 	}, nil
+}
+
+func (store *Store) loadSessionActivities(ctx context.Context, sourceID, conversationID, agentID string) ([]query.Activity, error) {
+	activities, err := store.activitiesWindowWithMeaningful(ctx, formatTime(time.Unix(0, 0)), -1, 0, sourceID, conversationID, true, agentID)
+	if err != nil {
+		return nil, err
+	}
+	if len(activities) == 0 {
+		return nil, query.ErrConversationNotFound
+	}
+	activities = enrichActivityRelationships(activities)
+	usageContributions := selectUsageContributions(activities)
+	for index := range activities {
+		activities[index].ContributesToTotal = usageContributions[index]
+	}
+	return activities, nil
+}
+
+func (store *Store) GetSessionRework(ctx context.Context, identity query.ConversationIdentity) (query.SessionRework, error) {
+	sourceID, conversationID := identity.SourceID(), identity.ConversationID()
+	summary, err := store.loadSessionSummary(ctx, sourceID, conversationID)
+	if err != nil {
+		return query.SessionRework{}, err
+	}
+	activities, err := store.loadSessionActivities(ctx, sourceID, conversationID, "")
+	if err != nil {
+		return query.SessionRework{}, err
+	}
+	return query.SessionRework{SourceID: sourceID, RunID: conversationID, Report: query.AnalyzeRework(summary, activities)}, nil
 }
 
 func (store *Store) anchorOffset(ctx context.Context, sourceID, sessionID, traceID, spanID string, page query.Page) (int, error) {

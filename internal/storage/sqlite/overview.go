@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -75,7 +76,7 @@ func (store *Store) activitiesWindowWithMeaningful(ctx context.Context, since st
   agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, started_at, ended_at, observed_at, status, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
-  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id
+  cache_write_tokens_reported, reasoning_tokens_reported, usage_role, prompt_id, usage_id, attributes_json
 FROM (
   SELECT source, 'trace' AS signal, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
@@ -85,7 +86,8 @@ FROM (
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') AS usage_role,
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), '') AS prompt_id,
-    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '') AS usage_id
+    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '') AS usage_id,
+    attributes_json
   FROM (SELECT source, trace_id, span_id, parent_span_id, name,
     activity_kind, tool_name, target_agent_id, target_agent_type, content,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, started_at, ended_at, status, cost_usd,
@@ -102,7 +104,8 @@ FROM (
     cache_write_tokens_reported, reasoning_tokens_reported,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), ''),
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
-    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
+    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), ''),
+    attributes_json
   FROM (SELECT source, trace_id, span_id, name, body,
     activity_kind, tool_name, target_agent_id, target_agent_type,
     agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, observed_at, cost_usd,
@@ -117,7 +120,8 @@ FROM (
     0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
     COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), 'aggregate'),
     COALESCE(json_extract(attributes_json, '$."gen_ai.turn.id"'), ''),
-    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), '')
+    COALESCE(json_extract(attributes_json, '$."gen_ai.usage.id"'), ''),
+    attributes_json
   FROM (SELECT source, name, value, agent_id, agent_definition, agent_type, parent_agent_id,
     run_id, model, observed_at, cost_usd, attributes_json
     FROM metrics WHERE %s ORDER BY observed_at DESC LIMIT ?)
@@ -178,6 +182,7 @@ func (store *Store) scanActivity(row rowScanner) (query.Activity, error) {
 	var activity query.Activity
 	var signal string
 	var startedAt, endedAt, observedAt string
+	var attributesJSON string
 	var cost sql.NullFloat64
 	var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported bool
 	if err := row.Scan(
@@ -187,11 +192,14 @@ func (store *Store) scanActivity(row rowScanner) (query.Activity, error) {
 		&startedAt, &endedAt, &observedAt, &activity.Status, &cost,
 		&activity.Tokens.Input, &activity.Tokens.Output, &activity.Tokens.CacheRead, &activity.Tokens.CacheWrite, &activity.Tokens.Reasoning,
 		&inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported,
-		&activity.UsageRole, &activity.PromptID, &activity.UsageID,
+		&activity.UsageRole, &activity.PromptID, &activity.UsageID, &attributesJSON,
 	); err != nil {
 		return query.Activity{}, err
 	}
 	activity.Signal = canonical.Signal(signal)
+	if err := json.Unmarshal([]byte(attributesJSON), &activity.Attributes); err != nil {
+		return query.Activity{}, fmt.Errorf("decode activity attributes: %w", err)
+	}
 	activity.Tokens.Presence = canonical.TokenPresence{
 		Input: inputReported && activity.Tokens.Input == 0, Output: outputReported && activity.Tokens.Output == 0,
 		CacheRead:  cacheReadReported && activity.Tokens.CacheRead == 0,

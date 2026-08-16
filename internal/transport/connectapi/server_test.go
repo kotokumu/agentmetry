@@ -9,6 +9,7 @@ import (
 	"connectrpc.com/connect"
 	v1 "github.com/theoden9014/agentmetry/gen/agentmetry/v1"
 	"github.com/theoden9014/agentmetry/gen/agentmetry/v1/agentmetryv1connect"
+	"github.com/theoden9014/agentmetry/internal/canonical"
 	"github.com/theoden9014/agentmetry/internal/query"
 )
 
@@ -22,6 +23,13 @@ type readerStub struct {
 	lastSessions   query.SessionListFilter
 	lastActivities query.ActivityPageFilter
 	lastTrace      query.TraceFilter
+	rework         query.SessionRework
+	reworkIdentity query.ConversationIdentity
+}
+
+func (reader *readerStub) GetSessionRework(_ context.Context, identity query.ConversationIdentity) (query.SessionRework, error) {
+	reader.reworkIdentity = identity
+	return reader.rework, nil
 }
 
 func (reader *readerStub) GetDashboard(_ context.Context, filter query.DashboardFilter) (query.Overview, error) {
@@ -134,6 +142,45 @@ func TestConnectServerPassesAgentActivityFilter(t *testing.T) {
 	}
 	if reader.lastActivities.AgentID != "reviewer" {
 		t.Fatalf("agent filter = %q, want reviewer", reader.lastActivities.AgentID)
+	}
+}
+
+func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing.T) {
+	rate := 0.25
+	reader := &readerStub{rework: query.SessionRework{SourceID: "codex", RunID: "run-1", Report: query.ReworkReport{
+		ValidationFailures: 2, FailFixRetryCycles: 1, ReworkDuration: 3 * time.Second,
+		ReworkTokens:            canonical.TokenUsage{Input: 10, Presence: canonical.TokenPresence{Output: true}},
+		ToolAttemptsWithOutcome: 4, ToolFailures: 1, ToolFailureRate: &rate,
+		APIRetryWaste:    query.APIRetryWaste{Attempts: 1, Duration: time.Second},
+		RepeatedCommands: 3, ReeditedFiles: 2,
+		Coverage: query.ReworkCoverage{ActivityCoverage: query.ActivityCoveragePartial, CanonicalEvents: 8, ClassifiedEvents: 7, KnownOutcomes: 4},
+		Capabilities: query.ReworkCapabilities{
+			ChangeRevert:      query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs diffs"},
+			CrossAgentOverlap: query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs identities"},
+		},
+	}}}
+	_, handler := New(reader, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+
+	response, err := client.GetSessionRework(context.Background(), connect.NewRequest(&v1.GetSessionReworkRequest{SourceId: "codex", SessionId: "run-1"}))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.reworkIdentity.SourceID() != "codex" || reader.reworkIdentity.ConversationID() != "run-1" {
+		t.Fatalf("unexpected identity: %#v", reader.reworkIdentity)
+	}
+	metrics := response.Msg.GetMetrics()
+	if metrics.GetValidationFailures() != 2 || metrics.GetFailFixRetryCycles() != 1 || metrics.GetReworkDurationMs() != 3000 || metrics.GetToolFailureRate() != rate {
+		t.Fatalf("unexpected metrics: %#v", metrics)
+	}
+	if metrics.GetReworkTokens().GetInput() != 10 || metrics.GetReworkTokens().Output == nil || metrics.GetApiRetryWaste().GetDurationMs() != 1000 {
+		t.Fatalf("optional usage/waste mapping failed: %#v", metrics)
+	}
+	if response.Msg.GetCoverage().GetActivityCoverage() != query.ActivityCoveragePartial || response.Msg.GetCapabilities().GetChangeRevert().GetState() != query.CapabilityUnavailable {
+		t.Fatalf("coverage/capabilities missing: %#v", response.Msg)
 	}
 }
 

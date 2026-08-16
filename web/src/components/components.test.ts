@@ -10,6 +10,7 @@ import "./trace-summary";
 import "./trace-participants";
 import "./trace-waterfall";
 import "./token-chart";
+import "./rework-summary";
 import type { ActivityTable } from "./activity-table";
 import type { KpiCard } from "./kpi-card";
 import type { TimeRangeFilter } from "./time-range-filter";
@@ -22,6 +23,8 @@ import type { TraceSummary } from "./trace-summary";
 import type { TraceParticipants } from "./trace-participants";
 import type { TraceWaterfall } from "./trace-waterfall";
 import type { Trace } from "../model/telemetry";
+import type { ReworkAnalysis } from "../model/telemetry";
+import type { ReworkSummary } from "./rework-summary";
 
 afterEach(() => vi.useRealTimers());
 
@@ -65,7 +68,67 @@ const traceFixture: Trace = {
   hasMore: false,
 };
 
+const reworkFixture: ReworkAnalysis = {
+  sourceId: "codex",
+  sessionId: "session-1",
+  metrics: {
+    validationFailures: 2, failFixRetryCycles: 1, reworkDurationMs: 3500,
+    reworkTokens: { input: 100, output: 20, cacheRead: null, cacheWrite: null, reasoning: null, total: 120 },
+    toolAttemptsWithOutcome: 4, toolFailures: 1, toolFailureRate: 0.25,
+    apiRetryWaste: { attempts: 1, durationMs: 500, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } },
+    repeatedCommands: 3, reeditedFiles: 2,
+  },
+  coverage: { activityCoverage: "partial_page", canonicalEvents: 8, classifiedEvents: 7, knownOutcomes: 4 },
+  capabilities: {
+    changeRevert: { state: "unavailable", reason: "needs diffs" },
+    crossAgentOverlap: { state: "unavailable", reason: "needs identities" },
+  },
+};
+
 describe("dashboard components", () => {
+  it("renders session rework metrics with coverage and capability limits", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = reworkFixture;
+    document.body.append(panel);
+
+    await panel.updateComplete;
+
+    const content = panel.shadowRoot?.textContent ?? "";
+    const cards = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? []);
+    await Promise.all(cards.map((card) => card.updateComplete));
+    const cardContent = cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ");
+    expect(content).toContain("Development rework");
+    expect(cardContent).toContain("Validation failures");
+    expect(cardContent).toContain("3.5 s");
+    expect(cardContent).toContain("25.0%");
+    expect(cardContent).toContain("120");
+    expect(content).toContain("Partial evidence");
+    expect(content).toContain("4 of 8 events report outcomes");
+    expect(content).toContain("Change revert");
+    expect(content).toContain("Not available");
+    expect(cards).toHaveLength(8);
+    expect(cards.every((card) => card.description.length > 0)).toBe(true);
+    expect(cards.every((card) => card.shadowRoot?.querySelector("button.help"))).toBe(true);
+  });
+
+  it("isolates rework loading and retry states", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.loading = true;
+    document.body.append(panel);
+    await panel.updateComplete;
+    expect(panel.shadowRoot?.querySelector("[role='status']")?.textContent).toContain("Analyzing");
+
+    const retry = vi.fn();
+    panel.addEventListener("rework-retry-requested", retry);
+    panel.loading = false;
+    panel.error = "Temporary analysis failure";
+    await panel.updateComplete;
+    panel.shadowRoot?.querySelector<HTMLButtonElement>("button")?.click();
+
+    expect(panel.shadowRoot?.querySelector("[role='alert']")?.textContent).toContain("Temporary analysis failure");
+    expect(retry).toHaveBeenCalledOnce();
+  });
+
   it("renders canonical operation language instead of a source event name", async () => {
     const table = document.createElement("am-activity-table") as ActivityTable;
     table.activities = [{
@@ -298,6 +361,44 @@ describe("dashboard components", () => {
 
     expect(card.shadowRoot?.textContent).toContain("Input tokens");
     expect(card.shadowRoot?.textContent).toContain("1,024");
+    expect(card.shadowRoot?.querySelector("button.help")).toBeNull();
+  });
+
+  it("explains a KPI through hover, click, focus, and Escape", async () => {
+    const card = document.createElement("am-kpi-card") as KpiCard;
+    card.label = "Rework time";
+    card.value = "3.5 s";
+    card.description = "Observed duration from a failed validation through its corrected retry.";
+    document.body.append(card);
+    await card.updateComplete;
+
+    const help = card.shadowRoot?.querySelector<HTMLButtonElement>("button.help");
+    const tooltip = card.shadowRoot?.querySelector<HTMLElement>("[role='tooltip']");
+    expect(help?.getAttribute("aria-label")).toBe("Explain Rework time");
+    expect(help?.getAttribute("aria-controls")).toBe(tooltip?.id);
+    expect(help?.getAttribute("aria-expanded")).toBe("false");
+    expect(tooltip?.getAttribute("aria-hidden")).toBe("true");
+
+    help?.dispatchEvent(new MouseEvent("mouseenter"));
+    await card.updateComplete;
+    expect(help?.getAttribute("aria-expanded")).toBe("true");
+    expect(tooltip?.getAttribute("aria-hidden")).toBe("false");
+
+    help?.click();
+    help?.dispatchEvent(new MouseEvent("mouseleave"));
+    await card.updateComplete;
+    expect(help?.getAttribute("aria-expanded")).toBe("true");
+
+    help?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await card.updateComplete;
+    expect(help?.getAttribute("aria-expanded")).toBe("false");
+
+    help?.dispatchEvent(new FocusEvent("focus"));
+    await card.updateComplete;
+    expect(help?.getAttribute("aria-expanded")).toBe("true");
+    help?.dispatchEvent(new FocusEvent("blur"));
+    await card.updateComplete;
+    expect(help?.getAttribute("aria-expanded")).toBe("false");
   });
 
   it("emits a typed range intent without fetching data", async () => {

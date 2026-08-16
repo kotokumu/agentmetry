@@ -2,12 +2,13 @@ import { Task, TaskStatus } from "@lit/task";
 import type { ReactiveControllerHost } from "lit";
 import type { ActivityPage, AgentmetryClient } from "../api/agentmetry-client";
 import type { ConversationTarget } from "../model/trace-analysis";
-import type { ActivityDirection, Session, TimeRange } from "../model/telemetry";
+import type { ActivityDirection, ReworkAnalysis, Session, TimeRange } from "../model/telemetry";
 import { telemetryFilterKey, type TelemetryFilters } from "./query-filters";
 
 type ConversationRef = Readonly<{ sourceId: string; conversationId: string }>;
 type SessionsResult = Readonly<{ key: string; sessions: readonly Session[] }>;
 type ConversationResult = Readonly<{ key: string; session?: Session }>;
+type ReworkResult = Readonly<{ key: string; analysis?: ReworkAnalysis }>;
 
 export type ActivityPageState = Readonly<{
   direction: ActivityDirection;
@@ -30,6 +31,7 @@ export class ConversationsController {
   private readonly isActive: () => boolean;
   private readonly sessionsTask: Task<readonly [TimeRange, string, string], SessionsResult>;
   private readonly conversationTask: Task<readonly [boolean, string, string, string, string], ConversationResult>;
+  private readonly reworkTask: Task<readonly [boolean, string, string], ReworkResult>;
   private requested?: ConversationTarget;
   private selectedRef?: ConversationRef;
   private sessionOverride?: Session;
@@ -71,6 +73,18 @@ export class ConversationsController {
           : undefined,
       }),
     });
+    this.reworkTask = new Task(host, {
+      args: () => {
+        const target = this.target;
+        return [isActive(), target?.sourceId ?? "", target?.conversationId ?? ""] as const;
+      },
+      task: async ([active, sourceId, conversationId], { signal }) => ({
+        key: conversationKey(sourceId, conversationId, "", ""),
+        analysis: active && sourceId && conversationId
+          ? await client.getSessionRework(sourceId, conversationId, signal)
+          : undefined,
+      }),
+    });
   }
 
   hostDisconnected() {
@@ -85,6 +99,7 @@ export class ConversationsController {
     this.agentActivityPage = undefined;
     this.sessionsTask.abort();
     this.conversationTask.abort();
+    this.reworkTask.abort();
   }
 
   hostConnected() {
@@ -92,6 +107,7 @@ export class ConversationsController {
     this.wasDisconnected = false;
     void this.sessionsTask.run();
     void this.conversationTask.run();
+    void this.reworkTask.run();
   }
 
   private get listedSessions() {
@@ -140,12 +156,24 @@ export class ConversationsController {
   get conversationError() { return this.conversationTask.error; }
   get highlightedTraceId() { return this.requested?.traceId ?? ""; }
   get highlightedSpanId() { return this.requested?.spanId ?? ""; }
+  get rework(): ReworkAnalysis | undefined {
+    if (!this.isActive()) return undefined;
+    const target = this.target;
+    const result = this.reworkTask.value;
+    if (!target || result?.key !== conversationKey(target.sourceId, target.conversationId, "", "")) return undefined;
+    const value = result.analysis;
+    return value?.sourceId === target.sourceId && value.sessionId === target.conversationId ? value : undefined;
+  }
+  get loadingRework() { return this.reworkTask.status === TaskStatus.PENDING && this.rework === undefined; }
+  get reworkFailed() { return this.reworkTask.status === TaskStatus.ERROR; }
+  get reworkError() { return this.reworkTask.error; }
 
   refreshList() { void this.sessionsTask.run(); }
   refreshSelected() {
     this.sessionOverride = undefined;
     void this.conversationTask.run();
   }
+  refreshRework() { void this.reworkTask.run(); }
 
   select(target: ConversationTarget) {
     const previous = this.target;
