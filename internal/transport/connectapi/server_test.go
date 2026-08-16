@@ -225,7 +225,12 @@ func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing
 		ToolAttemptsWithOutcome: 4, ToolFailures: 1, ToolFailureRate: &rate,
 		APIRetryWaste:    query.APIRetryWaste{Attempts: 1, Duration: time.Second},
 		RepeatedCommands: 3, ReeditedFiles: 2,
-		Coverage: query.ReworkCoverage{ActivityCoverage: query.ActivityCoveragePartial, CanonicalEvents: 8, ClassifiedEvents: 7, KnownOutcomes: 4},
+		ValidationAttemptsWithOutcome: 4, FirstPassEligibleValidations: 2, FirstPassSuccesses: 1, FirstPassSuccessRate: &effortRate,
+		RecurringFailureLoops: 1, RepeatedFailureAttempts: 3, ResolvedFailureLoops: 1,
+		FailureResolutionDuration: 6500 * time.Millisecond,
+		FailureResolutionTokens:   canonical.TokenUsage{Input: 38, Presence: canonical.TokenPresence{Output: true}},
+		FailureEpisodes:           []query.RecurringFailureEpisode{{AgentID: "agent-1", Operation: canonical.OperationTest, ValidationFingerprint: "sha256:validation", ErrorFingerprints: []string{"sha256:abc"}, FailureAttempts: 3, Resolved: true, ResolutionDuration: 6500 * time.Millisecond, TraceID: "trace-1", SpanID: "span-1"}},
+		Coverage:                  query.ReworkCoverage{ActivityCoverage: query.ActivityCoveragePartial, CanonicalEvents: 8, ClassifiedEvents: 7, KnownOutcomes: 4, ValidationAttempts: 4, FingerprintedFailures: 2, IdentifiedValidationAttempts: 4, IDBackedValidationAttempts: 3, MergedValidationAttempts: 1, UncorrelatedValidationObservations: 1},
 		Capabilities: query.ReworkCapabilities{
 			ChangeRevert:      query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs diffs"},
 			CrossAgentOverlap: query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs identities"},
@@ -247,6 +252,15 @@ func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing
 	metrics := response.Msg.GetMetrics()
 	if metrics.GetValidationFailures() != 2 || metrics.GetFailFixRetryCycles() != 1 || metrics.GetReworkDurationMs() != 3000 || metrics.GetTotalAgentEffortMs() != 5000 || metrics.GetReworkAgentEffortRate() != effortRate || metrics.GetToolFailureRate() != rate {
 		t.Fatalf("unexpected metrics: %#v", metrics)
+	}
+	if metrics.GetRecurringFailureLoops() != 1 || metrics.GetRepeatedFailureAttempts() != 3 || metrics.GetFailureResolutionDurationMs() != 6500 || metrics.GetFailureResolutionTokens().GetTotal() != 38 || metrics.GetFirstPassEligibleValidations() != 2 {
+		t.Fatalf("unexpected recurring failure metrics: %#v", metrics)
+	}
+	if response.Msg.GetCoverage().GetValidationAttempts() != 4 || response.Msg.GetCoverage().GetFingerprintedFailures() != 2 || response.Msg.GetCoverage().GetIdentifiedValidationAttempts() != 4 || response.Msg.GetCoverage().GetIdBackedValidationAttempts() != 3 || response.Msg.GetCoverage().GetMergedValidationAttempts() != 1 || response.Msg.GetCoverage().GetUncorrelatedValidationObservations() != 1 {
+		t.Fatalf("unexpected recurrence coverage: %#v", response.Msg.GetCoverage())
+	}
+	if len(response.Msg.GetFailureEpisodes()) != 1 || response.Msg.GetFailureEpisodes()[0].GetValidationFingerprint() != "sha256:validation" || response.Msg.GetFailureEpisodes()[0].GetFailureAttempts() != 3 || response.Msg.GetFailureEpisodes()[0].GetTraceId() != "trace-1" {
+		t.Fatalf("unexpected failure episode details: %#v", response.Msg.GetFailureEpisodes())
 	}
 	if metrics.GetReworkTokens().GetInput() != 10 || metrics.GetReworkTokens().Output == nil || metrics.GetApiRetryWaste().GetDurationMs() != 1000 {
 		t.Fatalf("optional usage/waste mapping failed: %#v", metrics)

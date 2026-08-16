@@ -148,28 +148,39 @@ type APIRetryWasteOutput struct {
 }
 
 type ReworkMetricsOutput struct {
-	ValidationFailures      int64               `json:"validationFailures"`
-	FailFixRetryCycles      int64               `json:"failFixRetryCycles"`
-	ReworkDurationMs        int64               `json:"reworkDurationMs"`
-	TotalAgentEffortMs      int64               `json:"totalAgentEffortMs"`
-	ReworkAgentEffortRate   *float64            `json:"reworkAgentEffortRate"`
-	ReworkTokens            TokenUsageOutput    `json:"reworkTokens"`
-	ToolAttemptsWithOutcome int64               `json:"toolAttemptsWithOutcome"`
-	ToolFailures            int64               `json:"toolFailures"`
-	ToolFailureRate         *float64            `json:"toolFailureRate"`
-	APIRetryWaste           APIRetryWasteOutput `json:"apiRetryWaste"`
-	RepeatedCommands        int64               `json:"repeatedCommands"`
-	ReeditedFiles           int64               `json:"reeditedFiles"`
+	ValidationFailures            int64               `json:"validationFailures"`
+	FailFixRetryCycles            int64               `json:"failFixRetryCycles"`
+	ReworkDurationMs              int64               `json:"reworkDurationMs"`
+	TotalAgentEffortMs            int64               `json:"totalAgentEffortMs"`
+	ReworkAgentEffortRate         *float64            `json:"reworkAgentEffortRate"`
+	ReworkTokens                  TokenUsageOutput    `json:"reworkTokens"`
+	ToolAttemptsWithOutcome       int64               `json:"toolAttemptsWithOutcome"`
+	ToolFailures                  int64               `json:"toolFailures"`
+	ToolFailureRate               *float64            `json:"toolFailureRate"`
+	APIRetryWaste                 APIRetryWasteOutput `json:"apiRetryWaste"`
+	RepeatedCommands              int64               `json:"repeatedCommands"`
+	ReeditedFiles                 int64               `json:"reeditedFiles"`
+	ValidationAttemptsWithOutcome int64               `json:"validationAttemptsWithOutcome"`
+	FirstPassEligibleValidations  int64               `json:"firstPassEligibleValidations"`
+	FirstPassSuccesses            int64               `json:"firstPassSuccesses"`
+	FirstPassSuccessRate          *float64            `json:"firstPassSuccessRate"`
+	RecurringFailureLoops         int64               `json:"recurringFailureLoops"`
+	RepeatedFailureAttempts       int64               `json:"repeatedFailureAttempts"`
+	ResolvedFailureLoops          int64               `json:"resolvedFailureLoops"`
+	UnresolvedFailureLoops        int64               `json:"unresolvedFailureLoops"`
+	FailureResolutionDurationMs   int64               `json:"failureResolutionDurationMs"`
+	FailureResolutionTokens       TokenUsageOutput    `json:"failureResolutionTokens"`
 }
 
 type ReworkAnalysisOutput struct {
-	SourceID     string                   `json:"sourceId"`
-	RunID        string                   `json:"runId"`
-	Metrics      ReworkMetricsOutput      `json:"metrics"`
-	Cycles       []query.ReworkCycle      `json:"cycles"`
-	Coverage     query.ReworkCoverage     `json:"coverage"`
-	Capabilities query.ReworkCapabilities `json:"capabilities"`
-	Metadata     AnalysisMetadataOutput   `json:"metadata"`
+	SourceID        string                          `json:"sourceId"`
+	RunID           string                          `json:"runId"`
+	Metrics         ReworkMetricsOutput             `json:"metrics"`
+	Cycles          []query.ReworkCycle             `json:"cycles"`
+	FailureEpisodes []query.RecurringFailureEpisode `json:"failureEpisodes"`
+	Coverage        query.ReworkCoverage            `json:"coverage"`
+	Capabilities    query.ReworkCapabilities        `json:"capabilities"`
+	Metadata        AnalysisMetadataOutput          `json:"metadata"`
 }
 
 type CompareRunsInput struct {
@@ -581,10 +592,16 @@ func (service *Service) analyzeRework(ctx context.Context, _ *mcp.CallToolReques
 			ToolFailureRate:  report.ToolFailureRate,
 			APIRetryWaste:    APIRetryWasteOutput{Attempts: report.APIRetryWaste.Attempts, DurationMs: report.APIRetryWaste.Duration.Milliseconds(), Tokens: mapTokens(report.APIRetryWaste.Tokens)},
 			RepeatedCommands: report.RepeatedCommands, ReeditedFiles: report.ReeditedFiles,
+			ValidationAttemptsWithOutcome: report.ValidationAttemptsWithOutcome,
+			FirstPassEligibleValidations:  report.FirstPassEligibleValidations, FirstPassSuccesses: report.FirstPassSuccesses, FirstPassSuccessRate: report.FirstPassSuccessRate,
+			RecurringFailureLoops: report.RecurringFailureLoops, RepeatedFailureAttempts: report.RepeatedFailureAttempts,
+			ResolvedFailureLoops: report.ResolvedFailureLoops, UnresolvedFailureLoops: report.UnresolvedFailureLoops,
+			FailureResolutionDurationMs: report.FailureResolutionDuration.Milliseconds(), FailureResolutionTokens: mapTokens(report.FailureResolutionTokens),
 		},
 		Cycles: append([]query.ReworkCycle{}, report.Cycles...), Coverage: report.Coverage,
-		Capabilities: report.Capabilities,
-		Metadata:     analysisMetadata(report.Coverage.ActivityCoverage, "Rework is an observed operational proxy. Missing outcomes are excluded; retry matching is heuristic and source attribute coverage may vary."),
+		FailureEpisodes: append([]query.RecurringFailureEpisode{}, report.FailureEpisodes...),
+		Capabilities:    report.Capabilities,
+		Metadata:        analysisMetadata(report.Coverage.ActivityCoverage, "Rework is an observed operational proxy. Missing outcomes are excluded; retry matching is heuristic and source attribute coverage may vary."),
 	}, nil
 }
 

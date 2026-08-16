@@ -102,12 +102,26 @@ const reworkResponse = (session: TestSession) => ({
     apiRetryWaste: { attempts: 1, durationMs: "500", tokens: {} },
     repeatedCommands: 3,
     reeditedFiles: 2,
+    validationAttemptsWithOutcome: 4,
+    firstPassEligibleValidations: 2,
+    firstPassSuccesses: 1,
+    firstPassSuccessRate: 0.5,
+    recurringFailureLoops: 1,
+    repeatedFailureAttempts: 3,
+    resolvedFailureLoops: 1,
+    unresolvedFailureLoops: 0,
+    failureResolutionDurationMs: 6500,
+    failureResolutionTokens: { input: 30, output: 8, cacheRead: null, cacheWrite: null, reasoning: null, total: 38 },
   },
-  coverage: { activityCoverage: "partial_page", canonicalEvents: 8, classifiedEvents: 7, knownOutcomes: 4 },
+  coverage: { activityCoverage: "partial_page", canonicalEvents: 8, classifiedEvents: 7, knownOutcomes: 4, validationAttempts: 4, fingerprintedFailures: 2, identifiedValidationAttempts: 4, idBackedValidationAttempts: 3, mergedValidationAttempts: 1, uncorrelatedValidationObservations: 1, conflictingAttemptObservations: 0, ambiguousFailureAttempts: 0 },
   capabilities: {
     changeRevert: { state: "unavailable", reason: "needs diffs" },
     crossAgentOverlap: { state: "unavailable", reason: "needs identities" },
   },
+  failureEpisodes: [{
+    agentId: "agent-1", operation: "test", validationFingerprint: "sha256:abcdef1234567890", errorFingerprints: ["sha256:1234567890abcdef"],
+    failureAttempts: 3, resolved: true, resolutionDurationMs: 6500, resolutionTokens: {}, traceId: "trace-1", spanId: "span-1",
+  }],
 });
 
 const connectPath = (url: string) => new URL(url, "http://localhost").pathname;
@@ -166,7 +180,7 @@ describe("Agentmetry app composition", () => {
     const cards = Array.from(panel?.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? []);
     await Promise.all(cards.map((card) => card.updateComplete));
 
-    expect(cards).toHaveLength(8);
+		expect(cards).toHaveLength(12);
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("25.0%");
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("35.0%");
     expect(cards.map((card) => card.shadowRoot?.textContent ?? "").join(" ")).toContain("12.0%");
