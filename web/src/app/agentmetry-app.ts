@@ -3,6 +3,7 @@ import { customElement, state } from "lit/decorators.js";
 import "../components/app-update-control";
 import "../components/conversation-workspace";
 import "../components/dashboard-summary";
+import "../components/mcp-connection";
 import "../components/time-range-filter";
 import "../components/trace-explorer";
 import type { ConversationSummaryDetail, ConversationWorkspace } from "../components/conversation-workspace";
@@ -112,6 +113,7 @@ export class AgentmetryApp extends LitElement {
     h1 { max-width: 720px; margin: 0; font: 650 clamp(2.2rem, 4vw, 4.2rem)/.9 Inter, ui-sans-serif, sans-serif; letter-spacing: -.065em; }
     h1 span { color: var(--am-muted); font-weight: 400; }
     .header-controls { display: grid; justify-items: end; flex: 0 1 auto; min-width: min(100%, 520px); }
+    .utility-controls { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; }
     .status { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px 8px; margin: 11px 0 0; color: var(--am-muted); font: .7rem/1.45 "SFMono-Regular", "Cascadia Code", monospace; text-align: right; }
     .receiver { display: inline-flex; align-items: center; gap: 8px; }
     .state-note::before { content: "·"; margin-right: 8px; color: var(--am-muted); }
@@ -120,7 +122,7 @@ export class AgentmetryApp extends LitElement {
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     am-trace-explorer[hidden], am-conversation-workspace[hidden] { display: none; }
     @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(101, 230, 165, .03), 0 0 20px rgba(101, 230, 165, .7); } }
-    @media (max-width: 950px) { header { align-items: flex-start; flex-direction: column; } .header-controls { justify-items: start; } .status { justify-content: flex-start; text-align: left; } }
+    @media (max-width: 950px) { header { align-items: flex-start; flex-direction: column; } .header-controls { justify-items: start; } .utility-controls { justify-content: flex-start; } .status { justify-content: flex-start; text-align: left; } }
     @media (max-width: 640px) { main { padding: 12px; } h1 { font-size: clamp(2.35rem, 12vw, 4rem); } .brand { margin-bottom: 14px; } }
     @media (max-width: 480px) { .status { align-items: flex-start; flex-direction: column; } .state-note::before { content: none; } }
     @media (prefers-reduced-motion: reduce) { .status-dot { animation: none; } }
@@ -133,7 +135,7 @@ export class AgentmetryApp extends LitElement {
       <p class="sr-only" aria-live="polite">${this.routeAnnouncement}</p>
       ${traceActive ? null : html`<header>
         <div><a class="brand" href=${dashboardHref} aria-label="Back to Agentmetry dashboard" @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
-        <div class="header-controls"><am-app-update-control></am-app-update-control><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
+        <div class="header-controls"><div class="utility-controls"><am-app-update-control></am-app-update-control><am-mcp-connection></am-mcp-connection></div><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
       </header>`}
 
       ${traceActive ? null : html`<am-dashboard-summary

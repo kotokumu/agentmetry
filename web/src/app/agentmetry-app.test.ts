@@ -13,6 +13,7 @@ import type { ReworkComparison } from "../components/rework-comparison";
 import type { ConversationWorkspace } from "../components/conversation-workspace";
 import type { TraceExplorer } from "../components/trace-explorer";
 import type { DashboardSummary } from "../components/dashboard-summary";
+import type { MCPConnection } from "../components/mcp-connection";
 import type { TokenUsage } from "../model/telemetry";
 
 const emptyOverview = {
@@ -344,8 +345,24 @@ describe("Agentmetry app composition", () => {
     expect(app.shadowRoot?.querySelector("am-conversation-workspace")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-trace-explorer")).toBeNull();
     expect(app.shadowRoot?.querySelector("am-app-update-control")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector("am-mcp-connection")).not.toBeNull();
     expect(app.shadowRoot?.querySelector(".kpis")).toBeNull();
     expect(app.shadowRoot?.querySelector(".workspace")).toBeNull();
+  });
+
+  it("shows the current-origin MCP connection details", async () => {
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await app.updateComplete;
+
+    const mcp = app.shadowRoot?.querySelector<MCPConnection>("am-mcp-connection");
+    await mcp?.updateComplete;
+    mcp?.shadowRoot?.querySelector<HTMLButtonElement>("[aria-controls='mcp-connection-panel']")?.click();
+    await mcp?.updateComplete;
+    expect(mcp?.shadowRoot?.querySelector<HTMLElement>("[aria-labelledby='mcp-connection-title']")?.hidden).toBe(false);
+    expect(mcp?.shadowRoot?.querySelector<HTMLInputElement>("[aria-label='MCP server URL']")?.value)
+      .toBe(`${location.origin}/mcp`);
   });
 
   it("renders conversations without waiting for the dashboard task", async () => {
