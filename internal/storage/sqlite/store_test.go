@@ -10,6 +10,9 @@ import (
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/theoden9014/agentmetry/internal/harness"
+	"github.com/theoden9014/agentmetry/internal/ingest"
+	"github.com/theoden9014/agentmetry/internal/observation"
 	"github.com/theoden9014/agentmetry/internal/query"
 	"github.com/theoden9014/agentmetry/internal/source/claude"
 	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
@@ -197,6 +200,98 @@ func TestGetSessionReworkAnalyzesTheCompleteStoredSession(t *testing.T) {
 	if analysis.Report.ReworkDuration != 3*time.Second || analysis.Report.Coverage.ActivityCoverage != query.ActivityCoverageComplete {
 		t.Fatalf("unexpected effort/coverage: %#v", analysis.Report)
 	}
+	harnessView, err := query.InspectHarnessContext(analysis.Harness)
+	if err != nil || harnessView.Classification != query.HarnessNoEligibleRecords {
+		t.Fatalf("harness context = %#v, want no eligible records", analysis.Harness)
+	}
+}
+
+func TestGetSessionReworkClassifiesCompleteHarnessEvidence(t *testing.T) {
+	tests := []struct {
+		name     string
+		receipts []harness.ReceiptEvidence
+		want     query.HarnessContextView
+	}{
+		{
+			name:     "unreported",
+			receipts: []harness.ReceiptEvidence{{State: harness.ReceiptUnreported}, {State: harness.ReceiptUnreported}},
+			want:     query.HarnessContextView{Classification: query.HarnessUnreported, Counts: query.HarnessEvidenceCounts{EligibleRecords: 2, UnreportedRecords: 2}},
+		},
+		{
+			name: "uniform",
+			receipts: []harness.ReceiptEvidence{
+				{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "zeta"},
+				{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "alpha"},
+			},
+			want: query.HarnessContextView{Classification: query.HarnessUniform, Counts: query.HarnessEvidenceCounts{EligibleRecords: 2, ReportedRecords: 2, DistinctIdentities: 1}, Identity: &query.HarnessIdentity{Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "alpha"}},
+		},
+		{
+			name: "mixed",
+			receipts: []harness.ReceiptEvidence{
+				{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db"},
+				{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:dfbc1de58f3b905c7b0c0fd79361699336b5f9da617b1db8f35c76673f95b29d"},
+			},
+			want: query.HarnessContextView{Classification: query.HarnessMixed, Counts: query.HarnessEvidenceCounts{EligibleRecords: 2, ReportedRecords: 2, DistinctIdentities: 2}},
+		},
+		{
+			name: "incomplete",
+			receipts: []harness.ReceiptEvidence{
+				{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db"},
+				{State: harness.ReceiptUnreported},
+			},
+			want: query.HarnessContextView{Classification: query.HarnessIncomplete, Counts: query.HarnessEvidenceCounts{EligibleRecords: 2, ReportedRecords: 1, UnreportedRecords: 1, DistinctIdentities: 1}},
+		},
+		{
+			name: "invalid",
+			receipts: []harness.ReceiptEvidence{
+				{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db"},
+				{State: harness.ReceiptInvalid},
+			},
+			want: query.HarnessContextView{Classification: query.HarnessInvalid, Counts: query.HarnessEvidenceCounts{EligibleRecords: 2, ReportedRecords: 1, InvalidRecords: 1, DistinctIdentities: 1}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = database.Close() })
+			started := time.Date(2026, 8, 17, 0, 0, 0, 0, time.UTC)
+			for index, receipt := range tt.receipts {
+				observedAt := started.Add(time.Duration(index) * time.Second)
+				accepted := ingest.AcceptedExport{
+					Envelope:     ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, observedAt, []byte{0x0a, byte(index)}),
+					Journal:      ingest.JournalMetadata{Harness: receipt},
+					Observations: []observation.Observation{{Ordinal: 0, Signal: canonical.SignalLog, Kind: canonical.ActivityResponse, Source: "codex", SourceEventName: "response", OccurredAt: observedAt, ObservedAt: observedAt, SessionID: "run-harness", NormalizerVersion: 1}},
+					Projection:   canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{Source: "codex", ObservedAt: observedAt, Name: "response", Kind: canonical.ActivityResponse, Attributes: map[string]any{}, Agent: canonical.AgentContext{RunID: "run-harness", Tokens: canonical.TokenUsage{Input: 10}}}}},
+				}
+				if err := database.CommitExport(context.Background(), accepted); err != nil {
+					t.Fatal(err)
+				}
+			}
+			unrelated := ingest.AcceptedExport{
+				Envelope:     ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, started.Add(time.Minute), []byte{0x0a, 0xff}),
+				Journal:      ingest.JournalMetadata{Harness: harness.ReceiptEvidence{State: harness.ReceiptInvalid}},
+				Observations: []observation.Observation{{Ordinal: 0, Signal: canonical.SignalLog, Kind: canonical.ActivityResponse, Source: "claude", SourceEventName: "response", OccurredAt: started.Add(time.Minute), ObservedAt: started.Add(time.Minute), SessionID: "run-harness", NormalizerVersion: 1}},
+				Projection:   canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{Source: "claude", ObservedAt: started.Add(time.Minute), Name: "response", Kind: canonical.ActivityResponse, Attributes: map[string]any{}, Agent: canonical.AgentContext{RunID: "run-harness"}}}},
+			}
+			if err := database.CommitExport(context.Background(), unrelated); err != nil {
+				t.Fatal(err)
+			}
+			analysis, err := database.GetSessionRework(context.Background(), mustConversationIdentity(t, "codex", "run-harness"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			view, err := query.InspectHarnessContext(analysis.Harness)
+			if err != nil || !reflect.DeepEqual(view, tt.want) {
+				t.Fatalf("harness context = %#v (%v), want %#v", view, err, tt.want)
+			}
+			if analysis.SessionTokens.Total() != int64(len(tt.receipts))*10 {
+				t.Fatalf("session token total = %d, want %d", analysis.SessionTokens.Total(), int64(len(tt.receipts))*10)
+			}
+		})
+	}
 }
 
 func TestGetSessionReworkAggregatesChildActivitiesIntoCanonicalRoot(t *testing.T) {
@@ -228,6 +323,47 @@ func TestGetSessionReworkAggregatesChildActivitiesIntoCanonicalRoot(t *testing.T
 	}
 	if analysis.RunID != "parent" || analysis.Report.ValidationFailures != 1 || analysis.Report.FailFixRetryCycles != 1 {
 		t.Fatalf("aggregated child rework = %#v", analysis)
+	}
+}
+
+func TestGetSessionReworkAggregatesChildHarnessEvidenceIntoCanonicalRoot(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	observedAt := time.Date(2026, 8, 17, 1, 0, 0, 0, time.UTC)
+	receipt := harness.ReceiptEvidence{State: harness.ReceiptReported, Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "AGENTS v2"}
+	accepted := ingest.AcceptedExport{
+		Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, observedAt, []byte{0x0a, 0x00}),
+		Journal:  ingest.JournalMetadata{Harness: receipt},
+		Observations: []observation.Observation{{
+			Ordinal: 0, Signal: canonical.SignalLog, Kind: canonical.ActivityResponse, Source: "codex",
+			SourceEventName: "response", OccurredAt: observedAt, ObservedAt: observedAt,
+			SessionID: "child", NormalizerVersion: 1,
+		}},
+		Projection: canonical.Batch{
+			Signal:       canonical.SignalLog,
+			Logs:         []canonical.Log{{Source: "codex", ObservedAt: observedAt, Name: "response", Kind: canonical.ActivityResponse, Attributes: map[string]any{}, Agent: canonical.AgentContext{RunID: "child"}}},
+			SessionLinks: []canonical.SessionLink{{Source: "codex", ParentSessionID: "parent", ChildSessionID: "child", ObservedAt: observedAt}},
+		},
+	}
+	if err := database.CommitExport(context.Background(), accepted); err != nil {
+		t.Fatal(err)
+	}
+
+	analysis, err := database.GetSessionRework(context.Background(), mustConversationIdentity(t, "codex", "child"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := query.HarnessContextView{
+		Classification: query.HarnessUniform,
+		Counts:         query.HarnessEvidenceCounts{EligibleRecords: 1, ReportedRecords: 1, DistinctIdentities: 1},
+		Identity:       &query.HarnessIdentity{Scope: receipt.Scope, Fingerprint: receipt.Fingerprint, Label: receipt.Label},
+	}
+	view, err := query.InspectHarnessContext(analysis.Harness)
+	if err != nil || analysis.RunID != "parent" || !reflect.DeepEqual(view, want) {
+		t.Fatalf("aggregated child harness context = %#v", analysis)
 	}
 }
 

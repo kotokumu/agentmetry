@@ -91,6 +91,15 @@ const activitiesResponse = (session: TestSession, agentId = "") => ({
 const reworkResponse = (session: TestSession) => ({
   sourceId: session.sourceId,
   sessionId: session.id,
+  sessionTokens: {
+    input: session.tokens.input === null ? undefined : String(session.tokens.input),
+    output: session.tokens.output === null ? undefined : String(session.tokens.output),
+    total: session.tokens.total === null ? undefined : String(session.tokens.total),
+  },
+  harnessContext: {
+    counts: { eligibleRecords: "8", reportedRecords: "0", unreportedRecords: "8", invalidRecords: "0", distinctIdentities: "0" },
+    unreported: {},
+  },
   metrics: {
     validationFailures: 2,
     failFixRetryCycles: 1,

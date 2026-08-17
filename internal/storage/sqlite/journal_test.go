@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/theoden9014/agentmetry/internal/harness"
 	"github.com/theoden9014/agentmetry/internal/ingest"
 	"github.com/theoden9014/agentmetry/internal/journal"
 	"github.com/theoden9014/agentmetry/internal/observation"
@@ -24,6 +25,31 @@ func TestOpenRefusesPendingDataMigrationInsteadOfCreatingAnEmptyDatabase(t *test
 	}
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("Open created a replacement database: %v", err)
+	}
+}
+
+func TestCommitExportRejectsInvalidHarnessValuesWithoutPersistingThem(t *testing.T) {
+	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	accepted := ingest.AcceptedExport{
+		Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, time.Now(), []byte{0x0a, 0x00}),
+		Journal: ingest.JournalMetadata{Harness: harness.ReceiptEvidence{
+			State: harness.ReceiptInvalid, Scope: "secret-invalid-raw-value",
+		}},
+	}
+
+	if err := database.CommitExport(context.Background(), accepted); err == nil {
+		t.Fatal("CommitExport accepted invalid raw harness values")
+	}
+	var exports int
+	if err := database.db.QueryRow("SELECT COUNT(*) FROM otlp_exports").Scan(&exports); err != nil {
+		t.Fatal(err)
+	}
+	if exports != 0 {
+		t.Fatalf("exports = %d, want 0", exports)
 	}
 }
 

@@ -10,6 +10,7 @@ import {
   type Activity as ActivityMessage,
   type AgentSummary,
   type Dashboard,
+  type HarnessContext as HarnessContextMessage,
   type PlanUsageSnapshot,
   type SessionSummary,
   type TokenUsage as TokenUsageMessage,
@@ -19,6 +20,7 @@ import type {
   ActivityDirection,
   AgentSession,
   DashboardSummary,
+  HarnessContext,
   PlanUsageSnapshot as PlanUsage,
   ReworkAnalysis,
   Session,
@@ -96,9 +98,12 @@ export const agentmetryClient = {
       throw new Error("Session rework response was incomplete");
     }
     const metrics = response.metrics;
+    const harnessContext = mapHarnessContext(response.harnessContext);
     return {
       sourceId: response.sourceId,
       sessionId: response.sessionId,
+      sessionTokens: mapOptionalSessionTokens(response.sessionTokens, harnessContext),
+      harness: harnessContext,
       metrics: {
         validationFailures: Number(metrics.validationFailures),
         failFixRetryCycles: Number(metrics.failFixRetryCycles),
@@ -241,6 +246,72 @@ function mapDashboard(value: Dashboard): DashboardSummary {
     planUsage: value.planUsage.map(mapPlanUsage),
   };
 }
+
+export function mapHarnessContext(value?: HarnessContextMessage): HarnessContext {
+  if (!value) return { availability: "unavailable", reason: "server_unsupported" };
+  const raw = value.counts;
+  if (!raw) return invalidHarnessPayload();
+  const counts = {
+    eligibleRecords: Number(raw.eligibleRecords),
+    reportedRecords: Number(raw.reportedRecords),
+    unreportedRecords: Number(raw.unreportedRecords),
+    invalidRecords: Number(raw.invalidRecords),
+    distinctIdentities: Number(raw.distinctIdentities),
+  };
+  const values = Object.values(counts);
+  if (values.some((count) => !Number.isSafeInteger(count) || count < 0)
+    || counts.eligibleRecords !== counts.reportedRecords + counts.unreportedRecords + counts.invalidRecords
+    || counts.distinctIdentities > counts.reportedRecords) return invalidHarnessPayload();
+  switch (value.classification.case) {
+    case "noEligibleRecords":
+      return values.every((count) => count === 0)
+        ? { availability: "available", state: "no_eligible_records", counts }
+        : invalidHarnessPayload();
+    case "unreported":
+      return counts.eligibleRecords > 0 && counts.unreportedRecords === counts.eligibleRecords
+        && counts.reportedRecords === 0 && counts.invalidRecords === 0 && counts.distinctIdentities === 0
+        ? { availability: "available", state: "unreported", counts }
+        : invalidHarnessPayload();
+    case "uniform": {
+      const identity = value.classification.value.identity;
+      if (counts.eligibleRecords <= 0 || counts.reportedRecords !== counts.eligibleRecords
+        || counts.unreportedRecords !== 0 || counts.invalidRecords !== 0 || counts.distinctIdentities !== 1
+        || !identity || !validHarnessScope(identity.scope) || !validHarnessFingerprint(identity.fingerprint)
+        || !validHarnessLabel(identity.label)) return invalidHarnessPayload();
+      return {
+        availability: "available", state: "uniform", counts,
+        identity: { scope: identity.scope, fingerprint: identity.fingerprint, label: identity.label || undefined },
+      };
+    }
+    case "mixed":
+      return counts.eligibleRecords > 0 && counts.reportedRecords === counts.eligibleRecords
+        && counts.unreportedRecords === 0 && counts.invalidRecords === 0 && counts.distinctIdentities > 1
+        ? { availability: "available", state: "mixed", counts }
+        : invalidHarnessPayload();
+    case "incomplete":
+      return counts.eligibleRecords > 0 && counts.reportedRecords > 0 && counts.unreportedRecords > 0
+        && counts.invalidRecords === 0 && counts.distinctIdentities > 0
+        ? { availability: "available", state: "incomplete", counts }
+        : invalidHarnessPayload();
+    case "invalid":
+      return counts.eligibleRecords > 0 && counts.invalidRecords > 0
+        ? { availability: "available", state: "invalid", counts }
+        : invalidHarnessPayload();
+    default:
+      return invalidHarnessPayload();
+  }
+}
+
+const invalidHarnessPayload = (): HarnessContext => ({ availability: "unavailable", reason: "invalid_server_payload" });
+export const mapOptionalSessionTokens = (value: TokenUsageMessage | undefined, harnessContext: HarnessContext): TokenUsage | undefined => {
+  if (value) return mapTokens(value);
+  return harnessContext.availability === "unavailable" && harnessContext.reason === "server_unsupported"
+    ? undefined
+    : mapTokens(undefined);
+};
+const validHarnessScope = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
+const validHarnessFingerprint = (value: string) => /^sha256:[0-9a-f]{64}$/.test(value);
+const validHarnessLabel = (value: string) => value.trim() === value && Array.from(value).length <= 80 && !/[\p{Cc},]/u.test(value);
 
 function mapSession(value: SessionSummary, traceIds: readonly string[] = []): Session {
   return {

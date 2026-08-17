@@ -11,6 +11,8 @@ const session = (id: string, startedAt: string, endedAt: string): Session => ({
 });
 const analysis = (sessionId: string, current = false): ReworkAnalysis => ({
   sourceId: "codex", sessionId,
+  sessionTokens: tokens(1_000),
+  harness: { availability: "available", state: "uniform", counts: { eligibleRecords: 4, reportedRecords: 4, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 1 }, identity: { scope: "project-7f2a", fingerprint: current ? "sha256:dfbc1de58f3b905c7b0c0fd79361699336b5f9da617b1db8f35c76673f95b29d" : "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", label: current ? "AGENTS v2" : "AGENTS v1" } },
   metrics: {
     validationFailures: 0, failFixRetryCycles: 0,
     reworkDurationMs: current ? 100 : 400, totalAgentEffortMs: 1_000, reworkAgentEffortRate: current ? 0.1 : 0.4,
@@ -41,6 +43,7 @@ const readyState = (baseline: Session, current: Session): ReworkComparisonViewSt
     selectedBaselineId: baseline.id,
     rows: report.rows,
     warnings: report.warnings,
+    harness: report.harness,
   };
 };
 
@@ -66,13 +69,21 @@ describe("am-rework-comparison", () => {
     expect(content).toContain("1 / 5 outcome-known validations");
     expect(content).toContain("Current evidence is a partial retained projection");
     expect(content).toContain("not causal evidence");
+    expect(content).toContain("Reported harness fingerprint changed");
+    expect(content).toContain("AGENTS v1");
+    expect(content).toContain("AGENTS v2");
+    expect(content).toContain("4 / 4 reported records");
     expect(panel.shadowRoot?.querySelector("table caption")?.textContent).toContain("Normalized diagnostic comparison");
     expect(panel.shadowRoot?.querySelectorAll("th[scope='col']")).toHaveLength(4);
-    expect(panel.shadowRoot?.querySelectorAll("details.metric-help")).toHaveLength(5);
-    const help = panel.shadowRoot?.querySelector<HTMLDetailsElement>("details.metric-help");
+    expect(panel.shadowRoot?.querySelectorAll("details.metric-help")).toHaveLength(6);
+    const help = panel.shadowRoot?.querySelectorAll<HTMLDetailsElement>("details.metric-help")[1];
     help?.querySelector("summary")?.click();
     expect(help?.open).toBe(true);
     expect(help?.textContent).toContain("not task- or change-level first-pass success");
+    const harnessHelp = panel.shadowRoot?.querySelector<HTMLDetailsElement>(".harness-context details.metric-help");
+    harnessHelp?.querySelector("summary")?.click();
+    expect(harnessHelp?.open).toBe(true);
+    expect(harnessHelp?.textContent).toContain("does not prove effective configuration equality");
   });
 
   it("publishes source-local baseline selection across the shadow boundary", async () => {

@@ -13,14 +13,22 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	grpcmetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/theoden9014/agentmetry/internal/harness"
 	"github.com/theoden9014/agentmetry/internal/ingest"
 	source "github.com/theoden9014/agentmetry/sourceplugin"
 )
 
 const maxRequestBytes = 32 << 20
+
+const (
+	harnessScopeMetadata       = "x-agentmetry-harness-scope"
+	harnessFingerprintMetadata = "x-agentmetry-harness-fingerprint"
+	harnessLabelMetadata       = "x-agentmetry-harness-label"
+)
 
 type Receiver struct {
 	committer  ingest.ExportCommitter
@@ -66,13 +74,13 @@ func newTraceReceiver(committer ingest.ExportCommitter, normalizer Normalizer) *
 }
 
 func (receiver *traceReceiver) Export(ctx context.Context, request ptraceotlp.ExportRequest) (ptraceotlp.ExportResponse, error) {
-	if err := receiver.accept(ctx, request, ingest.TransportGRPC); err != nil {
+	if err := receiver.accept(ctx, request, ingest.TransportGRPC, grpcHarnessEvidence(ctx)); err != nil {
 		return ptraceotlp.NewExportResponse(), status.Errorf(codes.Unavailable, "commit traces: %v", err)
 	}
 	return ptraceotlp.NewExportResponse(), nil
 }
 
-func (receiver *traceReceiver) accept(ctx context.Context, request ptraceotlp.ExportRequest, transport ingest.Transport) error {
+func (receiver *traceReceiver) accept(ctx context.Context, request ptraceotlp.ExportRequest, transport ingest.Transport, receipt harness.ReceiptEvidence) error {
 	protobuf, err := request.MarshalProto()
 	if err != nil {
 		return fmt.Errorf("marshal canonical trace protobuf: %w", err)
@@ -88,6 +96,7 @@ func (receiver *traceReceiver) accept(ctx context.Context, request ptraceotlp.Ex
 		accepted.NormalizationError = err.Error()
 	}
 	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
+	accepted.Journal.Harness = receipt
 	return receiver.committer.CommitExport(ctx, accepted)
 }
 
@@ -102,13 +111,13 @@ func newLogReceiver(committer ingest.ExportCommitter, normalizer Normalizer) *lo
 }
 
 func (receiver *logReceiver) Export(ctx context.Context, request plogotlp.ExportRequest) (plogotlp.ExportResponse, error) {
-	if err := receiver.accept(ctx, request, ingest.TransportGRPC); err != nil {
+	if err := receiver.accept(ctx, request, ingest.TransportGRPC, grpcHarnessEvidence(ctx)); err != nil {
 		return plogotlp.NewExportResponse(), status.Errorf(codes.Unavailable, "commit logs: %v", err)
 	}
 	return plogotlp.NewExportResponse(), nil
 }
 
-func (receiver *logReceiver) accept(ctx context.Context, request plogotlp.ExportRequest, transport ingest.Transport) error {
+func (receiver *logReceiver) accept(ctx context.Context, request plogotlp.ExportRequest, transport ingest.Transport, receipt harness.ReceiptEvidence) error {
 	protobuf, err := request.MarshalProto()
 	if err != nil {
 		return fmt.Errorf("marshal canonical log protobuf: %w", err)
@@ -124,6 +133,7 @@ func (receiver *logReceiver) accept(ctx context.Context, request plogotlp.Export
 		accepted.NormalizationError = err.Error()
 	}
 	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
+	accepted.Journal.Harness = receipt
 	return receiver.committer.CommitExport(ctx, accepted)
 }
 
@@ -138,13 +148,13 @@ func newMetricReceiver(committer ingest.ExportCommitter, normalizer Normalizer) 
 }
 
 func (receiver *metricReceiver) Export(ctx context.Context, request pmetricotlp.ExportRequest) (pmetricotlp.ExportResponse, error) {
-	if err := receiver.accept(ctx, request, ingest.TransportGRPC); err != nil {
+	if err := receiver.accept(ctx, request, ingest.TransportGRPC, grpcHarnessEvidence(ctx)); err != nil {
 		return pmetricotlp.NewExportResponse(), status.Errorf(codes.Unavailable, "commit metrics: %v", err)
 	}
 	return pmetricotlp.NewExportResponse(), nil
 }
 
-func (receiver *metricReceiver) accept(ctx context.Context, request pmetricotlp.ExportRequest, transport ingest.Transport) error {
+func (receiver *metricReceiver) accept(ctx context.Context, request pmetricotlp.ExportRequest, transport ingest.Transport, receipt harness.ReceiptEvidence) error {
 	protobuf, err := request.MarshalProto()
 	if err != nil {
 		return fmt.Errorf("marshal canonical metric protobuf: %w", err)
@@ -160,6 +170,7 @@ func (receiver *metricReceiver) accept(ctx context.Context, request pmetricotlp.
 		accepted.NormalizationError = err.Error()
 	}
 	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
+	accepted.Journal.Harness = receipt
 	return receiver.committer.CommitExport(ctx, accepted)
 }
 
@@ -169,7 +180,7 @@ func (receiver *Receiver) exportTracesHTTP(response http.ResponseWriter, request
 		writeOTLPError(response, http.StatusBadRequest, err)
 		return
 	}
-	if err := receiver.traces.accept(request.Context(), exportRequest, httpTransport(request)); err != nil {
+	if err := receiver.traces.accept(request.Context(), exportRequest, httpTransport(request), httpHarnessEvidence(request.Header)); err != nil {
 		writeOTLPError(response, http.StatusServiceUnavailable, err)
 		return
 	}
@@ -183,7 +194,7 @@ func (receiver *Receiver) exportLogsHTTP(response http.ResponseWriter, request *
 		writeOTLPError(response, http.StatusBadRequest, err)
 		return
 	}
-	if err := receiver.logs.accept(request.Context(), exportRequest, httpTransport(request)); err != nil {
+	if err := receiver.logs.accept(request.Context(), exportRequest, httpTransport(request), httpHarnessEvidence(request.Header)); err != nil {
 		writeOTLPError(response, http.StatusServiceUnavailable, err)
 		return
 	}
@@ -197,12 +208,29 @@ func (receiver *Receiver) exportMetricsHTTP(response http.ResponseWriter, reques
 		writeOTLPError(response, http.StatusBadRequest, err)
 		return
 	}
-	if err := receiver.metrics.accept(request.Context(), exportRequest, httpTransport(request)); err != nil {
+	if err := receiver.metrics.accept(request.Context(), exportRequest, httpTransport(request), httpHarnessEvidence(request.Header)); err != nil {
 		writeOTLPError(response, http.StatusServiceUnavailable, err)
 		return
 	}
 	exportResponse := pmetricotlp.NewExportResponse()
 	writeOTLPResponse(response, request, exportResponse.MarshalProto, exportResponse.MarshalJSON)
+}
+
+func httpHarnessEvidence(header http.Header) harness.ReceiptEvidence {
+	return harness.ParseMetadata(harness.MetadataValues{
+		Scope:       header.Values(harnessScopeMetadata),
+		Fingerprint: header.Values(harnessFingerprintMetadata),
+		Label:       header.Values(harnessLabelMetadata),
+	})
+}
+
+func grpcHarnessEvidence(ctx context.Context) harness.ReceiptEvidence {
+	metadata, _ := grpcmetadata.FromIncomingContext(ctx)
+	return harness.ParseMetadata(harness.MetadataValues{
+		Scope:       metadata.Get(harnessScopeMetadata),
+		Fingerprint: metadata.Get(harnessFingerprintMetadata),
+		Label:       metadata.Get(harnessLabelMetadata),
+	})
 }
 
 func httpTransport(request *http.Request) ingest.Transport {

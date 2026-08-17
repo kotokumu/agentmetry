@@ -102,9 +102,11 @@ type ReworkReport struct {
 }
 
 type SessionRework struct {
-	SourceID string       `json:"sourceId"`
-	RunID    string       `json:"runId"`
-	Report   ReworkReport `json:"report"`
+	SourceID      string               `json:"sourceId"`
+	RunID         string               `json:"runId"`
+	SessionTokens canonical.TokenUsage `json:"sessionTokens"`
+	Harness       HarnessContext       `json:"-"`
+	Report        ReworkReport         `json:"report"`
 }
 
 type SessionReworkReader interface {

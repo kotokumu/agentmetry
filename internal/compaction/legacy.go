@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/theoden9014/agentmetry/internal/harness"
 	"github.com/theoden9014/agentmetry/internal/ingest"
 	"github.com/theoden9014/agentmetry/internal/journal"
 )
@@ -46,9 +47,20 @@ func newLegacyReader(ctx context.Context, transaction *sql.Tx) (*legacyReader, e
 	if hasCodec {
 		codecExpression = "payload_codec"
 	}
+	harnessExpressions := []string{"'unreported'", "''", "''", "''"}
+	for index, column := range []string{"harness_receipt_state", "harness_scope", "harness_fingerprint", "harness_label"} {
+		exists, err := columnExistsTx(ctx, transaction, "otlp_exports", column)
+		if err != nil {
+			return nil, err
+		}
+		if exists {
+			harnessExpressions[index] = column
+		}
+	}
 	rows, err := transaction.QueryContext(ctx, `SELECT received_at, signal, transport,
 payload_protobuf, `+codecExpression+`, payload_size, payload_sha256, source,
-normalizer_version, normalization_status, normalization_error
+normalizer_version, normalization_status, normalization_error, `+
+		harnessExpressions[0]+`, `+harnessExpressions[1]+`, `+harnessExpressions[2]+`, `+harnessExpressions[3]+`
 FROM otlp_exports ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("read legacy exports: %w", err)
@@ -61,13 +73,13 @@ func (reader *legacyReader) Next() bool   { return reader.rows.Next() }
 
 func (reader *legacyReader) Export() (storedExport, error) {
 	var receivedText, signalText, transportText, codecText, hashText string
-	var sourceID, status, normalizationError string
+	var sourceID, status, normalizationError, harnessState, harnessScope, harnessFingerprint, harnessLabel string
 	var stored []byte
 	var originalSize, normalizerVersion int
 	if err := reader.rows.Scan(
 		&receivedText, &signalText, &transportText, &stored, &codecText,
 		&originalSize, &hashText, &sourceID, &normalizerVersion, &status,
-		&normalizationError,
+		&normalizationError, &harnessState, &harnessScope, &harnessFingerprint, &harnessLabel,
 	); err != nil {
 		return storedExport{}, fmt.Errorf("scan legacy export: %w", err)
 	}
@@ -84,7 +96,10 @@ func (reader *legacyReader) Export() (storedExport, error) {
 		Ordinal: reader.next, ReceivedAt: receivedAt,
 		Signal: canonical.Signal(signalText), Transport: ingest.Transport(transportText),
 		Stored: stored, Codec: journal.Codec(codecText), Size: originalSize, Hash: hash,
-		Metadata:           ingest.JournalMetadata{Source: sourceID, NormalizerVersion: normalizerVersion, NormalizationStatus: status},
+		Metadata: ingest.JournalMetadata{
+			Source: sourceID, NormalizerVersion: normalizerVersion, NormalizationStatus: status,
+			Harness: harness.ReceiptEvidence{State: harness.ReceiptState(harnessState), Scope: harnessScope, Fingerprint: harnessFingerprint, Label: harnessLabel},
+		},
 		NormalizationError: normalizationError,
 	}, nil
 }

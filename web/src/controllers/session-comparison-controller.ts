@@ -131,7 +131,7 @@ export class SessionComparisonController {
     const report = buildReworkComparisonReport(baseline.session, baseline.analysis, current, currentAnalysis);
     return report.status === "invalid"
       ? { ...context, status: "invalid", code: report.code, reason: report.reason }
-      : { ...context, status: "ready", rows: report.rows, warnings: report.warnings };
+      : { ...context, status: "ready", rows: report.rows, warnings: report.warnings, harness: report.harness };
   }
 
   selectBaseline(sessionId: string) {

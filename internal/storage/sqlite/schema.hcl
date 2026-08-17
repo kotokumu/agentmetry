@@ -572,6 +572,22 @@ table "otlp_exports" {
   column "normalizer_version"  { type = integer }
   column "normalization_status" { type = text }
   column "normalization_error" { type = text }
+  column "harness_receipt_state" {
+    type    = text
+    default = "unreported"
+  }
+  column "harness_scope" {
+    type    = text
+    default = ""
+  }
+  column "harness_fingerprint" {
+    type    = text
+    default = ""
+  }
+  column "harness_label" {
+    type    = text
+    default = ""
+  }
 
   primary_key {
     columns = [table.otlp_exports.column.id]
@@ -668,6 +684,15 @@ table "observations" {
   }
   index "observations_model_idx" {
     columns = [table.observations.column.model]
+  }
+  index "observations_harness_evidence_idx" {
+    columns = [
+      table.observations.column.source,
+      table.observations.column.session_id,
+      table.observations.column.kind,
+      table.observations.column.signal,
+      table.observations.column.export_id,
+    ]
   }
 }
 

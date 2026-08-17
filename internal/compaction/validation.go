@@ -23,6 +23,10 @@ type journalIdentity struct {
 	NormalizerVersion  int
 	Status             string
 	NormalizationError string
+	HarnessState       string
+	HarnessScope       string
+	HarnessFingerprint string
+	HarnessLabel       string
 }
 
 type validationExpectation struct {
@@ -44,6 +48,8 @@ func (expected *validationExpectation) add(record storedExport, accepted ingest.
 		NormalizerVersion:  record.Metadata.NormalizerVersion,
 		Status:             record.Metadata.NormalizationStatus,
 		NormalizationError: record.NormalizationError,
+		HarnessState:       string(record.Metadata.Harness.State), HarnessScope: record.Metadata.Harness.Scope,
+		HarnessFingerprint: record.Metadata.Harness.Fingerprint, HarnessLabel: record.Metadata.Harness.Label,
 	})
 	expected.observations += int64(len(accepted.Observations))
 	expected.logs += int64(len(accepted.Projection.Logs))
@@ -93,7 +99,8 @@ func validateCandidate(ctx context.Context, path string, expected validationExpe
 	}
 	rows, err := database.QueryContext(ctx, `SELECT received_at, signal, transport,
 payload_protobuf, payload_codec, payload_size, payload_sha256, source,
-normalizer_version, normalization_status, normalization_error
+normalizer_version, normalization_status, normalization_error,
+harness_receipt_state, harness_scope, harness_fingerprint, harness_label
 FROM otlp_exports ORDER BY id`)
 	if err != nil {
 		return err
@@ -106,9 +113,10 @@ FROM otlp_exports ORDER BY id`)
 		}
 		want := expected.journals[index]
 		var received, signal, transport, codecText, hashText, sourceID, status, normalizationError string
+		var harnessState, harnessScope, harnessFingerprint, harnessLabel string
 		var stored []byte
 		var size, normalizerVersion int
-		if err := rows.Scan(&received, &signal, &transport, &stored, &codecText, &size, &hashText, &sourceID, &normalizerVersion, &status, &normalizationError); err != nil {
+		if err := rows.Scan(&received, &signal, &transport, &stored, &codecText, &size, &hashText, &sourceID, &normalizerVersion, &status, &normalizationError, &harnessState, &harnessScope, &harnessFingerprint, &harnessLabel); err != nil {
 			return err
 		}
 		hashBytes, err := hex.DecodeString(hashText)
@@ -120,7 +128,11 @@ FROM otlp_exports ORDER BY id`)
 		if _, err := journal.Restore(journal.Codec(codecText), stored, size, hash); err != nil {
 			return fmt.Errorf("validate candidate export %d: %w", index+1, err)
 		}
-		got := journalIdentity{received, signal, transport, size, hash, sourceID, normalizerVersion, status, normalizationError}
+		got := journalIdentity{
+			ReceivedAt: received, Signal: signal, Transport: transport, Size: size, Hash: hash,
+			Source: sourceID, NormalizerVersion: normalizerVersion, Status: status, NormalizationError: normalizationError,
+			HarnessState: harnessState, HarnessScope: harnessScope, HarnessFingerprint: harnessFingerprint, HarnessLabel: harnessLabel,
+		}
 		if got != want {
 			return fmt.Errorf("candidate export %d metadata differs: got %#v want %#v", index+1, got, want)
 		}

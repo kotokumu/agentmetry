@@ -1,4 +1,4 @@
-import type { ReworkAnalysis, Session } from "./telemetry";
+import type { HarnessContext, ReworkAnalysis, Session } from "./telemetry";
 
 export const COMPARISON_DISPLAY_DECIMALS = 1;
 
@@ -12,6 +12,11 @@ export type ComparisonMetricID =
 export type ComparisonUnit = "percent" | "per100";
 export type ProjectionCoverage = "complete" | "partial" | "unknown";
 export type ComparisonInvalidCode = "identity_mismatch" | "invalid_time" | "baseline_ineligible";
+export type HarnessComparisonIssue = "server_unsupported" | "invalid_server_payload" | "no_eligible_records" | "unreported" | "mixed" | "incomplete" | "invalid";
+type UniformHarnessContext = Extract<HarnessContext, Readonly<{ availability: "available"; state: "uniform" }>>;
+export type HarnessRelationship =
+  | Readonly<{ status: "reported_same" | "reported_changed"; baseline: UniformHarnessContext; current: UniformHarnessContext }>
+  | Readonly<{ status: "not_comparable"; baseline: HarnessContext; current: HarnessContext; baselineIssue?: HarnessComparisonIssue; currentIssue?: HarnessComparisonIssue; relationshipIssue?: "scope_mismatch" }>;
 
 export type AvailableComparisonValue = Readonly<{
   availability: "available";
@@ -68,7 +73,7 @@ type UnavailableRow = Readonly<{
 export type ReworkComparisonRow = ComparableRow | UnavailableRow;
 
 export type ReworkComparisonReport =
-  | Readonly<{ status: "ready"; rows: readonly ReworkComparisonRow[]; warnings: readonly string[] }>
+  | Readonly<{ status: "ready"; rows: readonly ReworkComparisonRow[]; warnings: readonly string[]; harness: HarnessRelationship }>
   | Readonly<{ status: "invalid"; code: ComparisonInvalidCode; reason: string }>;
 
 export type ComparisonBaselineOption = Readonly<{ sessionId: string; endedAt: string }>;
@@ -79,7 +84,7 @@ export type ReworkComparisonViewState =
   | (ComparisonViewContext & Readonly<{ status: "failed"; message: string }>)
   | (ComparisonViewContext & Readonly<{ status: "waiting"; message: string }>)
   | (ComparisonViewContext & Readonly<{ status: "invalid"; code: ComparisonInvalidCode; reason: string }>)
-  | (ComparisonViewContext & Readonly<{ status: "ready"; rows: readonly ReworkComparisonRow[]; warnings: readonly string[] }>);
+  | (ComparisonViewContext & Readonly<{ status: "ready"; rows: readonly ReworkComparisonRow[]; warnings: readonly string[]; harness: HarnessRelationship }>);
 
 type MetricDefinition = Readonly<{
   id: ComparisonMetricID;
@@ -114,13 +119,18 @@ export const createReworkDiagnosticSnapshot = (
   const endedAtMs = parseTime(session.endedAt);
   if (startedAtMs === undefined || endedAtMs === undefined || endedAtMs < startedAtMs) return undefined;
   const { metrics } = analysis;
+  const sessionTokenTotal = analysis.sessionTokens === undefined
+    ? analysis.harness.availability === "unavailable" && analysis.harness.reason === "server_unsupported"
+      ? session.tokens.total
+      : null
+    : analysis.sessionTokens.total;
   return {
     sourceId: session.sourceId,
     sessionId: session.id,
     startedAtMs,
     endedAtMs,
     projectionCoverage: projectionCoverage(analysis.coverage.activityCoverage),
-    sessionTokens: finiteOrNull(session.tokens.total),
+    sessionTokens: finiteOrNull(sessionTokenTotal),
     firstPassSuccesses: metrics.firstPassSuccesses,
     firstPassEligibleValidations: metrics.firstPassEligibleValidations,
     reworkTokens: finiteOrNull(metrics.reworkTokens.total),
@@ -155,8 +165,38 @@ export const buildReworkComparisonReport = (
     coverageWarning("Baseline", baseline.projectionCoverage),
     coverageWarning("Current", current.projectionCoverage),
   ].filter((value): value is string => Boolean(value));
-  return { status: "ready", rows, warnings };
+  return { status: "ready", rows, warnings, harness: compareHarnessContexts(baselineAnalysis.harness, currentAnalysis.harness) };
 };
+
+export const compareHarnessContexts = (baseline: HarnessContext, current: HarnessContext): HarnessRelationship => {
+  const baselineIssue = harnessIssue(baseline);
+  const currentIssue = harnessIssue(current);
+  if (baselineIssue || currentIssue) {
+    return {
+      status: "not_comparable",
+      baseline,
+      current,
+      ...(baselineIssue ? { baselineIssue } : {}),
+      ...(currentIssue ? { currentIssue } : {}),
+    };
+  }
+  if (baseline.availability !== "available" || baseline.state !== "uniform"
+    || current.availability !== "available" || current.state !== "uniform") {
+    return { status: "not_comparable", baseline, current, baselineIssue: "invalid_server_payload", currentIssue: "invalid_server_payload" };
+  }
+  if (baseline.identity.scope !== current.identity.scope) {
+    return { status: "not_comparable", baseline, current, relationshipIssue: "scope_mismatch" };
+  }
+  return {
+    status: baseline.identity.fingerprint === current.identity.fingerprint ? "reported_same" : "reported_changed",
+    baseline,
+    current,
+  };
+};
+
+const harnessIssue = (context: HarnessContext): HarnessComparisonIssue | undefined => context.availability === "unavailable"
+  ? context.reason
+  : context.state === "uniform" ? undefined : context.state;
 
 export const compareReworkSnapshots = (
   baseline: ReworkDiagnosticSnapshot,

@@ -280,6 +280,42 @@ message RecurringFailureEpisode {
   string span_id = 10;
 }
 
+message HarnessIdentity {
+  string scope = 1;
+  string fingerprint = 2;
+  string label = 3;
+}
+
+message HarnessEvidenceCounts {
+  int64 eligible_records = 1;
+  int64 reported_records = 2;
+  int64 unreported_records = 3;
+  int64 invalid_records = 4;
+  int64 distinct_identities = 5;
+}
+
+message NoEligibleHarnessEvidence {}
+message UnreportedHarnessEvidence {}
+message MixedHarnessEvidence {}
+message IncompleteHarnessEvidence {}
+message InvalidHarnessEvidence {}
+
+message UniformHarnessEvidence {
+  HarnessIdentity identity = 1;
+}
+
+message HarnessContext {
+  HarnessEvidenceCounts counts = 1;
+  oneof classification {
+    NoEligibleHarnessEvidence no_eligible_records = 2;
+    UnreportedHarnessEvidence unreported = 3;
+    UniformHarnessEvidence uniform = 4;
+    MixedHarnessEvidence mixed = 5;
+    IncompleteHarnessEvidence incomplete = 6;
+    InvalidHarnessEvidence invalid = 7;
+  }
+}
+
 message GetSessionReworkResponse {
   string source_id = 1;
   string session_id = 2;
@@ -287,6 +323,8 @@ message GetSessionReworkResponse {
   ReworkCoverage coverage = 4;
   ReworkCapabilities capabilities = 5;
   repeated RecurringFailureEpisode failure_episodes = 6;
+  HarnessContext harness_context = 7;
+  TokenUsage session_tokens = 8;
 }
 
 message ListSessionActivitiesRequest {

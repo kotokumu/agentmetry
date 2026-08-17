@@ -5,6 +5,8 @@ import {
   type ComparisonMetricID,
   type ComparisonUnit,
   type ComparisonValue,
+  type HarnessComparisonIssue,
+  type HarnessRelationship,
   type ReworkComparisonRow,
   type ReworkComparisonViewState,
 } from "../model/rework-comparison";
@@ -47,6 +49,12 @@ export class ReworkComparison extends LitElement {
     .metric-help p { display: none; position: absolute; z-index: 5; top: 22px; left: 0; width: min(300px, 70vw); margin: 0; border: 1px solid var(--am-border); border-radius: 8px; padding: 9px 10px; background: var(--am-surface-raised); box-shadow: 0 12px 30px rgba(0,0,0,.35); color: var(--am-text); font-size: .68rem; font-weight: 400; line-height: 1.45; }
     .metric-help[open] p, .metric-help:hover p, .metric-help:focus-within p { display: block; }
     .warnings { margin-top: 9px; color: #ffc77d; }
+    .harness-context { margin-bottom: 12px; border: 1px solid var(--am-border); border-radius: 10px; padding: 11px 12px; background: rgba(255,255,255,.015); }
+    .harness-heading { display: flex; align-items: center; gap: 7px; color: var(--am-text); font-size: .72rem; font-weight: 750; }
+    .harness-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 8px; }
+    .harness-side { min-width: 0; border-left: 2px solid var(--am-border); padding-left: 8px; color: var(--am-muted); font-size: .64rem; line-height: 1.45; }
+    .harness-side strong { display: block; overflow: hidden; color: var(--am-text); font: 700 .68rem/1.35 "SFMono-Regular", "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .harness-reason { margin: 7px 0 0; color: #ffc77d; font-size: .64rem; line-height: 1.45; }
     .qualification { margin-top: 9px; }
     .scope { margin-top: 6px; }
     .state { border: 1px dashed var(--am-border); border-radius: 10px; padding: 14px; }
@@ -84,6 +92,7 @@ export class ReworkComparison extends LitElement {
         return html`<div class="state" role="alert"><strong>${invalidTitle(this.state.code)}</strong><p>${this.state.reason}</p></div>`;
       case "ready":
         return html`
+          ${this.renderHarness(this.state.harness)}
           <div class="table-wrap"><table>
             <caption>Normalized diagnostic comparison between baseline and current conversations</caption>
             <thead><tr><th scope="col">Diagnostic</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Change</th></tr></thead>
@@ -93,6 +102,29 @@ export class ReworkComparison extends LitElement {
           <p class="qualification">Observed differences are diagnostic signals, not causal evidence or a productivity score.</p>
         `;
     }
+  }
+
+  private renderHarness(relationship: HarnessRelationship) {
+    const title = relationship.status === "reported_changed"
+      ? "Reported harness fingerprint changed"
+      : relationship.status === "reported_same"
+        ? "Reported harness fingerprint is the same"
+        : "Reported harness fingerprint is not comparable";
+    const issues = relationship.status === "not_comparable"
+      ? [
+        relationship.baselineIssue ? `Baseline: ${harnessIssueLabel(relationship.baselineIssue)}` : "",
+        relationship.currentIssue ? `Current: ${harnessIssueLabel(relationship.currentIssue)}` : "",
+        relationship.relationshipIssue === "scope_mismatch" ? "The reported comparison scopes differ." : "",
+      ].filter(Boolean).join(" ")
+      : "";
+    return html`<div class="harness-context">
+      <div class="harness-heading">${title}<details class="metric-help"><summary aria-label="About reported harness fingerprints" @click=${this.toggleHelp}>?</summary><p>A fingerprint covers only the files selected when it was generated. This pairwise association does not prove effective configuration equality or that a harness change caused a metric change.</p></details></div>
+      <div class="harness-pair">
+        ${renderHarnessSide("Baseline", relationship.baseline)}
+        ${renderHarnessSide("Current", relationship.current)}
+      </div>
+      ${issues ? html`<p class="harness-reason">${issues}</p>` : null}
+    </div>`;
   }
 
   private renderRow(row: ReworkComparisonRow) {
@@ -146,5 +178,26 @@ const formatTimestamp = (value: string) => {
   const date = new Date(value);
   return Number.isFinite(date.getTime()) ? date.toLocaleString() : value;
 };
+const renderHarnessSide = (side: "Baseline" | "Current", context: HarnessRelationship["baseline"]) => {
+  if (context.availability === "unavailable") {
+    return html`<div class="harness-side"><span>${side}</span><strong>Unavailable</strong><span>${harnessIssueLabel(context.reason)}</span></div>`;
+  }
+  const counts = `${context.counts.reportedRecords.toLocaleString()} / ${context.counts.eligibleRecords.toLocaleString()} reported records`;
+  if (context.state !== "uniform") {
+    return html`<div class="harness-side"><span>${side}</span><strong>${harnessIssueLabel(context.state)}</strong><span>${counts}</span></div>`;
+  }
+  const name = context.identity.label || shortFingerprint(context.identity.fingerprint);
+  return html`<div class="harness-side"><span>${side}</span><strong title=${context.identity.fingerprint}>${name}</strong><span>${counts} · scope ${context.identity.scope}</span></div>`;
+};
+const harnessIssueLabel = (issue: HarnessComparisonIssue) => ({
+  server_unsupported: "Server does not provide harness evidence",
+  invalid_server_payload: "Invalid harness evidence response",
+  no_eligible_records: "No eligible records",
+  unreported: "Harness fingerprint was not reported",
+  mixed: "Multiple fingerprints were reported",
+  incomplete: "Fingerprint reporting was incomplete",
+  invalid: "Invalid fingerprint metadata was observed",
+})[issue];
+const shortFingerprint = (value: string) => value.length > 19 ? `${value.slice(0, 19)}…` : value;
 
 declare global { interface HTMLElementTagNameMap { "am-rework-comparison": ReworkComparison } }

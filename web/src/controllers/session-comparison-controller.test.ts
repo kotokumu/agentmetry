@@ -11,6 +11,8 @@ const session = (id: string, startedAt: string, endedAt: string, sourceId = "cod
 });
 const rework = (sessionId: string, sourceId = "codex"): ReworkAnalysis => ({
   sourceId, sessionId,
+  sessionTokens: tokens,
+  harness: { availability: "available", state: "unreported", counts: { eligibleRecords: 1, reportedRecords: 0, unreportedRecords: 1, invalidRecords: 0, distinctIdentities: 0 } },
   metrics: {
     validationFailures: 0, failFixRetryCycles: 0, reworkDurationMs: 0, totalAgentEffortMs: 100, reworkAgentEffortRate: 0,
     reworkTokens: { ...tokens, total: 0 }, toolAttemptsWithOutcome: 1, toolFailures: 0, toolFailureRate: 0,
@@ -30,6 +32,12 @@ const rework = (sessionId: string, sourceId = "codex"): ReworkAnalysis => ({
   },
   failureEpisodes: [],
 });
+const uniformHarness = (fingerprint: string) => ({
+  availability: "available",
+  state: "uniform",
+  counts: { eligibleRecords: 1, reportedRecords: 1, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 1 },
+  identity: { scope: "project-7f2a", fingerprint },
+} as const);
 
 let comparisonClient: SessionComparisonReader;
 let current: Session | undefined;
@@ -207,5 +215,45 @@ describe("SessionComparisonController", () => {
       throughCursor: "2",
     });
     expect(getSessionSummary).toHaveBeenCalledTimes(2);
+  });
+
+  it("recomputes harness relationships after late evidence without changing an explicit baseline", async () => {
+    current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
+    const nearest = session("nearest", "2026-08-17T09:00:00Z", "2026-08-17T09:59:00Z");
+    const selected = session("selected", "2026-08-17T08:00:00Z", "2026-08-17T08:59:00Z");
+    sessions = [current, nearest, selected];
+    const fingerprint = "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db";
+    const changedFingerprint = "sha256:dfbc1de58f3b905c7b0c0fd79361699336b5f9da617b1db8f35c76673f95b29d";
+    let baselineAnalysis: ReworkAnalysis = { ...rework("selected"), harness: uniformHarness(fingerprint) };
+    comparisonClient = {
+      getSessionSummary: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(id === "selected" ? selected : nearest)),
+      getSessionRework: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(id === "selected" ? baselineAnalysis : rework(id))),
+    } as SessionComparisonReader;
+    const host = document.createElement("test-comparison-host") as ComparisonHost;
+    document.body.append(host);
+    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("nearest"));
+
+    host.comparison.selectBaseline("selected");
+    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("selected"));
+    const currentSame = { ...rework("current"), harness: uniformHarness(fingerprint) };
+    expect(host.comparison.viewState(currentSame)).toMatchObject({ status: "ready", harness: { status: "reported_same" } });
+
+    baselineAnalysis = {
+      ...baselineAnalysis,
+      harness: { availability: "available", state: "mixed", counts: { eligibleRecords: 2, reportedRecords: 2, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 2 } },
+    };
+    await host.comparison.applyLiveUpdate({
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "selected", traceId: "" }],
+      resyncRequired: false,
+      throughCursor: "3",
+    });
+    expect(host.comparison.selectedBaselineId).toBe("selected");
+    expect(host.comparison.viewState(currentSame)).toMatchObject({ status: "ready", harness: { status: "not_comparable", baselineIssue: "mixed" } });
+
+    baselineAnalysis = { ...baselineAnalysis, harness: uniformHarness(fingerprint) };
+    await host.comparison.refresh();
+    const currentChanged = { ...currentSame, harness: uniformHarness(changedFingerprint) };
+    expect(host.comparison.selectedBaselineId).toBe("selected");
+    expect(host.comparison.viewState(currentChanged)).toMatchObject({ status: "ready", harness: { status: "reported_changed" } });
   });
 });

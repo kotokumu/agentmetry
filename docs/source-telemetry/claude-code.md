@@ -36,6 +36,12 @@ protocol, and header variables override or extend the shared settings. HTTP
 uses `/v1/logs`, `/v1/metrics`, and `/v1/traces` in the documented examples.
 For HTTP protocols, v2.1.212 and later sends `Content-Length`.
 
+Agentmetry optionally reads the allowlisted request metadata
+`x-agentmetry-harness-scope`, `x-agentmetry-harness-fingerprint`, and
+`x-agentmetry-harness-label` from the documented OTLP header configuration.
+These fields are an Agentmetry extension, not Claude Code record attributes;
+see [Reported harness fingerprint relationship](../design/harness-config-correlation.md).
+
 ---
 
 ## 4. Resource and scope schema

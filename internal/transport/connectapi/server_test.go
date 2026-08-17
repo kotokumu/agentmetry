@@ -218,24 +218,37 @@ func TestConnectServerPassesAgentActivityFilter(t *testing.T) {
 func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing.T) {
 	rate := 0.25
 	effortRate := 0.6
-	reader := &readerStub{rework: query.SessionRework{SourceID: "codex", RunID: "run-1", Report: query.ReworkReport{
-		ValidationFailures: 2, FailFixRetryCycles: 1, ReworkDuration: 3 * time.Second,
-		TotalAgentEffort: 5 * time.Second, ReworkAgentEffortRate: &effortRate,
-		ReworkTokens:            canonical.TokenUsage{Input: 10, Presence: canonical.TokenPresence{Output: true}},
-		ToolAttemptsWithOutcome: 4, ToolFailures: 1, ToolFailureRate: &rate,
-		APIRetryWaste:    query.APIRetryWaste{Attempts: 1, Duration: time.Second},
-		RepeatedCommands: 3, ReeditedFiles: 2,
-		ValidationAttemptsWithOutcome: 4, FirstPassEligibleValidations: 2, FirstPassSuccesses: 1, FirstPassSuccessRate: &effortRate,
-		RecurringFailureLoops: 1, RepeatedFailureAttempts: 3, ResolvedFailureLoops: 1,
-		FailureResolutionDuration: 6500 * time.Millisecond,
-		FailureResolutionTokens:   canonical.TokenUsage{Input: 38, Presence: canonical.TokenPresence{Output: true}},
-		FailureEpisodes:           []query.RecurringFailureEpisode{{AgentID: "agent-1", Operation: canonical.OperationTest, ValidationFingerprint: "sha256:validation", ErrorFingerprints: []string{"sha256:abc"}, FailureAttempts: 3, Resolved: true, ResolutionDuration: 6500 * time.Millisecond, TraceID: "trace-1", SpanID: "span-1"}},
-		Coverage:                  query.ReworkCoverage{ActivityCoverage: query.ActivityCoveragePartial, CanonicalEvents: 8, ClassifiedEvents: 7, KnownOutcomes: 4, ValidationAttempts: 4, FingerprintedFailures: 2, IdentifiedValidationAttempts: 4, IDBackedValidationAttempts: 3, MergedValidationAttempts: 1, UncorrelatedValidationObservations: 1},
-		Capabilities: query.ReworkCapabilities{
-			ChangeRevert:      query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs diffs"},
-			CrossAgentOverlap: query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs identities"},
-		},
-	}}}
+	harnessContext, err := query.ClassifyHarnessEvidence(query.HarnessEvidenceFacts{
+		Counts: query.HarnessEvidenceCounts{EligibleRecords: 8, ReportedRecords: 8, DistinctIdentities: 1},
+		Identities: []query.ReportedIdentityEvidence{{
+			Identity: query.HarnessIdentity{Scope: "project-7f2a", Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db"},
+			Records:  8, Labels: []string{"AGENTS v2"},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := &readerStub{rework: query.SessionRework{
+		SourceID: "codex", RunID: "run-1", SessionTokens: canonical.TokenUsage{Input: 100, Output: 20},
+		Harness: harnessContext,
+		Report: query.ReworkReport{
+			ValidationFailures: 2, FailFixRetryCycles: 1, ReworkDuration: 3 * time.Second,
+			TotalAgentEffort: 5 * time.Second, ReworkAgentEffortRate: &effortRate,
+			ReworkTokens:            canonical.TokenUsage{Input: 10, Presence: canonical.TokenPresence{Output: true}},
+			ToolAttemptsWithOutcome: 4, ToolFailures: 1, ToolFailureRate: &rate,
+			APIRetryWaste:    query.APIRetryWaste{Attempts: 1, Duration: time.Second},
+			RepeatedCommands: 3, ReeditedFiles: 2,
+			ValidationAttemptsWithOutcome: 4, FirstPassEligibleValidations: 2, FirstPassSuccesses: 1, FirstPassSuccessRate: &effortRate,
+			RecurringFailureLoops: 1, RepeatedFailureAttempts: 3, ResolvedFailureLoops: 1,
+			FailureResolutionDuration: 6500 * time.Millisecond,
+			FailureResolutionTokens:   canonical.TokenUsage{Input: 38, Presence: canonical.TokenPresence{Output: true}},
+			FailureEpisodes:           []query.RecurringFailureEpisode{{AgentID: "agent-1", Operation: canonical.OperationTest, ValidationFingerprint: "sha256:validation", ErrorFingerprints: []string{"sha256:abc"}, FailureAttempts: 3, Resolved: true, ResolutionDuration: 6500 * time.Millisecond, TraceID: "trace-1", SpanID: "span-1"}},
+			Coverage:                  query.ReworkCoverage{ActivityCoverage: query.ActivityCoveragePartial, CanonicalEvents: 8, ClassifiedEvents: 7, KnownOutcomes: 4, ValidationAttempts: 4, FingerprintedFailures: 2, IdentifiedValidationAttempts: 4, IDBackedValidationAttempts: 3, MergedValidationAttempts: 1, UncorrelatedValidationObservations: 1},
+			Capabilities: query.ReworkCapabilities{
+				ChangeRevert:      query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs diffs"},
+				CrossAgentOverlap: query.AnalysisCapability{State: query.CapabilityUnavailable, Reason: "needs identities"},
+			},
+		}}}
 	_, handler := New(reader, nil, time.Now)
 	server := httptest.NewServer(handler)
 	t.Cleanup(server.Close)
@@ -267,6 +280,15 @@ func TestConnectServerMapsSessionReworkWithoutInventingOptionalValues(t *testing
 	}
 	if response.Msg.GetCoverage().GetActivityCoverage() != query.ActivityCoveragePartial || response.Msg.GetCapabilities().GetChangeRevert().GetState() != query.CapabilityUnavailable {
 		t.Fatalf("coverage/capabilities missing: %#v", response.Msg)
+	}
+	if response.Msg.GetSessionTokens().GetTotal() != 120 || response.Msg.GetHarnessContext().GetUniform().GetIdentity().GetLabel() != "AGENTS v2" {
+		t.Fatalf("snapshot context missing: %#v", response.Msg)
+	}
+}
+
+func TestMapSessionReworkRejectsMissingHarnessContext(t *testing.T) {
+	if _, err := mapSessionRework(query.SessionRework{}); err == nil {
+		t.Fatal("mapSessionRework accepted a missing harness context")
 	}
 }
 

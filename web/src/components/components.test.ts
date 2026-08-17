@@ -71,6 +71,8 @@ const traceFixture: Trace = {
 const reworkFixture: ReworkAnalysis = {
   sourceId: "codex",
   sessionId: "session-1",
+  sessionTokens: { input: 800, output: 200, cacheRead: null, cacheWrite: null, reasoning: null, total: 1_000 },
+  harness: { availability: "available", state: "unreported", counts: { eligibleRecords: 8, reportedRecords: 0, unreportedRecords: 8, invalidRecords: 0, distinctIdentities: 0 } },
   metrics: {
     validationFailures: 2, failFixRetryCycles: 1, reworkDurationMs: 3500,
     totalAgentEffortMs: 10_000, reworkAgentEffortRate: 0.35,
@@ -100,7 +102,6 @@ describe("dashboard components", () => {
   it("renders session rework metrics with coverage and capability limits", async () => {
     const panel = document.createElement("am-rework-summary") as ReworkSummary;
     panel.analysis = reworkFixture;
-    panel.sessionTotalTokens = 1_000;
     document.body.append(panel);
 
     await panel.updateComplete;
@@ -182,8 +183,7 @@ describe("dashboard components", () => {
 
   it("does not report a rework token rate without a positive session token total", async () => {
     const panel = document.createElement("am-rework-summary") as ReworkSummary;
-    panel.analysis = reworkFixture;
-    panel.sessionTotalTokens = 0;
+    panel.analysis = { ...reworkFixture, sessionTokens: { ...reworkFixture.sessionTokens!, total: 0 } };
     document.body.append(panel);
 
     await panel.updateComplete;
@@ -193,6 +193,25 @@ describe("dashboard components", () => {
     await card?.updateComplete;
     expect(card?.value).toBe("Not reported");
     expect(card?.hint).toBe("Session token total unavailable");
+  });
+
+  it("uses the session summary denominator only for an old server response", async () => {
+    const panel = document.createElement("am-rework-summary") as ReworkSummary;
+    panel.analysis = {
+      ...reworkFixture,
+      sessionTokens: undefined,
+      harness: { availability: "unavailable", reason: "server_unsupported" },
+    };
+    panel.legacySessionTotalTokens = 2_000;
+    document.body.append(panel);
+
+    await panel.updateComplete;
+
+    const card = Array.from(panel.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? [])
+      .find((candidate) => candidate.label === "Rework token rate");
+    await card?.updateComplete;
+    expect(card?.value).toBe("6.0%");
+    expect(card?.hint).toBe("120 of 2,000 session tokens");
   });
 
   it("does not render unresolved recurring loops as zero-time resolutions", async () => {
@@ -245,7 +264,6 @@ describe("dashboard components", () => {
         reworkTokens: { ...reworkFixture.metrics.reworkTokens, total: null },
       },
     };
-    panel.sessionTotalTokens = 1_000;
     document.body.append(panel);
 
     await panel.updateComplete;

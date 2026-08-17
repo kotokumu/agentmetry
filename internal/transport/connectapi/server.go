@@ -362,7 +362,11 @@ func (server *Server) GetSessionRework(ctx context.Context, request *connect.Req
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(mapSessionRework(analysis)), nil
+	response, err := mapSessionRework(analysis)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	return connect.NewResponse(response), nil
 }
 
 func (server *Server) ListSessionActivities(ctx context.Context, request *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
@@ -554,10 +558,15 @@ func mapSession(value query.Session) *v1.SessionSummary {
 	return result
 }
 
-func mapSessionRework(value query.SessionRework) *v1.GetSessionReworkResponse {
+func mapSessionRework(value query.SessionRework) (*v1.GetSessionReworkResponse, error) {
 	report := value.Report
+	harnessContext, err := mapHarnessContext(value.Harness)
+	if err != nil {
+		return nil, fmt.Errorf("map harness context: %w", err)
+	}
 	return &v1.GetSessionReworkResponse{
 		SourceId: value.SourceID, SessionId: value.RunID,
+		HarnessContext: harnessContext, SessionTokens: mapTokens(value.SessionTokens),
 		Metrics: &v1.ReworkMetrics{
 			ValidationFailures: report.ValidationFailures, FailFixRetryCycles: report.FailFixRetryCycles,
 			ReworkDurationMs: report.ReworkDuration.Milliseconds(), ReworkTokens: mapTokens(report.ReworkTokens),
@@ -587,7 +596,42 @@ func mapSessionRework(value query.SessionRework) *v1.GetSessionReworkResponse {
 			CrossAgentOverlap: mapAnalysisCapability(report.Capabilities.CrossAgentOverlap),
 		},
 		FailureEpisodes: mapRecurringFailureEpisodes(report.FailureEpisodes),
+	}, nil
+}
+
+func mapHarnessContext(value query.HarnessContext) (*v1.HarnessContext, error) {
+	view, err := query.InspectHarnessContext(value)
+	if err != nil {
+		return nil, err
 	}
+	counts := view.Counts
+	result := &v1.HarnessContext{Counts: &v1.HarnessEvidenceCounts{
+		EligibleRecords: counts.EligibleRecords, ReportedRecords: counts.ReportedRecords,
+		UnreportedRecords: counts.UnreportedRecords, InvalidRecords: counts.InvalidRecords,
+		DistinctIdentities: counts.DistinctIdentities,
+	}}
+	switch view.Classification {
+	case query.HarnessNoEligibleRecords:
+		result.Classification = &v1.HarnessContext_NoEligibleRecords{NoEligibleRecords: &v1.NoEligibleHarnessEvidence{}}
+	case query.HarnessUnreported:
+		result.Classification = &v1.HarnessContext_Unreported{Unreported: &v1.UnreportedHarnessEvidence{}}
+	case query.HarnessUniform:
+		if view.Identity == nil {
+			return nil, fmt.Errorf("uniform harness context has no identity")
+		}
+		result.Classification = &v1.HarnessContext_Uniform{Uniform: &v1.UniformHarnessEvidence{Identity: &v1.HarnessIdentity{
+			Scope: view.Identity.Scope, Fingerprint: view.Identity.Fingerprint, Label: view.Identity.Label,
+		}}}
+	case query.HarnessMixed:
+		result.Classification = &v1.HarnessContext_Mixed{Mixed: &v1.MixedHarnessEvidence{}}
+	case query.HarnessIncomplete:
+		result.Classification = &v1.HarnessContext_Incomplete{Incomplete: &v1.IncompleteHarnessEvidence{}}
+	case query.HarnessInvalid:
+		result.Classification = &v1.HarnessContext_Invalid{Invalid: &v1.InvalidHarnessEvidence{}}
+	default:
+		return nil, fmt.Errorf("unsupported harness classification %q", view.Classification)
+	}
+	return result, nil
 }
 
 func mapRecurringFailureEpisodes(values []query.RecurringFailureEpisode) []*v1.RecurringFailureEpisode {
