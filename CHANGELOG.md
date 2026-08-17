@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.9.0](https://github.com/kotokumu/agentmetry/compare/v1.8.1...v1.9.0) (2026-08-17)
+
+
+### Features
+
+* **brand:** add Agentmetry visual identity ([6642722](https://github.com/kotokumu/agentmetry/commit/66427222af988298417227fdaf2752a2a0973a9c))
+* **brand:** add Agentmetry visual identity ([d1201b4](https://github.com/kotokumu/agentmetry/commit/d1201b48c7e0da796e51ab5a08f46dc89bfbb6db))
+
 ## [1.8.1](https://github.com/kotokumu/agentmetry/compare/v1.8.0...v1.8.1) (2026-08-17)
 
 
