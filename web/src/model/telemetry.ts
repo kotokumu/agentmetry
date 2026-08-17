@@ -23,9 +23,24 @@ export type RecurringFailureEpisode = Readonly<{
   failureAttempts: number; resolved: boolean; resolutionDurationMs: number; resolutionTokens: TokenUsage;
   traceId: string; spanId: string;
 }>;
+export type HarnessEvidenceCounts = Readonly<{
+  eligibleRecords: number;
+  reportedRecords: number;
+  unreportedRecords: number;
+  invalidRecords: number;
+  distinctIdentities: number;
+}>;
+export type HarnessIdentity = Readonly<{ scope: string; fingerprint: string; label?: string }>;
+export type HarnessEvidenceState = "no_eligible_records" | "unreported" | "uniform" | "mixed" | "incomplete" | "invalid";
+export type HarnessContext =
+  | Readonly<{ availability: "available"; state: "uniform"; counts: HarnessEvidenceCounts; identity: HarnessIdentity }>
+  | Readonly<{ availability: "available"; state: Exclude<HarnessEvidenceState, "uniform">; counts: HarnessEvidenceCounts }>
+  | Readonly<{ availability: "unavailable"; reason: "server_unsupported" | "invalid_server_payload" }>;
 export type ReworkAnalysis = Readonly<{
   sourceId: string;
   sessionId: string;
+  sessionTokens?: TokenUsage;
+  harness: HarnessContext;
   metrics: Readonly<{
     validationFailures: number;
     failFixRetryCycles: number;

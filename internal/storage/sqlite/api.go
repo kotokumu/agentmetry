@@ -291,13 +291,16 @@ func (store *Store) GetSessionRework(ctx context.Context, identity query.Convers
 	if err != nil {
 		return query.SessionRework{}, err
 	}
+	harnessContext, err := store.loadSessionHarnessContext(ctx, transaction, root, graph)
+	if err != nil {
+		return query.SessionRework{}, err
+	}
 	if err := transaction.Commit(); err != nil {
 		return query.SessionRework{}, fmt.Errorf("commit session rework snapshot: %w", err)
 	}
 	return query.SessionRework{
-		SourceID: root.sourceID,
-		RunID:    root.sessionID,
-		Report:   query.AnalyzeRework(summary, activities),
+		SourceID: root.sourceID, RunID: root.sessionID, SessionTokens: summary.Tokens,
+		Harness: harnessContext, Report: query.AnalyzeRework(summary, activities),
 	}, nil
 }
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ReworkAnalysis, Session, TokenUsage } from "./telemetry";
 import {
   buildReworkComparisonReport,
+  compareHarnessContexts,
   compareReworkSnapshots,
   createReworkDiagnosticSnapshot,
   eligibleComparisonBaselines,
@@ -25,6 +26,8 @@ const session = (
 const analysis = (sessionId: string, values: Partial<ReworkAnalysis["metrics"]> = {}, sourceId = "codex"): ReworkAnalysis => ({
   sourceId,
   sessionId,
+  sessionTokens: tokens(1_000),
+  harness: { availability: "available", state: "uniform", counts: { eligibleRecords: 4, reportedRecords: 4, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 1 }, identity: { scope: "project-7f2a", fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", label: "AGENTS v1" } },
   metrics: {
     validationFailures: 0,
     failFixRetryCycles: 0,
@@ -128,7 +131,7 @@ describe("rework comparison model", () => {
     const baselineSession = session("before", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z");
     const currentSession = session("after", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z", "codex", null);
     const baseline = createReworkDiagnosticSnapshot(baselineSession, analysis("before"));
-    const current = createReworkDiagnosticSnapshot(currentSession, analysis("after", {
+    const currentAnalysis = analysis("after", {
       firstPassEligibleValidations: 0,
       firstPassSuccesses: 0,
       firstPassSuccessRate: null,
@@ -140,7 +143,8 @@ describe("rework comparison model", () => {
       toolFailureRate: 0,
       recurringFailureLoops: 0,
       validationAttemptsWithOutcome: 4,
-    }));
+    });
+    const current = createReworkDiagnosticSnapshot(currentSession, { ...currentAnalysis, sessionTokens: tokens(null) });
 
     const rows = compareReworkSnapshots(baseline!, current!);
     expect(rows?.find(({ id }) => id === "initial_validation_success_proxy")?.current).toMatchObject({ availability: "unavailable", reason: "No eligible validation identities" });
@@ -191,5 +195,36 @@ describe("rework comparison model", () => {
       warnings: ["Current evidence is a partial retained projection."],
     });
     expect(buildReworkComparisonReport(baselineSession, analysis("different"), currentSession, partial)).toMatchObject({ status: "invalid" });
+  });
+
+  it("uses the diagnostic snapshot token denominator instead of the separately loaded summary", () => {
+    const summary = session("run", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z", "codex", 9_999);
+    const snapshot = createReworkDiagnosticSnapshot(summary, { ...analysis("run"), sessionTokens: tokens(800) });
+
+    expect(snapshot?.sessionTokens).toBe(800);
+  });
+
+  it("falls back to the summary denominator only when an old server omits session tokens", () => {
+    const summary = session("run", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z", "codex", 900);
+
+    expect(createReworkDiagnosticSnapshot(summary, {
+      ...analysis("run"), sessionTokens: undefined,
+      harness: { availability: "unavailable", reason: "server_unsupported" },
+    })?.sessionTokens).toBe(900);
+    expect(createReworkDiagnosticSnapshot(summary, { ...analysis("run"), sessionTokens: undefined })?.sessionTokens).toBeNull();
+    expect(createReworkDiagnosticSnapshot(summary, { ...analysis("run"), sessionTokens: tokens(null) })?.sessionTokens).toBeNull();
+  });
+
+  it("classifies reported fingerprint relationships without implying configuration equality", () => {
+    const uniform = { availability: "available", state: "uniform", counts: { eligibleRecords: 2, reportedRecords: 2, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 1 }, identity: { scope: "project-7f2a", fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", label: "AGENTS v1" } } as const;
+    const changed = { ...uniform, identity: { ...uniform.identity, fingerprint: "sha256:dfbc1de58f3b905c7b0c0fd79361699336b5f9da617b1db8f35c76673f95b29d", label: "AGENTS v2" } } as const;
+    const otherScope = { ...uniform, identity: { ...uniform.identity, scope: "other-project" } } as const;
+    const incomplete = { availability: "available", state: "incomplete", counts: { eligibleRecords: 2, reportedRecords: 1, unreportedRecords: 1, invalidRecords: 0, distinctIdentities: 1 } } as const;
+    const unsupported = { availability: "unavailable", reason: "server_unsupported" } as const;
+
+    expect(compareHarnessContexts(uniform, uniform)).toMatchObject({ status: "reported_same" });
+    expect(compareHarnessContexts(uniform, changed)).toMatchObject({ status: "reported_changed" });
+    expect(compareHarnessContexts(uniform, otherScope)).toMatchObject({ status: "not_comparable", relationshipIssue: "scope_mismatch" });
+    expect(compareHarnessContexts(incomplete, unsupported)).toMatchObject({ status: "not_comparable", baselineIssue: "incomplete", currentIssue: "server_unsupported" });
   });
 });

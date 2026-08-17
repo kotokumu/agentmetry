@@ -47,6 +47,15 @@ Logs and traces are disabled when their exporter is `none`. Metrics default to
 rather than a user-selected OTLP destination. In debug builds it resolves to
 `none`.
 
+Agentmetry optionally reads the allowlisted request metadata
+`x-agentmetry-harness-scope`, `x-agentmetry-harness-fingerprint`, and
+`x-agentmetry-harness-label`. Codex defines exporter headers as static values;
+it does not expand `${ENV}` placeholders there. The values must be copied into
+the user-level `~/.codex/config.toml`; project-local `.codex/config.toml` files
+do not apply `otel` settings (`CODEX-CONFIG`). These fields are an Agentmetry
+extension, not Codex event attributes; see
+[Reported harness fingerprint relationship](../design/harness-config-correlation.md).
+
 ---
 
 ## 4. Resource and scope schema

@@ -8,7 +8,7 @@ import "./kpi-card";
 @customElement("am-rework-summary")
 export class ReworkSummary extends LitElement {
   @property({ attribute: false }) analysis?: ReworkAnalysis;
-  @property({ attribute: false }) sessionTotalTokens: number | null = null;
+  @property({ attribute: false }) legacySessionTotalTokens: number | null = null;
   @property({ type: Boolean }) loading = false;
   @property() error = "";
 
@@ -52,8 +52,13 @@ export class ReworkSummary extends LitElement {
     const { metrics, coverage, capabilities } = this.analysis;
     const partial = coverage.activityCoverage !== "observed_projection_complete";
     const reworkEffortHint = formatReworkEffortHint(metrics.reworkDurationMs, metrics.totalAgentEffortMs, metrics.reworkAgentEffortRate);
-    const reworkTokenRate = calculateRate(metrics.reworkTokens.total, this.sessionTotalTokens);
-    const reworkTokenHint = formatReworkTokenHint(metrics.reworkTokens.total, this.sessionTotalTokens);
+    const sessionTotalTokens = this.analysis.sessionTokens === undefined
+      ? this.analysis.harness.availability === "unavailable" && this.analysis.harness.reason === "server_unsupported"
+        ? this.legacySessionTotalTokens
+        : null
+      : this.analysis.sessionTokens.total;
+    const reworkTokenRate = calculateRate(metrics.reworkTokens.total, sessionTotalTokens);
+    const reworkTokenHint = formatReworkTokenHint(metrics.reworkTokens.total, sessionTotalTokens);
     return html`<section class="panel">
       <div class="heading"><div><h2>Development rework</h2><p>Diagnostic signals from normalized Claude/Codex telemetry—not a productivity score.</p></div><span class=${`coverage-badge ${partial ? "partial" : ""}`}>${partial ? "Partial evidence" : "Complete retained projection"}</span></div>
       <div class="metric-group"><h3>Validation effectiveness</h3><div class="metrics" aria-label="Validation effectiveness indicators">

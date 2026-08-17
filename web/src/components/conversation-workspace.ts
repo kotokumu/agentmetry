@@ -215,7 +215,7 @@ export class ConversationWorkspace extends LitElement {
       </div></section>
       <am-rework-summary
         .analysis=${this.conversations.rework}
-        .sessionTotalTokens=${selected.tokens.total}
+        .legacySessionTotalTokens=${selected.tokens.total}
         .loading=${this.conversations.loadingRework}
         .error=${this.conversations.reworkFailed ? String(this.conversations.reworkError ?? "Rework analysis unavailable") : ""}
         @rework-retry-requested=${this.retryRework}

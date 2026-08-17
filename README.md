@@ -103,6 +103,48 @@ metrics_exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }
 
 Set `log_user_prompt = false` if prompts must not be stored.
 
+### Compare harness revisions
+
+The Before/After diagnostics can show whether two sessions reported the same
+harness fingerprint. Generate a fingerprint from the files that define the
+harness for your project:
+
+```sh
+agentmetry harness fingerprint \
+  --scope project-7f2a \
+  --label "AGENTS v2" \
+  --file AGENTS.md \
+  --file .codex/config.toml
+```
+
+The command prints JSON with `scope`, `fingerprint`, and `label`. File contents
+stay local. Use an opaque, stable scope for sessions that should be comparable;
+do not put secrets or configuration content in the scope or label.
+
+For Codex, copy the generated values as literal static headers into the
+user-level `~/.codex/config.toml` for each configured Agentmetry exporter:
+
+```toml
+[otel]
+exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317", headers = { "x-agentmetry-harness-scope" = "project-7f2a", "x-agentmetry-harness-fingerprint" = "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", "x-agentmetry-harness-label" = "AGENTS v2" } } }
+```
+
+Apply the same `headers` map inside `trace_exporter` and `metrics_exporter` when
+those exporters are configured separately. Codex does not expand `${ENV}` in
+these static header values, and project-local `.codex/config.toml` files do not
+apply `otel` settings. Regenerate and replace the literal fingerprint whenever
+the selected files change. For Claude Code, copy the generated values into
+`OTEL_EXPORTER_OTLP_HEADERS` in its environment:
+
+```text
+x-agentmetry-harness-scope=project-7f2a,x-agentmetry-harness-fingerprint=sha256:…,x-agentmetry-harness-label=AGENTS-v2
+```
+
+The dashboard treats missing, partial, invalid, or mixed reporting as not comparable
+instead of assuming the harness was unchanged. A reported fingerprint match is
+an association only; it does not prove complete effective-configuration equality
+or causality.
+
 Agentmetry stores accepted telemetry locally. Prompts, responses, tool details,
 and command output may contain sensitive information; enable content logging
 only when it is appropriate for your environment.

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/harness"
 	"github.com/kotokumu/agentmetry/internal/observation"
 )
 
@@ -46,6 +47,7 @@ type JournalMetadata struct {
 	Source              string
 	NormalizerVersion   int
 	NormalizationStatus string
+	Harness             harness.ReceiptEvidence
 }
 
 func DeriveJournalMetadata(observations []observation.Observation, projection canonical.Batch, normalizationError string) JournalMetadata {
@@ -53,7 +55,10 @@ func DeriveJournalMetadata(observations []observation.Observation, projection ca
 	if normalizationError != "" {
 		status = "failed"
 	}
-	metadata := JournalMetadata{Source: "unknown", NormalizerVersion: 1, NormalizationStatus: status}
+	metadata := JournalMetadata{
+		Source: "unknown", NormalizerVersion: 1, NormalizationStatus: status,
+		Harness: harness.ReceiptEvidence{State: harness.ReceiptUnreported},
+	}
 	if len(observations) > 0 && observations[0].NormalizerVersion != 0 {
 		metadata.NormalizerVersion = observations[0].NormalizerVersion
 	}

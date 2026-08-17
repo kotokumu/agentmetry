@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/harness"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/ingest/otel"
 	"github.com/kotokumu/agentmetry/internal/query"
@@ -334,6 +335,10 @@ func TestMigrateIfNeededRebuildsCurrentJournalWhenAtlasProjectionDiffIsUnsafe(t 
 	if err != nil {
 		t.Fatal(err)
 	}
+	accepted.Journal.Harness = harness.ReceiptEvidence{
+		State: harness.ReceiptReported, Scope: "project-7f2a",
+		Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "AGENTS v2",
+	}
 	if err := database.CommitExport(context.Background(), accepted); err != nil {
 		t.Fatal(err)
 	}
@@ -364,9 +369,13 @@ func TestMigrateIfNeededRebuildsCurrentJournalWhenAtlasProjectionDiffIsUnsafe(t 
 		t.Fatal(err)
 	}
 	defer verifyDB.Close()
-	var gotHash string
-	if err := verifyDB.QueryRow("SELECT payload_sha256 FROM otlp_exports").Scan(&gotHash); err != nil || gotHash != wantHash {
+	var gotHash, harnessState, harnessScope, harnessFingerprint, harnessLabel string
+	if err := verifyDB.QueryRow(`SELECT payload_sha256, harness_receipt_state, harness_scope,
+harness_fingerprint, harness_label FROM otlp_exports`).Scan(&gotHash, &harnessState, &harnessScope, &harnessFingerprint, &harnessLabel); err != nil || gotHash != wantHash {
 		t.Fatalf("journal hash=%q want=%q err=%v", gotHash, wantHash, err)
+	}
+	if harnessState != "reported" || harnessScope != "project-7f2a" || harnessFingerprint != accepted.Journal.Harness.Fingerprint || harnessLabel != "AGENTS v2" {
+		t.Fatalf("harness receipt was not preserved: %q/%q/%q/%q", harnessState, harnessScope, harnessFingerprint, harnessLabel)
 	}
 	hasObsolete, err := columnExists(context.Background(), verifyDB, "observations", "obsolete_projection_json")
 	if err != nil || hasObsolete {

@@ -380,14 +380,22 @@ func insertExport(ctx context.Context, transaction *sql.Tx, accepted ingest.Acce
 	if metadata.NormalizationStatus == "failed" && accepted.NormalizationError == "" {
 		return 0, fmt.Errorf("failed journal export has no normalization error")
 	}
+	if metadata.Harness.State == "" {
+		metadata.Harness.State = "unreported"
+	}
+	if !metadata.Harness.Valid() {
+		return 0, fmt.Errorf("invalid harness receipt evidence")
+	}
 	hash := payload.SHA256()
 	result, err := transaction.ExecContext(ctx, `INSERT INTO otlp_exports (
   received_at, signal, transport, payload_protobuf, payload_codec, payload_sha256,
-  payload_size, source, normalizer_version, normalization_status, normalization_error
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  payload_size, source, normalizer_version, normalization_status, normalization_error,
+  harness_receipt_state, harness_scope, harness_fingerprint, harness_label
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		formatTime(accepted.Envelope.ReceivedAt), accepted.Envelope.Signal, accepted.Envelope.Transport,
 		payload.Bytes(), payload.Codec(), hex.EncodeToString(hash[:]), payload.OriginalSize(),
 		metadata.Source, metadata.NormalizerVersion, metadata.NormalizationStatus, accepted.NormalizationError,
+		metadata.Harness.State, metadata.Harness.Scope, metadata.Harness.Fingerprint, metadata.Harness.Label,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert OTLP export: %w", err)

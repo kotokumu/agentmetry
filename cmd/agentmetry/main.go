@@ -22,6 +22,7 @@ import (
 
 	"github.com/kotokumu/agentmetry/internal/app"
 	"github.com/kotokumu/agentmetry/internal/compaction"
+	"github.com/kotokumu/agentmetry/internal/harness"
 	"github.com/kotokumu/agentmetry/internal/planusage"
 	"github.com/kotokumu/agentmetry/internal/source/builtin"
 	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
@@ -37,6 +38,21 @@ type configuration struct {
 }
 
 func main() {
+	if len(os.Args) > 1 && os.Args[1] == "harness" {
+		if len(os.Args) < 3 || os.Args[2] != "fingerprint" {
+			slog.Error("unknown harness command; expected: agentmetry harness fingerprint")
+			os.Exit(2)
+		}
+		root, err := os.Getwd()
+		if err == nil {
+			err = runHarnessFingerprint(os.Args[3:], root, os.Stdout)
+		}
+		if err != nil {
+			slog.Error("harness fingerprint failed", "error", err)
+			os.Exit(1)
+		}
+		return
+	}
 	if len(os.Args) > 1 && os.Args[1] == "import-plan-usage" {
 		if err := runPlanUsageImport(os.Args[2:], os.Stdin, os.Stdout, http.DefaultClient); err != nil {
 			slog.Error("plan usage import failed", "error", err)
@@ -48,6 +64,40 @@ func main() {
 		slog.Error("agentmetry stopped", "error", err)
 		os.Exit(1)
 	}
+}
+
+type repeatedStringFlag []string
+
+func (values *repeatedStringFlag) String() string { return strings.Join(*values, ",") }
+func (values *repeatedStringFlag) Set(value string) error {
+	*values = append(*values, value)
+	return nil
+}
+
+func runHarnessFingerprint(arguments []string, root string, output io.Writer) error {
+	flags := flag.NewFlagSet("harness fingerprint", flag.ContinueOnError)
+	flags.SetOutput(io.Discard)
+	var scope, label string
+	var files repeatedStringFlag
+	flags.StringVar(&scope, "scope", "", "stable harness comparison scope")
+	flags.StringVar(&label, "label", "", "optional harness display label")
+	flags.Var(&files, "file", "file included in the harness fingerprint; repeatable")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		return fmt.Errorf("unexpected positional arguments")
+	}
+	identity, err := harness.GenerateFingerprint(root, scope, label, files)
+	if err != nil {
+		return err
+	}
+	encoder := json.NewEncoder(output)
+	encoder.SetEscapeHTML(false)
+	if err := encoder.Encode(identity); err != nil {
+		return fmt.Errorf("write harness fingerprint: %w", err)
+	}
+	return nil
 }
 
 type httpDoer interface {
