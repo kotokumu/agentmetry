@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -18,6 +19,21 @@ import (
 	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
 	"github.com/kotokumu/agentmetry/sourceplugin"
 )
+
+func TestOpenWithRelativePath(t *testing.T) {
+	// Reproduce a real connection through a relative path without relying on the caller's working directory.
+	t.Chdir(t.TempDir())
+	if err := os.MkdirAll("data", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	database, err := store.Open(filepath.Join("data", "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func mustConversationIdentity(t *testing.T, sourceID, conversationID string) query.ConversationIdentity {
 	t.Helper()

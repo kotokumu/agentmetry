@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -157,7 +158,7 @@ func sqliteDSN(path string, readOnly bool) string {
 	if readOnly {
 		values.Set("_query_only", "1")
 	}
-	return (&url.URL{Scheme: "file", Path: path, RawQuery: values.Encode()}).String()
+	return (&url.URL{Scheme: "file", OmitHost: true, Path: filepath.ToSlash(path), RawQuery: values.Encode()}).String()
 }
 
 func (store *Store) configure(ctx context.Context) error {
