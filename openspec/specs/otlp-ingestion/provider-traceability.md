@@ -9,8 +9,8 @@ Maps every numbered Claude Code and Codex provider-snapshot heading to the Agent
 ## Provider specification coverage
 
 The coverage matrices connect every numbered heading of the
-[Claude Code data specification](https://github.com/theoden9014/agentmetry/blob/main/docs/source-telemetry/claude-code.md)
-and [Codex data specification](https://github.com/theoden9014/agentmetry/blob/main/docs/source-telemetry/codex.md)
+[Claude Code data specification](https://github.com/kotokumu/agentmetry/blob/main/docs/source-telemetry/claude-code.md)
+and [Codex data specification](https://github.com/kotokumu/agentmetry/blob/main/docs/source-telemetry/codex.md)
 to Agentmetry behavior. Each heading appears in exactly one row. Snapshot
 metadata, source references, grouping headings, and completeness statements
 use `Context`; they do not create runtime behavior. Runtime rows use only

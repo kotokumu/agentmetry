@@ -26,13 +26,13 @@ flowchart LR
 
 | Specification area | Implementation | Tests |
 | --- | --- | --- |
-| Transport and failure response | [receiver.go](https://github.com/theoden9014/agentmetry/blob/main/internal/ingest/otel/receiver.go) | [receiver_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/ingest/otel/receiver_test.go) |
-| Raw payload encoding | [payload.go](https://github.com/theoden9014/agentmetry/blob/main/internal/journal/payload.go) | [payload_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/journal/payload_test.go) |
-| Signal normalization | [normalize.go](https://github.com/theoden9014/agentmetry/blob/main/internal/ingest/otel/normalize.go) | [normalize_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/ingest/otel/normalize_test.go) |
-| Observation construction | [observations.go](https://github.com/theoden9014/agentmetry/blob/main/internal/ingest/otel/observations.go) | [observations_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/ingest/otel/observations_test.go) |
-| Claude Code normalization | [plugin.go](https://github.com/theoden9014/agentmetry/blob/main/internal/source/claude/plugin.go) | [plugin_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/source/claude/plugin_test.go) |
-| Codex normalization | [profile.go](https://github.com/theoden9014/agentmetry/blob/main/internal/source/codex/profile.go) | [profile_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/source/codex/profile_test.go) |
-| Atomic persistence and projection | [store.go](https://github.com/theoden9014/agentmetry/blob/main/internal/storage/sqlite/store.go), [schema.hcl](https://github.com/theoden9014/agentmetry/blob/main/internal/storage/sqlite/schema.hcl) | [journal_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/storage/sqlite/journal_test.go), [store_test.go](https://github.com/theoden9014/agentmetry/blob/main/internal/storage/sqlite/store_test.go) |
+| Transport and failure response | [receiver.go](https://github.com/kotokumu/agentmetry/blob/main/internal/ingest/otel/receiver.go) | [receiver_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/ingest/otel/receiver_test.go) |
+| Raw payload encoding | [payload.go](https://github.com/kotokumu/agentmetry/blob/main/internal/journal/payload.go) | [payload_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/journal/payload_test.go) |
+| Signal normalization | [normalize.go](https://github.com/kotokumu/agentmetry/blob/main/internal/ingest/otel/normalize.go) | [normalize_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/ingest/otel/normalize_test.go) |
+| Observation construction | [observations.go](https://github.com/kotokumu/agentmetry/blob/main/internal/ingest/otel/observations.go) | [observations_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/ingest/otel/observations_test.go) |
+| Claude Code normalization | [plugin.go](https://github.com/kotokumu/agentmetry/blob/main/internal/source/claude/plugin.go) | [plugin_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/source/claude/plugin_test.go) |
+| Codex normalization | [profile.go](https://github.com/kotokumu/agentmetry/blob/main/internal/source/codex/profile.go) | [profile_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/source/codex/profile_test.go) |
+| Atomic persistence and projection | [store.go](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/store.go), [schema.hcl](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/schema.hcl) | [journal_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/journal_test.go), [store_test.go](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/store_test.go) |
 
 ---
 
