@@ -1,0 +1,38 @@
+schema: spec-driven
+
+context: |
+  Agentmetry receives OTLP logs, metrics, and traces over HTTP and gRPC,
+  retains the original protobuf export, normalizes provider data into a
+  canonical model, and persists both raw and projected records in SQLite.
+  The backend uses Go 1.26.4. The desktop and documentation tooling use
+  Node.js 24 with npm. Changes use Conventional Commit titles.
+  Provider-emitted data is documented under docs/source-telemetry/. OpenSpec
+  capabilities describe Agentmetry product behavior and must not redefine the
+  upstream Claude Code or Codex wire formats.
+  Runtime facts must be verified against implementation and tests. Repository
+  references in authored documents use GitHub URLs on the main branch.
+
+rules:
+  proposal:
+    - Separate documentation of current behavior from proposals to change runtime behavior.
+    - Include an explicit Non-goals section.
+  design:
+    - Define the raw-retention boundary separately from canonical projection.
+    - Identify responsibility owners and dependency direction before implementation tasks.
+  specs:
+    - Use normative SHALL or MUST statements for observable product behavior.
+    - Give every requirement at least one Given-When-Then scenario.
+    - State whether unsupported data is rejected, retained raw, projected, or ignored.
+    - Keep Claude Code and Codex mappings separate when provider behavior differs.
+  tasks:
+    - Include strict OpenSpec validation and existing repository tests.
+    - Keep documentation-only work separate from runtime behavior changes.
+
+operations:
+  apply:
+    guidance:
+      - Preserve unrelated worktree changes.
+      - Use behavior tests before changing runtime ingestion behavior.
+  archive:
+    guidance:
+      - Sync validated delta specs into canonical specs before archiving.
