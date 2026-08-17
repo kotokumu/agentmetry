@@ -154,5 +154,4 @@ policy. Report security issues through the private channel documented in
 
 ## License
 
-No license has been selected yet. Until a license is added, this repository is
-source-available and should not be redistributed as open-source software.
+Licensed under the [Apache License 2.0](LICENSE).

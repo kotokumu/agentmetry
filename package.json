@@ -1,6 +1,7 @@
 {
   "name": "agentmetry-desktop",
   "private": true,
+  "license": "Apache-2.0",
   "scripts": {
     "tauri": "tauri",
     "web:build": "npm --prefix web run build",
