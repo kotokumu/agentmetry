@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 type sessionKey struct {

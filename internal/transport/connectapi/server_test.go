@@ -8,10 +8,10 @@ import (
 	"time"
 
 	"connectrpc.com/connect"
-	v1 "github.com/theoden9014/agentmetry/gen/agentmetry/v1"
-	"github.com/theoden9014/agentmetry/gen/agentmetry/v1/agentmetryv1connect"
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/query"
+	v1 "github.com/kotokumu/agentmetry/gen/agentmetry/v1"
+	"github.com/kotokumu/agentmetry/gen/agentmetry/v1/agentmetryv1connect"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 type liveReader struct {

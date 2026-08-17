@@ -6,7 +6,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 func TestTraceObservationsProjectSemanticMetadataWithoutDuplicatingPayload(t *testing.T) {

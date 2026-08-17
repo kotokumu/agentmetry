@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 func TestTokenUsageValidate(t *testing.T) {

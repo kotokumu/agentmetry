@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 func TestCanonicalizeActivityNormalizesCodexAndClaudeToolEvidence(t *testing.T) {

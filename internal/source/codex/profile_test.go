@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/source/codex"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/source/codex"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 func TestNormalizeSpawnResultFromCodexOTLP(t *testing.T) {

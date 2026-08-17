@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 )

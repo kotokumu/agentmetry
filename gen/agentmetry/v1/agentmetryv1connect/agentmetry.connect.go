@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/theoden9014/agentmetry/gen/agentmetry/v1"
+	v1 "github.com/kotokumu/agentmetry/gen/agentmetry/v1"
 	http "net/http"
 	strings "strings"
 )

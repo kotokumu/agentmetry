@@ -32,7 +32,7 @@ test("the checked-in Tauri configuration enables signed GitHub updates", () => {
 
   assert.deepEqual(validateUpdaterConfig(config), {
     endpoint:
-      "https://github.com/theoden9014/agentmetry/releases/latest/download/latest.json",
+      "https://github.com/kotokumu/agentmetry/releases/latest/download/latest.json",
     createsArtifacts: true,
   });
 });

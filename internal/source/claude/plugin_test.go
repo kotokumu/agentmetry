@@ -3,9 +3,9 @@ package claude_test
 import (
 	"testing"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/source/claude"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/source/claude"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 func TestPluginProfilesClaudeCodeRequestUsage(t *testing.T) {

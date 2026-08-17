@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 type Plugin struct{}

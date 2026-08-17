@@ -10,12 +10,12 @@ import (
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	adapter "github.com/theoden9014/agentmetry/internal/ingest/otel"
-	"github.com/theoden9014/agentmetry/internal/query"
-	"github.com/theoden9014/agentmetry/internal/source/codex"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	adapter "github.com/kotokumu/agentmetry/internal/ingest/otel"
+	"github.com/kotokumu/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/source/codex"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 func TestCodexNativeUsageBuildsOneObservedDashboardTotal(t *testing.T) {

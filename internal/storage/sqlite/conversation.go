@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 // GetConversation returns one source-qualified conversation independently of

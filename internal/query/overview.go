@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/planusage"
 )
 
 type OverviewFilter struct {

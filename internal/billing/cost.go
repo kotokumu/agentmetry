@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"math"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 const tokensPerMillion = int64(1_000_000)

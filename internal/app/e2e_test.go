@@ -28,12 +28,12 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	_ "modernc.org/sqlite"
 
-	v1 "github.com/theoden9014/agentmetry/gen/agentmetry/v1"
-	"github.com/theoden9014/agentmetry/gen/agentmetry/v1/agentmetryv1connect"
-	"github.com/theoden9014/agentmetry/internal/app"
-	"github.com/theoden9014/agentmetry/internal/query"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
-	webassets "github.com/theoden9014/agentmetry/web"
+	v1 "github.com/kotokumu/agentmetry/gen/agentmetry/v1"
+	"github.com/kotokumu/agentmetry/gen/agentmetry/v1/agentmetryv1connect"
+	"github.com/kotokumu/agentmetry/internal/app"
+	"github.com/kotokumu/agentmetry/internal/query"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
+	webassets "github.com/kotokumu/agentmetry/web"
 )
 
 func TestOTLPToSQLiteDashboardAndMCPEndToEnd(t *testing.T) {

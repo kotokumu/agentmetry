@@ -9,9 +9,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	"github.com/theoden9014/agentmetry/internal/journal"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	"github.com/kotokumu/agentmetry/internal/journal"
 )
 
 type storedExport struct {
