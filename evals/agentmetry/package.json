@@ -1,6 +1,7 @@
 {
   "name": "agentmetry-agent-e2e",
   "private": true,
+  "license": "Apache-2.0",
   "type": "module",
   "engines": {
     "node": ">=22.22.0"
