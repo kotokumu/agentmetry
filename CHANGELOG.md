@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.8.1](https://github.com/kotokumu/agentmetry/compare/v1.8.0...v1.8.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **license:** declare evaluation package license ([ef3786f](https://github.com/kotokumu/agentmetry/commit/ef3786f4fedf5fca29ea07750fd465a5bf144447))
+* **license:** declare evaluation package license ([79eea2f](https://github.com/kotokumu/agentmetry/commit/79eea2f3bb4c286d41bf382a6764e3c634000ceb))
+
 ## [1.8.0](https://github.com/kotokumu/agentmetry/compare/v1.7.0...v1.8.0) (2026-08-16)
 
 
