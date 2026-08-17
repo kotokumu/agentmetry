@@ -1,4 +1,6 @@
-# Agentmetry
+<p align="center">
+  <img src="./assets/brand/agentmetry-logo-readme.png" alt="Agentmetry" width="640">
+</p>
 
 Local observability for AI coding agents.
 
