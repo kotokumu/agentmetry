@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/source/claude"
+	"github.com/kotokumu/agentmetry/internal/source/claude"
 )
 
 func TestPlanUsageParserReadsStatusLineWindows(t *testing.T) {

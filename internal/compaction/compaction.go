@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	"github.com/theoden9014/agentmetry/internal/ingest/otel"
-	"github.com/theoden9014/agentmetry/internal/journal"
-	"github.com/theoden9014/agentmetry/internal/storage/ownership"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
-	storageversion "github.com/theoden9014/agentmetry/internal/storage/version"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	"github.com/kotokumu/agentmetry/internal/ingest/otel"
+	"github.com/kotokumu/agentmetry/internal/journal"
+	"github.com/kotokumu/agentmetry/internal/storage/ownership"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
+	storageversion "github.com/kotokumu/agentmetry/internal/storage/version"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 	_ "modernc.org/sqlite"
 )
 

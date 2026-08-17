@@ -9,8 +9,8 @@ import (
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 type Normalizer struct {

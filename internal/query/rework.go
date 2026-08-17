@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 const (

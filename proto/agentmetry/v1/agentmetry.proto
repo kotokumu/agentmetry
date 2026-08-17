@@ -4,7 +4,7 @@ package agentmetry.v1;
 
 import "google/protobuf/timestamp.proto";
 
-option go_package = "github.com/theoden9014/agentmetry/gen/agentmetry/v1;agentmetryv1";
+option go_package = "github.com/kotokumu/agentmetry/gen/agentmetry/v1;agentmetryv1";
 
 // AgentmetryQuery is the read contract shared by the dashboard, Web UI, and
 // future generated clients. MCP tools are separate semantic adapters over the

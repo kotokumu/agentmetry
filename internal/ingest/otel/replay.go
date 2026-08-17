@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
 	"go.opentelemetry.io/collector/pdata/pmetric/pmetricotlp"
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"

@@ -11,13 +11,13 @@ import (
 	"sync"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	"github.com/theoden9014/agentmetry/internal/journal"
-	"github.com/theoden9014/agentmetry/internal/observation"
-	"github.com/theoden9014/agentmetry/internal/storage/ownership"
-	storageversion "github.com/theoden9014/agentmetry/internal/storage/version"
-	"github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	"github.com/kotokumu/agentmetry/internal/journal"
+	"github.com/kotokumu/agentmetry/internal/observation"
+	"github.com/kotokumu/agentmetry/internal/storage/ownership"
+	storageversion "github.com/kotokumu/agentmetry/internal/storage/version"
+	"github.com/kotokumu/agentmetry/sourceplugin"
 	_ "modernc.org/sqlite"
 )
 

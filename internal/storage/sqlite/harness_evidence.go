@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 func (store *Store) loadSessionHarnessContext(ctx context.Context, reader sqlReader, root sessionRef, graph sessionGraph) (query.HarnessContext, error) {

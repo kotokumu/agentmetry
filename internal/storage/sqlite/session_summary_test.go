@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 type countingSQLReader struct {

@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/planusage"
 )
 
 type PlanUsageParser struct{}

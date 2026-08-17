@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 func (store *Store) initializeTraceRollups(ctx context.Context) error {

@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 func (store *Store) PutPlanUsage(ctx context.Context, snapshot planusage.Snapshot) error {

@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 func TestProjectionFeedTenThousandCommitBurstIsReadInBoundedWindows(t *testing.T) {

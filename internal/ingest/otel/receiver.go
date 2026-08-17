@@ -16,10 +16,10 @@ import (
 	grpcmetadata "google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/harness"
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	source "github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/harness"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 const maxRequestBytes = 32 << 20

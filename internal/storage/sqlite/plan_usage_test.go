@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
 )
 
 func TestPlanUsageKeepsHistoryAndReturnsLatestWindowSnapshot(t *testing.T) {

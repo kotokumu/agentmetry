@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/harness"
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	"github.com/theoden9014/agentmetry/internal/journal"
-	"github.com/theoden9014/agentmetry/internal/observation"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/harness"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	"github.com/kotokumu/agentmetry/internal/journal"
+	"github.com/kotokumu/agentmetry/internal/observation"
 )
 
 func TestOpenRefusesPendingDataMigrationInsteadOfCreatingAnEmptyDatabase(t *testing.T) {

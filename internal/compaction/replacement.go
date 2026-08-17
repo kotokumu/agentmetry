@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/theoden9014/agentmetry/internal/journal"
+	"github.com/kotokumu/agentmetry/internal/journal"
 )
 
 type migrationPhase string

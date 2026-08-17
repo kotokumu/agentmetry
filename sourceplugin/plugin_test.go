@@ -3,7 +3,7 @@ package sourceplugin_test
 import (
 	"testing"
 
-	"github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 type testPlugin struct {

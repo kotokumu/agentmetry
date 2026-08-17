@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/harness"
-	"github.com/theoden9014/agentmetry/internal/ingest"
-	"github.com/theoden9014/agentmetry/internal/observation"
-	"github.com/theoden9014/agentmetry/internal/query"
-	"github.com/theoden9014/agentmetry/internal/source/claude"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
-	"github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/harness"
+	"github.com/kotokumu/agentmetry/internal/ingest"
+	"github.com/kotokumu/agentmetry/internal/observation"
+	"github.com/kotokumu/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/source/claude"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
+	"github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 func mustConversationIdentity(t *testing.T, sourceID, conversationID string) query.ConversationIdentity {

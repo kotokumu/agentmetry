@@ -4321,8 +4321,8 @@ const file_agentmetry_v1_agentmetry_proto_rawDesc = "" +
 	"\bGetTrace\x12\x1e.agentmetry.v1.GetTraceRequest\x1a\x1f.agentmetry.v1.GetTraceResponse\x12w\n" +
 	"\x16WatchProjectionChanges\x12,.agentmetry.v1.WatchProjectionChangesRequest\x1a-.agentmetry.v1.WatchProjectionChangesResponse0\x01\x12r\n" +
 	"\x15SyncSessionActivities\x12+.agentmetry.v1.SyncSessionActivitiesRequest\x1a,.agentmetry.v1.SyncSessionActivitiesResponse\x12l\n" +
-	"\x13SyncTraceActivities\x12).agentmetry.v1.SyncTraceActivitiesRequest\x1a*.agentmetry.v1.SyncTraceActivitiesResponseB\xbb\x01\n" +
-	"\x11com.agentmetry.v1B\x0fAgentmetryProtoP\x01Z@github.com/theoden9014/agentmetry/gen/agentmetry/v1;agentmetryv1\xa2\x02\x03AXX\xaa\x02\rAgentmetry.V1\xca\x02\rAgentmetry\\V1\xe2\x02\x19Agentmetry\\V1\\GPBMetadata\xea\x02\x0eAgentmetry::V1b\x06proto3"
+	"\x13SyncTraceActivities\x12).agentmetry.v1.SyncTraceActivitiesRequest\x1a*.agentmetry.v1.SyncTraceActivitiesResponseB\xb8\x01\n" +
+	"\x11com.agentmetry.v1B\x0fAgentmetryProtoP\x01Z=github.com/kotokumu/agentmetry/gen/agentmetry/v1;agentmetryv1\xa2\x02\x03AXX\xaa\x02\rAgentmetry.V1\xca\x02\rAgentmetry\\V1\xe2\x02\x19Agentmetry\\V1\\GPBMetadata\xea\x02\x0eAgentmetry::V1b\x06proto3"
 
 var (
 	file_agentmetry_v1_agentmetry_proto_rawDescOnce sync.Once

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/theoden9014/agentmetry/internal/harness"
+	"github.com/kotokumu/agentmetry/internal/harness"
 )
 
 type HarnessEvidenceCounts struct {

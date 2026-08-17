@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/source/codex"
+	"github.com/kotokumu/agentmetry/internal/source/codex"
 )
 
 func TestPlanUsageParserReadsAppServerRateLimits(t *testing.T) {

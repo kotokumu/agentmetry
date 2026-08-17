@@ -20,13 +20,13 @@ import (
 
 	"google.golang.org/grpc"
 
-	"github.com/theoden9014/agentmetry/internal/app"
-	"github.com/theoden9014/agentmetry/internal/compaction"
-	"github.com/theoden9014/agentmetry/internal/harness"
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	"github.com/theoden9014/agentmetry/internal/source/builtin"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
-	webassets "github.com/theoden9014/agentmetry/web"
+	"github.com/kotokumu/agentmetry/internal/app"
+	"github.com/kotokumu/agentmetry/internal/compaction"
+	"github.com/kotokumu/agentmetry/internal/harness"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/source/builtin"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
+	webassets "github.com/kotokumu/agentmetry/web"
 )
 
 type configuration struct {
