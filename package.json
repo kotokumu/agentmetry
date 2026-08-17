@@ -5,7 +5,8 @@
   "scripts": {
     "tauri": "tauri",
     "web:build": "npm --prefix web run build",
-    "desktop:inputs": "npm run web:build && node build/desktop/build-sidecar.mjs",
+    "desktop:icons": "tauri icon assets/brand/agentmetry-mark.png",
+    "desktop:inputs": "npm run desktop:icons && npm run web:build && node build/desktop/build-sidecar.mjs",
     "desktop:test": "node --test build/*.test.mjs build/desktop/*.test.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",

@@ -107,10 +107,7 @@ export class AgentmetryApp extends LitElement {
     .brand { display: flex; width: fit-content; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--am-text); font: 800 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .22em; text-decoration: none; }
     .brand:hover { color: var(--am-accent); }
     .brand:focus-visible { border-radius: 7px; outline: 2px solid var(--am-accent); outline-offset: 4px; }
-    .brand-mark { position: relative; width: 24px; height: 24px; border: 1px solid var(--am-border-strong); border-radius: 7px; background: var(--am-accent-soft); box-shadow: inset 0 0 16px rgba(var(--am-accent-rgb), .08), 0 0 20px rgba(var(--am-accent-rgb), .1); }
-    .brand-mark::before, .brand-mark::after { content: ""; position: absolute; background: var(--am-accent); }
-    .brand-mark::before { width: 9px; height: 2px; top: 7px; left: 7px; box-shadow: 0 7px 0 var(--am-accent); }
-    .brand-mark::after { width: 2px; height: 9px; top: 7px; left: 7px; box-shadow: 7px 0 0 var(--am-accent); opacity: .45; }
+    .brand-mark { width: 30px; height: 30px; padding: 2px; border: 1px solid var(--am-border-strong); border-radius: 8px; background: rgba(237, 245, 251, .92); object-fit: contain; box-shadow: 0 0 20px rgba(var(--am-accent-rgb), .12); }
     .eyebrow { margin: 0 0 6px; color: var(--am-accent); font: 700 .64rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .15em; text-transform: uppercase; }
     h1 { max-width: 720px; margin: 0; font: 650 clamp(2.2rem, 4vw, 4.2rem)/.9 Inter, ui-sans-serif, sans-serif; letter-spacing: -.065em; }
     h1 span { color: var(--am-muted); font-weight: 400; }
@@ -135,7 +132,7 @@ export class AgentmetryApp extends LitElement {
     return html`<main data-density="operator">
       <p class="sr-only" aria-live="polite">${this.routeAnnouncement}</p>
       ${traceActive ? null : html`<header>
-        <div><a class="brand" href=${dashboardHref} aria-label="Back to Agentmetry dashboard" @click=${this.goHome}><span class="brand-mark" aria-hidden="true"></span><span>AGENTMETRY</span></a><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
+        <div><a class="brand" href=${dashboardHref} aria-label="Back to Agentmetry dashboard" @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
         <div class="header-controls"><am-app-update-control></am-app-update-control><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
       </header>`}
 

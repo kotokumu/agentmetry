@@ -6,6 +6,7 @@
 !/web/dist/.gitkeep
 /node_modules/
 /src-tauri/target/
+/src-tauri/icons/
 /src-tauri/binaries/*
 !/src-tauri/binaries/.gitkeep
 /evals/agentmetry/.agent-e2e-*
