@@ -7,6 +7,8 @@ accepted decisions, and implementation designs for Agentmetry.
 
 - [Product architecture](architecture.md) — runtime components, boundaries,
   data flow, persistence, and delivery profiles
+- [Provider OpenTelemetry data specifications](source-telemetry/README.md) —
+  dated Claude Code and Codex OTLP data snapshots
 - [API contract](design/api-proto-contract.md) — protobuf-first read contract
 - [Storage maintenance](operations/storage-maintenance.md) — automatic
   migrations, manual compaction, recovery, and backup precautions
