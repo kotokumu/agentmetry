@@ -51,14 +51,13 @@ test("web shell uses the canonical mark for the favicon and dashboard brand", as
   assert.match(app, /<img class="brand-mark" src="\/agentmetry-mark\.png" alt=""/);
 });
 
-test("desktop icon set is generated from the Agentmetry mark", async () => {
-  const [canonicalMark, desktopIcon] = await Promise.all([
-    binary("assets/brand/agentmetry-mark.png"),
-    binary("src-tauri/icons/icon.png"),
+test("desktop builds derive ignored platform icons from the canonical mark", async () => {
+  const [packageJson, gitignore] = await Promise.all([
+    text("package.json").then(JSON.parse),
+    text(".gitignore"),
   ]);
-  const metadata = pngMetadata(desktopIcon);
 
-  assert.equal(metadata.width, 512);
-  assert.equal(metadata.height, 512);
-  assert.notDeepEqual(desktopIcon, canonicalMark, "desktop icon should be a generated platform asset");
+  assert.equal(packageJson.scripts["desktop:icons"], "tauri icon assets/brand/agentmetry-mark.png");
+  assert.match(packageJson.scripts["desktop:inputs"], /^npm run desktop:icons && /);
+  assert.match(gitignore, /^\/src-tauri\/icons\/$/m);
 });
