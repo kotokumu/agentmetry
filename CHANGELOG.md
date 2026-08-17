@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.0](https://github.com/kotokumu/agentmetry/compare/v1.9.0...v1.10.0) (2026-08-17)
+
+
+### Features
+
+* **diagnostics:** correlate harness revisions ([620854c](https://github.com/kotokumu/agentmetry/commit/620854cc25a54e9363f587e2157af4ac15ab4077))
+* **diagnostics:** correlate harness revisions ([1522845](https://github.com/kotokumu/agentmetry/commit/1522845feccb57e58f228befee1ab49371254010))
+* **web:** show MCP connection details ([6e17a4d](https://github.com/kotokumu/agentmetry/commit/6e17a4d94dfd49a265f0ec100279f23cc8711561))
+* **web:** show MCP connection details ([abe8a12](https://github.com/kotokumu/agentmetry/commit/abe8a1212aaef9c105231e540ef91abf9032aa59))
+
 ## [1.9.0](https://github.com/kotokumu/agentmetry/compare/v1.8.1...v1.9.0) (2026-08-17)
 
 
