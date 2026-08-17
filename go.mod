@@ -1,4 +1,4 @@
-module github.com/theoden9014/agentmetry
+module github.com/kotokumu/agentmetry
 
 go 1.26.4
 

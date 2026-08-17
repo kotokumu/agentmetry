@@ -11,9 +11,9 @@ import (
 	"testing/fstest"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	"github.com/theoden9014/agentmetry/internal/query"
-	"github.com/theoden9014/agentmetry/internal/transport/httpapi"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/transport/httpapi"
 )
 
 type planImporter struct {

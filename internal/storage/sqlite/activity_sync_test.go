@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/query"
-	store "github.com/theoden9014/agentmetry/internal/storage/sqlite"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/query"
+	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
 )
 
 func TestActivitySyncRemovesOldSessionAndUpsertsNewSession(t *testing.T) {

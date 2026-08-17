@@ -11,7 +11,7 @@ Do not open a public issue for a suspected vulnerability or include sensitive
 telemetry in a public report. Use GitHub's private vulnerability reporting for
 the repository:
 
-[Report a vulnerability privately](https://github.com/theoden9014/agentmetry/security/advisories/new)
+[Report a vulnerability privately](https://github.com/kotokumu/agentmetry/security/advisories/new)
 
 Include the affected Agentmetry version, operating system, deployment profile,
 reproduction steps, security impact, and a minimal sanitized example. Do not

@@ -5,7 +5,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/theoden9014/agentmetry/internal/source/claude"
+	"github.com/kotokumu/agentmetry/internal/source/claude"
 )
 
 func TestParseCLIResult(t *testing.T) {

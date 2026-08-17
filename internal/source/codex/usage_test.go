@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/theoden9014/agentmetry/internal/source/codex"
+	"github.com/kotokumu/agentmetry/internal/source/codex"
 )
 
 func TestParseExecJSONAggregatesCompletedTurns(t *testing.T) {

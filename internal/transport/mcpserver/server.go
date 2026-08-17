@@ -12,10 +12,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	"github.com/theoden9014/agentmetry/internal/product"
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/product"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 type Clock func() time.Time

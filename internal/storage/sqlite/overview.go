@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
-	"github.com/theoden9014/agentmetry/internal/query"
-	"github.com/theoden9014/agentmetry/sourceplugin"
+	"github.com/kotokumu/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/sourceplugin"
 )
 
 func (store *Store) GetOverview(ctx context.Context, filter query.OverviewFilter) (query.Overview, error) {

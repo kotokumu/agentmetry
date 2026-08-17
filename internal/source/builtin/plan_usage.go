@@ -1,9 +1,9 @@
 package builtin
 
 import (
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	"github.com/theoden9014/agentmetry/internal/source/claude"
-	"github.com/theoden9014/agentmetry/internal/source/codex"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/source/claude"
+	"github.com/kotokumu/agentmetry/internal/source/codex"
 )
 
 // PlanUsageParser returns the account-usage parser compiled for a source.

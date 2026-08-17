@@ -4,7 +4,7 @@ managed:
   enabled: true
   override:
     - file_option: go_package_prefix
-      value: github.com/theoden9014/agentmetry/gen
+      value: github.com/kotokumu/agentmetry/gen
 
 plugins:
   - remote: buf.build/protocolbuffers/go

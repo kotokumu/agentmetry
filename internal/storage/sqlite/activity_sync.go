@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 func (store *Store) SyncSessionActivities(ctx context.Context, filter query.SessionActivitySyncFilter) (query.ActivitySyncPage, error) {

@@ -20,7 +20,7 @@ It also exposes the same data through HTTP and MCP.
 ## Install
 
 Download the latest desktop package for your platform from
-[GitHub Releases](https://github.com/theoden9014/agentmetry/releases/latest).
+[GitHub Releases](https://github.com/kotokumu/agentmetry/releases/latest).
 The desktop app starts the local collector, dashboard, API, and MCP server as a
 single application.
 
@@ -28,7 +28,7 @@ To build the standalone binary from source, install Go 1.26, Node.js 24, and
 npm, then run:
 
 ```sh
-git clone https://github.com/theoden9014/agentmetry.git
+git clone https://github.com/kotokumu/agentmetry.git
 cd agentmetry
 make build
 ./bin/agentmetry

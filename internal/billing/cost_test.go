@@ -5,8 +5,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/theoden9014/agentmetry/internal/billing"
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/billing"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 func TestCalculate(t *testing.T) {

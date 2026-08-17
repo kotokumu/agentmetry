@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/planusage"
-	"github.com/theoden9014/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/planusage"
+	"github.com/kotokumu/agentmetry/internal/query"
 )
 
 type Clock func() time.Time

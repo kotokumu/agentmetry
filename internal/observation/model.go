@@ -3,7 +3,7 @@ package observation
 import (
 	"time"
 
-	"github.com/theoden9014/agentmetry/internal/canonical"
+	"github.com/kotokumu/agentmetry/internal/canonical"
 )
 
 // Observation is a source-neutral, append-only semantic projection of one OTLP
