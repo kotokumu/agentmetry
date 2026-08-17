@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.10.1](https://github.com/kotokumu/agentmetry/compare/v1.10.0...v1.10.1) (2026-08-17)
+
+
+### Bug Fixes
+
+* **storage:** accept relative SQLite database paths ([9894a32](https://github.com/kotokumu/agentmetry/commit/9894a323c21f36bdd7a626f2191946d23695d79b))
+
 ## [1.10.0](https://github.com/kotokumu/agentmetry/compare/v1.9.0...v1.10.0) (2026-08-17)
 
 
