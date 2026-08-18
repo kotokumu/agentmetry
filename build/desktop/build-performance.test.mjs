@@ -53,7 +53,7 @@ test("CI builds release-profile dependencies into the default-branch cache", () 
   assert.match(toolchain, /channel = "1\.97\.1"/);
   assert.match(workflow, /uses: dorny\/paths-filter@v4/);
   assert.match(workflow, /filters: \.github\/filters\.yml/);
-  assert.match(workflow, /desktop:\n    name: Desktop application build\n    needs: changes\n    if: needs\.changes\.outputs\.desktop == 'true'/);
+  assert.match(workflow, /desktop:\n    name: Desktop build inputs\n    needs: changes\n    if: needs\.changes\.outputs\.desktop == 'true'/);
   assert.match(
     workflow,
     /desktop-release-cache:\n    name: Seed desktop cache \(\$\{\{ matrix\.name \}\}\)\n    needs: changes\n    if: github\.event_name == 'push' && needs\.changes\.outputs\.desktop == 'true'/,
