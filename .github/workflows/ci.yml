@@ -8,8 +8,23 @@ on:
 
 permissions:
   contents: read
+  pull-requests: read
 
 jobs:
+  changes:
+    name: Detect desktop changes
+    runs-on: ubuntu-latest
+    outputs:
+      desktop: ${{ steps.filter.outputs.desktop }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 20
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: .github/filters.yml
+
   web:
     name: Web tests and build
     runs-on: ubuntu-latest
@@ -32,6 +47,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - run: go test ./...
 
   integration:
@@ -42,6 +58,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -53,12 +70,15 @@ jobs:
 
   desktop:
     name: Desktop build inputs
-    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+          cache-dependency-path: go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: 24
@@ -66,7 +86,12 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          shared-key: desktop-build
+          cache-on-failure: true
       - name: Install Linux dependencies
         run: |
           sudo apt-get update
@@ -75,4 +100,41 @@ jobs:
       - run: npm --prefix web ci
       - run: npm run desktop:inputs
       - run: npm run desktop:test
-      - run: cargo check --manifest-path src-tauri/Cargo.toml
+      - run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+  desktop-release-cache:
+    name: Seed desktop cache (${{ matrix.name }})
+    needs: changes
+    if: github.event_name == 'push' && needs.changes.outputs.desktop == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+          - name: windows
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          shared-key: desktop-build
+          cache-on-failure: true
+      - run: npm ci
+      - run: npm --prefix web ci
+      - run: npm run desktop:inputs
+      - run: cargo build --release --manifest-path src-tauri/Cargo.toml

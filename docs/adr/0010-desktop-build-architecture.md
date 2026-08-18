@@ -125,6 +125,7 @@ Invariants:
 │   └── desktop/
 │       ├── targets.mjs             pure target metadata
 │       ├── build-sidecar.mjs       Go sidecar compiler
+│       ├── prepare-inputs.mjs      parallel input preparation
 │       └── package-macos-dmg.mjs   macOS DMG adapter
 ├── src-tauri/
 │   ├── src/main.rs                 shell, tray, sidecar lifecycle
@@ -133,7 +134,7 @@ Invariants:
 │   ├── capabilities/               Tauri permissions
 │   ├── icons/                      source/native icons
 │   └── binaries/                   generated Tauri sidecar staging area
-├── .github/workflows/desktop.yml   native-host CI matrix
+├── .github/workflows/ci.yml        CI and native cache-seeding jobs
 └── package.json                    repository desktop build entrypoints
 ```
 
@@ -149,6 +150,7 @@ boundary is visible from the directory name.
 | SPA compilation | `web/package.json` | `web/dist` |
 | Target metadata | `build/desktop/targets.mjs` | Go/Tauri target mapping |
 | Go sidecar compilation | `build/desktop/build-sidecar.mjs` | `src-tauri/binaries/agentmetry-<target>` |
+| Input orchestration | `build/desktop/prepare-inputs.mjs` | icons and application inputs ready |
 | Shell compilation and app bundle | Tauri CLI/Cargo | `src-tauri/target/.../bundle` |
 | macOS DMG assembly | `build/desktop/package-macos-dmg.mjs` | `.dmg` containing `.app` |
 | Build entrypoint | root `package.json` | stable developer/CI commands |
@@ -159,7 +161,7 @@ boundary is visible from the directory name.
 
 ```text
 npm run desktop:inputs
-  web build → target sidecar
+  desktop icons ∥ (web build → target sidecar)
 
 npm run desktop:dev
   desktop:inputs → tauri dev → shell starts sidecar
@@ -172,7 +174,10 @@ npm run desktop:build:macos
 ```
 
 The Windows and Linux commands select Tauri's native bundle targets but reuse
-`desktop:inputs`. There is no second CI-only build path.
+`desktop:inputs`. Icon generation starts in parallel with the application input
+chain. The sidecar still starts only after the Web build completes, and input
+preparation completes only after both branches succeed. There is no second
+CI-only build path.
 
 ## Interface proposal
 
@@ -200,14 +205,16 @@ runtime code is added to the Go domain or storage packages.
 1. Target metadata returns the expected Go OS/architecture and sidecar filename
    for macOS arm64/x64, Windows x64/arm64, and Linux x64/arm64.
 2. Unsupported targets fail before invoking `go build`.
-3. Input preparation creates `web/dist` and the exact target sidecar path.
+3. Input preparation starts icon generation and the Web build concurrently,
+   starts the sidecar only after the Web build succeeds, and waits for both
+   branches to complete.
 4. Tauri configuration has no `frontendDist` path and therefore does not
    duplicate the Go-embedded SPA.
 5. macOS packaging fails if the `.app` is missing and succeeds with the exact
    `.app` in the DMG.
 6. Native CI jobs invoke the same root build entrypoint as local builds.
-7. `go test ./...`, web tests, Rust checks, and macOS bundle smoke checks are
-   separate gates with clear failure ownership.
+7. `go test ./...`, web tests, release-profile Rust builds, and macOS bundle
+   smoke checks are separate gates with clear failure ownership.
 
 ## SOLID and risk assessment
 
@@ -220,6 +227,9 @@ runtime code is added to the Go domain or storage packages.
 - **Risk:** `web/dist` is a generated embed input and is ignored by Git. A clean
   checkout must run the Web build before any desktop or server build that
   imports it.
+- **Risk:** CI cache locations are runner concerns. The sidecar compiler must
+  preserve an explicit `GOCACHE` and otherwise leave its location to the Go
+  toolchain so local and CI cache policies remain effective.
 - **Risk:** fixed loopback ports can collide with another Agentmetry process;
   authenticated dynamic-port/IPC startup remains a later security milestone.
 
@@ -244,7 +254,8 @@ publication contract:
    merged `main` commit.
 3. Release preflight independently verifies that the tagged commit belongs to
    `main` history.
-4. Native macOS, Windows, and Linux runners install the locked dependencies.
+4. Native macOS, Windows, and Linux runners install the locked dependencies and
+   restore the release-profile Cargo dependency caches seeded on `main`.
 5. Each runner invokes the same root package entrypoint used locally.
 6. The tag version is checked against `src-tauri/tauri.conf.json`.
 7. macOS imports a Developer ID Application certificate into an ephemeral

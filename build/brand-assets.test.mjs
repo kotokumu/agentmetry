@@ -58,6 +58,6 @@ test("desktop builds derive ignored platform icons from the canonical mark", asy
   ]);
 
   assert.equal(packageJson.scripts["desktop:icons"], "tauri icon assets/brand/agentmetry-mark.png");
-  assert.match(packageJson.scripts["desktop:inputs"], /^npm run desktop:icons && /);
+  assert.equal(packageJson.scripts["desktop:inputs"], "node build/desktop/prepare-inputs.mjs");
   assert.match(gitignore, /^\/src-tauri\/icons\/$/m);
 });
