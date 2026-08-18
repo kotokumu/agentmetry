@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.4](https://github.com/kotokumu/agentmetry/compare/v1.10.3...v1.10.4) (2026-08-18)
+
+
+### Bug Fixes
+
+* **web:** expand agent token breakdowns ([de18b9f](https://github.com/kotokumu/agentmetry/commit/de18b9f0335e3c7de250d83d0a03ea252d7f6bff))
+* **web:** expand agent token breakdowns ([32611d5](https://github.com/kotokumu/agentmetry/commit/32611d5c6d03625b66b00ef6f2341e38ef70224a))
+
 ## [1.10.3](https://github.com/kotokumu/agentmetry/compare/v1.10.2...v1.10.3) (2026-08-18)
 
 
