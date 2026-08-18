@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { prepareDesktopInputs } from "./prepare-inputs.mjs";
+import { createNpmScriptInvocation, prepareDesktopInputs } from "./prepare-inputs.mjs";
 
 function deferred() {
   let resolve;
@@ -14,6 +14,30 @@ function deferred() {
 }
 
 const nextTurn = () => new Promise((resolve) => setImmediate(resolve));
+
+test("runs npm scripts through the npm CLI with the current Node executable", () => {
+  assert.deepEqual(
+    createNpmScriptInvocation("desktop:icons", {
+      nodeExecutable: "C:\\hostedtoolcache\\node.exe",
+      npmCli: "C:\\hostedtoolcache\\node_modules\\npm\\bin\\npm-cli.js",
+    }),
+    {
+      command: "C:\\hostedtoolcache\\node.exe",
+      args: [
+        "C:\\hostedtoolcache\\node_modules\\npm\\bin\\npm-cli.js",
+        "run",
+        "desktop:icons",
+      ],
+    },
+  );
+});
+
+test("requires an npm lifecycle executable for desktop input builds", () => {
+  assert.throws(
+    () => createNpmScriptInvocation("desktop:icons", { npmCli: "" }),
+    /npm_execpath is required/,
+  );
+});
 
 test("builds icons in parallel with the web-to-sidecar dependency chain", async () => {
   const icons = deferred();
