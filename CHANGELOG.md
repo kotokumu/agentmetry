@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.10.3](https://github.com/kotokumu/agentmetry/compare/v1.10.2...v1.10.3) (2026-08-18)
+
+
+### Bug Fixes
+
+* **ci:** avoid Windows npm spawn failures ([526327d](https://github.com/kotokumu/agentmetry/commit/526327d34639888297072859fbd08a7ae85e5411))
+* **ci:** avoid Windows npm spawn failures ([666e3b5](https://github.com/kotokumu/agentmetry/commit/666e3b5ff9eac32930ced2959e92b752a62f8497))
+
 ## [1.10.2](https://github.com/kotokumu/agentmetry/compare/v1.10.1...v1.10.2) (2026-08-18)
 
 
