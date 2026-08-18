@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.10.2](https://github.com/kotokumu/agentmetry/compare/v1.10.1...v1.10.2) (2026-08-18)
+
+
+### Bug Fixes
+
+* **storage:** attribute Claude usage to runtime agents ([f82e203](https://github.com/kotokumu/agentmetry/commit/f82e20306069d4b96fc7aa45242c435db05da6ce))
+* **storage:** attribute Claude usage to runtime agents ([648d11f](https://github.com/kotokumu/agentmetry/commit/648d11f35cbcd235b625fa936f1993b4086fc467))
+* **web:** prevent UI reflow during detail interactions ([d7b248c](https://github.com/kotokumu/agentmetry/commit/d7b248c5eca337ef7797cae34b4398b656575a50))
+* **web:** prevent UI reflow during detail interactions ([cdb8f13](https://github.com/kotokumu/agentmetry/commit/cdb8f13080ddc0cfc459b76b4541d387791402e0))
+
 ## [1.10.1](https://github.com/kotokumu/agentmetry/compare/v1.10.0...v1.10.1) (2026-08-17)
 
 
