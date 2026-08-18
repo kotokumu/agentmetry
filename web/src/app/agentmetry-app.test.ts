@@ -655,7 +655,7 @@ describe("Agentmetry app composition", () => {
     await vi.waitFor(() => expect(location.pathname).toBe("/conversations/codex/session-1"));
     const tree = workspaceRootOf(app)?.querySelector("am-agent-tree");
     await tree?.updateComplete;
-    tree?.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='reviewer']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    tree?.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='reviewer']")?.click();
     await workspaceOf(app)?.updateComplete;
 
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table")?.activities).toHaveLength(1));

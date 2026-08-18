@@ -160,7 +160,7 @@ const renderGraphNode = (layout: LayoutNode, selectedAgentId: string, select: (e
   data-agent-id=${layout.node.agent.agentId}
   tabindex="0"
   style=${`left:${layout.centerX - NODE_WIDTH / 2}px;top:${layout.centerY - NODE_HEIGHT / 2}px;width:${NODE_WIDTH}px`}
-  @pointerdown=${select}
+  @click=${select}
   @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(event); } }}
 >
   <div class="node-title"><span class="role">${layout.depth === 0 ? "Root" : "Child"}</span><strong title=${agentDisplayLabel(layout.node.agent)}>${agentDisplayLabel(layout.node.agent)}</strong></div>
@@ -168,7 +168,7 @@ const renderGraphNode = (layout: LayoutNode, selectedAgentId: string, select: (e
   <div class="meta">${[layout.node.agent.agentType, layout.node.agent.model].filter(Boolean).join(" · ") || NOT_REPORTED}</div>
   <div class="usage">
     <p>${layout.node.agent.activityCount} activities</p>
-    <am-token-breakdown .usage=${layout.node.agent.tokens} .compact=${true} @pointerdown=${(event: PointerEvent) => event.stopPropagation()}></am-token-breakdown>
+    <am-token-breakdown .usage=${layout.node.agent.tokens} .compact=${true} @click=${(event: MouseEvent) => event.stopPropagation()}></am-token-breakdown>
   </div>
 </div>`;
 
