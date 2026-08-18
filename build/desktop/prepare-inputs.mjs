@@ -4,7 +4,23 @@ import { fileURLToPath } from "node:url";
 
 const currentFile = fileURLToPath(import.meta.url);
 const repositoryRoot = resolve(dirname(currentFile), "../..");
-const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm";
+
+export function createNpmScriptInvocation(
+  script,
+  {
+    nodeExecutable = process.execPath,
+    npmCli = process.env.npm_execpath,
+  } = {},
+) {
+  if (!npmCli) {
+    throw new Error("npm_execpath is required to run desktop input builds");
+  }
+
+  return {
+    command: nodeExecutable,
+    args: [npmCli, "run", script],
+  };
+}
 
 function runBuildCommand(label, command, args) {
   return new Promise((resolvePromise, rejectPromise) => {
@@ -26,9 +42,14 @@ function runBuildCommand(label, command, args) {
   });
 }
 
+function runNpmScript(label, script) {
+  const { command, args } = createNpmScriptInvocation(script);
+  return runBuildCommand(label, command, args);
+}
+
 export async function prepareDesktopInputs({
-  generateIcons = () => runBuildCommand("desktop icon generation", npmCommand, ["run", "desktop:icons"]),
-  buildWeb = () => runBuildCommand("web build", npmCommand, ["run", "web:build"]),
+  generateIcons = () => runNpmScript("desktop icon generation", "desktop:icons"),
+  buildWeb = () => runNpmScript("web build", "web:build"),
   buildSidecar = () =>
     runBuildCommand("desktop sidecar build", process.execPath, ["build/desktop/build-sidecar.mjs"]),
 } = {}) {
