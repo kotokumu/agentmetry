@@ -19,7 +19,8 @@ export class TokenBreakdown extends LitElement {
 
   static styles = css`
     :host { display: block; min-width: 0; }
-    .summary { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
+    .summary { min-width: 0; }
+    .total-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
     .total { color: var(--am-text); font-weight: 700; white-space: nowrap; }
     .unit, .partial, summary { color: var(--am-muted); font-size: .68rem; }
     details { margin-top: 4px; }
@@ -35,8 +36,10 @@ export class TokenBreakdown extends LitElement {
     const rows = tokenRows(this.usage);
     const hasUsage = rows.length > 0;
     return html`<div class="summary" aria-label="Token usage">
-      <strong class="total">${this.usage.total === null ? hasUsage ? "Partial" : NOT_REPORTED : this.usage.total.toLocaleString()}</strong>
-      ${this.usage.total !== null ? html`<span class="unit">tokens</span>` : hasUsage ? html`<span class="partial">usage</span>` : null}
+      <div class="total-line">
+        <strong class="total">${this.usage.total === null ? hasUsage ? "Partial" : NOT_REPORTED : this.usage.total.toLocaleString()}</strong>
+        ${this.usage.total !== null ? html`<span class="unit">tokens</span>` : hasUsage ? html`<span class="partial">usage</span>` : null}
+      </div>
       ${hasUsage ? html`<details><summary>Breakdown</summary><div class="grid">${rows.map(([label, value]) => html`<span class="label">${label}</span><strong class="value">${value.toLocaleString()}</strong>`)}</div></details>` : null}
     </div>`;
   }

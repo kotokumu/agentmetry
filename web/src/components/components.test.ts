@@ -737,6 +737,21 @@ describe("dashboard components", () => {
     expect(`${chart.shadowRoot?.textContent}${breakdown.shadowRoot?.textContent}`).not.toContain("N/A");
   });
 
+  it("renders the token breakdown control on a row below the total", async () => {
+    const breakdown = document.createElement("am-token-breakdown") as HTMLElement & {
+      usage: object;
+      updateComplete: Promise<unknown>;
+    };
+    breakdown.usage = { input: 100, output: 20, cacheRead: 60, cacheWrite: 4, reasoning: 8, total: 120 };
+    document.body.append(breakdown);
+    await breakdown.updateComplete;
+
+    const total = breakdown.shadowRoot?.querySelector(".total");
+    const details = breakdown.shadowRoot?.querySelector("details");
+    expect(total?.parentElement).not.toBe(details?.parentElement);
+    expect(total?.parentElement?.nextElementSibling).toBe(details);
+  });
+
   it("renders agent relationships as a root-first tree", async () => {
     const tree = document.createElement("am-agent-tree") as AgentTree;
     const missing = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
@@ -838,18 +853,26 @@ describe("dashboard components", () => {
 
   it("emits and toggles graph-node selection", async () => {
     const tree = document.createElement("am-agent-tree") as AgentTree;
-    tree.agents = [{ agentId: "main", agentDefinition: "orchestrator", activityCount: 1, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } }];
+    tree.agents = [{ agentId: "main", agentDefinition: "orchestrator", activityCount: 1, tokens: { input: 100, output: 20, cacheRead: null, cacheWrite: null, reasoning: null, total: 120 } }];
     const listener = vi.fn();
     tree.addEventListener("agent-selected", listener);
     document.body.append(tree);
     await tree.updateComplete;
 
-    tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    const node = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']");
+    node?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    expect(listener).not.toHaveBeenCalled();
+    node?.click();
     expect(listener.mock.calls[0][0].detail).toEqual({ agentId: "main" });
     tree.selectedAgentId = "main";
     await tree.updateComplete;
-    tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")?.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")?.click();
     expect(listener.mock.calls[1][0].detail).toEqual({ agentId: "" });
+
+    const tokens = tree.shadowRoot?.querySelector("am-token-breakdown");
+    await (tokens as { updateComplete?: Promise<unknown> } | null)?.updateComplete;
+    tokens?.shadowRoot?.querySelector<HTMLElement>("summary")?.dispatchEvent(new MouseEvent("click", { bubbles: true, composed: true }));
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 
   it("emits source and submitted full-text filter intents", async () => {
