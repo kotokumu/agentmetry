@@ -194,13 +194,20 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 	if err := store.commitProjection(ctx, transaction, batch, sequence, plan.previousSpans); err != nil {
 		return err
 	}
+	attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, batch, plan.previousSpans, sequence)
+	if err != nil {
+		return err
+	}
 	if err := rebuildAffectedSessionMemberships(ctx, transaction, batch); err != nil {
 		return err
 	}
-	if err := updateAffectedSessionRollups(ctx, transaction, batch, plan.previousSessions, plan.previousSpans, sequence, plan.incremental); err != nil {
+	if err := updateAffectedSessionRollups(ctx, transaction, batch, plan.previousSessions, plan.previousSpans, sequence, plan.incremental && !attribution.rebuildSessions); err != nil {
 		return err
 	}
 	if err := updateAffectedTraceRollups(ctx, transaction, batch, plan.previousSpans, sequence); err != nil {
+		return err
+	}
+	if err := rebuildClaudeAttributionTraces(ctx, transaction, attribution.traceIDs); err != nil {
 		return err
 	}
 	if sequence > 0 && sequence%512 == 0 {
@@ -251,13 +258,20 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequence, plan.previousSpans); err != nil {
 			return err
 		}
+		attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, accepted.Projection, plan.previousSpans, sequence)
+		if err != nil {
+			return err
+		}
 		if err := rebuildAffectedSessionMemberships(ctx, transaction, accepted.Projection); err != nil {
 			return err
 		}
-		if err := updateAffectedSessionRollups(ctx, transaction, accepted.Projection, plan.previousSessions, plan.previousSpans, sequence, plan.incremental); err != nil {
+		if err := updateAffectedSessionRollups(ctx, transaction, accepted.Projection, plan.previousSessions, plan.previousSpans, sequence, plan.incremental && !attribution.rebuildSessions); err != nil {
 			return err
 		}
 		if err := updateAffectedTraceRollups(ctx, transaction, accepted.Projection, plan.previousSpans, sequence); err != nil {
+			return err
+		}
+		if err := rebuildClaudeAttributionTraces(ctx, transaction, attribution.traceIDs); err != nil {
 			return err
 		}
 		if sequence > 0 && sequence%512 == 0 {
@@ -432,12 +446,12 @@ func putSpan(ctx context.Context, transaction *sql.Tx, span canonical.Span, sequ
 INSERT INTO spans (
   source, trace_id, span_id, parent_span_id, name, started_at, ended_at, status,
   activity_kind, tool_name, target_agent_id, target_agent_type, content,
-  agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, cost_usd,
+  agent_id, agent_definition, agent_type, parent_agent_id, run_id, usage_id, model, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
   reasoning_tokens, input_tokens_reported, output_tokens_reported,
   cache_read_tokens_reported, cache_write_tokens_reported, reasoning_tokens_reported,
   attributes_json, projection_sequence, activity_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(trace_id, span_id) DO UPDATE SET
   source=excluded.source,
   parent_span_id=excluded.parent_span_id,
@@ -455,6 +469,7 @@ ON CONFLICT(trace_id, span_id) DO UPDATE SET
   agent_type=excluded.agent_type,
   parent_agent_id=excluded.parent_agent_id,
   run_id=excluded.run_id,
+  usage_id=excluded.usage_id,
   model=excluded.model,
   cost_usd=excluded.cost_usd,
   input_tokens=excluded.input_tokens,
@@ -475,7 +490,7 @@ ON CONFLICT(trace_id, span_id) DO UPDATE SET
 		formatTime(span.StartedAt), formatTime(span.EndedAt), span.Status,
 		span.Kind, span.ToolName, span.TargetAgentID, span.TargetAgentType, span.Content,
 		span.Agent.AgentID, span.Agent.AgentDefinition, span.Agent.AgentType, span.Agent.ParentAgentID,
-		span.Agent.RunID, span.Agent.Model, span.CostUSD,
+		span.Agent.RunID, canonicalUsageID(span.Attributes), span.Agent.Model, span.CostUSD,
 		span.Agent.Tokens.Input, span.Agent.Tokens.Output, span.Agent.Tokens.CacheRead,
 		span.Agent.Tokens.CacheWrite, span.Agent.Tokens.Reasoning,
 		boolInt(span.Agent.Tokens.InputReported()), boolInt(span.Agent.Tokens.OutputReported()),
@@ -499,15 +514,15 @@ func (store *Store) appendLog(ctx context.Context, transaction *sql.Tx, log cano
 	}
 	const statement = `INSERT INTO logs (
   source, observed_at, severity, name, body, trace_id, span_id, activity_kind, tool_name,
-  target_agent_id, target_agent_type, agent_id, agent_definition, agent_type, parent_agent_id, run_id, model, cost_usd,
+  target_agent_id, target_agent_type, agent_id, agent_definition, agent_type, parent_agent_id, run_id, usage_id, model, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
   cache_write_tokens_reported, reasoning_tokens_reported, attributes_json, projection_sequence, activity_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = transaction.ExecContext(ctx, statement,
 		normalizeSource(log.Source), formatTime(log.ObservedAt), log.Severity, log.Name, log.Body, log.TraceID, log.SpanID,
 		log.Kind, log.ToolName, log.TargetAgentID, log.TargetAgentType, log.Agent.AgentID, log.Agent.AgentDefinition, log.Agent.AgentType,
-		log.Agent.ParentAgentID, log.Agent.RunID, log.Agent.Model, log.CostUSD,
+		log.Agent.ParentAgentID, log.Agent.RunID, canonicalUsageID(log.Attributes), log.Agent.Model, log.CostUSD,
 		log.Agent.Tokens.Input, log.Agent.Tokens.Output, log.Agent.Tokens.CacheRead,
 		log.Agent.Tokens.CacheWrite, log.Agent.Tokens.Reasoning,
 		boolInt(log.Agent.Tokens.InputReported()), boolInt(log.Agent.Tokens.OutputReported()),

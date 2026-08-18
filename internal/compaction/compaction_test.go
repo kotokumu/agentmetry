@@ -180,8 +180,106 @@ func TestMigrateIfNeededSupportsFreshCurrentAndNewerDatabases(t *testing.T) {
 	})
 }
 
+func TestGenerationFourMigrationReattributesClaudeUsageFromTheJournal(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "claude-generation-four.db")
+	database, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	logs := plog.NewLogs()
+	logResource := logs.ResourceLogs().AppendEmpty()
+	logResource.Resource().Attributes().PutStr("service.name", "claude-code")
+	logResource.Resource().Attributes().PutStr("session.id", "claude-migration")
+	request := logResource.ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	request.SetTimestamp(pcommon.NewTimestampFromTime(now))
+	request.SetEventName("claude_code.api_request")
+	request.Attributes().PutStr("client_request_id", "migration-request")
+	request.Attributes().PutStr("agent.name", "Explore")
+	request.Attributes().PutInt("input_tokens", 8)
+	request.Attributes().PutInt("output_tokens", 2)
+	request.Attributes().PutInt("cost_usd_micros", 10000)
+	logPayload, err := plogotlp.NewExportRequestFromLogs(logs).MarshalProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptedLog, err := otel.ReplayExport(canonical.SignalLog, ingest.TransportGRPC, now, logPayload, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CommitExport(context.Background(), acceptedLog); err != nil {
+		t.Fatal(err)
+	}
+
+	traces := ptrace.NewTraces()
+	traceResource := traces.ResourceSpans().AppendEmpty()
+	traceResource.Resource().Attributes().PutStr("service.name", "claude-code")
+	traceResource.Resource().Attributes().PutStr("session.id", "claude-migration")
+	span := traceResource.ScopeSpans().AppendEmpty().Spans().AppendEmpty()
+	span.SetName("claude_code.llm_request")
+	span.SetTraceID(pcommon.TraceID{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16})
+	span.SetSpanID(pcommon.SpanID{1, 2, 3, 4, 5, 6, 7, 8})
+	span.SetStartTimestamp(pcommon.NewTimestampFromTime(now))
+	span.SetEndTimestamp(pcommon.NewTimestampFromTime(now.Add(time.Second)))
+	span.Attributes().PutStr("client_request_id", "migration-request")
+	span.Attributes().PutStr("agent_id", "runtime-migration-agent")
+	span.Attributes().PutStr("parent_agent_id", "main")
+	span.Attributes().PutStr("agent.name", "Explore")
+	span.Attributes().PutInt("cost_usd_micros", 10000)
+	tracePayload, err := ptraceotlp.NewExportRequestFromTraces(traces).MarshalProto()
+	if err != nil {
+		t.Fatal(err)
+	}
+	acceptedTrace, err := otel.ReplayExport(canonical.SignalTrace, ingest.TransportGRPC, now, tracePayload, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CommitExport(context.Background(), acceptedTrace); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := legacy.Exec(`UPDATE logs SET agent_id = 'Explore'; PRAGMA user_version=4`); err != nil {
+		_ = legacy.Close()
+		t.Fatal(err)
+	}
+	if err := legacy.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := MigrateIfNeeded(context.Background(), path, builtin.Registry(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Migrated {
+		t.Fatal("generation-four Claude journal was not replayed")
+	}
+	migrated, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = migrated.Close() })
+	identity, _ := query.NewConversationIdentity("claude", "claude-migration")
+	summary, err := migrated.GetSessionSummary(context.Background(), identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Agents) != 1 || summary.Agents[0].AgentID != "runtime-migration-agent" || summary.Agents[0].Tokens.Total() != 10 {
+		t.Fatalf("migrated Claude attribution = %#v", summary.Agents)
+	}
+	if summary.CostUSD == nil || *summary.CostUSD != 0.01 {
+		t.Fatalf("migrated Claude cost = %v, want one authoritative contribution", summary.CostUSD)
+	}
+}
+
 func TestReleaseAndAggregationGenerationsRebuildCodexSessionMemberships(t *testing.T) {
-	for _, generation := range []int{2, 3} {
+	for _, generation := range []int{2, 3, 4} {
 		t.Run(fmt.Sprintf("generation-%d", generation), func(t *testing.T) {
 			testGenerationRebuildsCodexSessionMemberships(t, generation)
 		})

@@ -1218,6 +1218,199 @@ func TestOverviewCombinesComplementaryAgentMetadataForTheSameModelCall(t *testin
 	}
 }
 
+func TestSessionSummaryAttributesClaudeRequestUsageToRuntimeAgentInEitherArrivalOrder(t *testing.T) {
+	orders := []struct {
+		name       string
+		traceFirst bool
+	}{
+		{name: "log then trace"},
+		{name: "trace then log", traceFirst: true},
+	}
+	for _, order := range orders {
+		t.Run(order.name, func(t *testing.T) {
+			database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"), sourceplugin.NewRegistry(claude.New()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = database.Close() })
+			now := time.Now().UTC().Truncate(time.Millisecond)
+			span := canonical.Span{
+				Source: "claude", TraceID: "trace-attribution", SpanID: "span-attribution",
+				Name: "gen_ai.model.request.trace", Kind: canonical.ActivityResponse,
+				StartedAt: now, EndedAt: now.Add(time.Second),
+				Attributes: map[string]any{
+					"gen_ai.usage.role": "corroborating",
+					"gen_ai.usage.id":   "client-request-attribution",
+				},
+				Agent: canonical.AgentContext{
+					AgentID: "a548a8af0601337f2", ParentAgentID: "main", RunID: "claude-session",
+					AgentDefinition: "Explore", AgentType: "Explore", Model: "claude-opus-5[1m]",
+				},
+			}
+			log := canonical.Log{
+				Source: "claude", ObservedAt: now.Add(time.Second), Name: "gen_ai.model.request", Kind: canonical.ActivityResponse,
+				Attributes: map[string]any{
+					"gen_ai.usage.role": "authoritative_call",
+					"gen_ai.usage.id":   "client-request-attribution",
+				},
+				Agent: canonical.AgentContext{
+					RunID: "claude-session", AgentDefinition: "Explore", AgentType: "Explore", Model: "claude-opus-5",
+					Tokens: canonical.TokenUsage{Input: 100, Output: 20, CacheRead: 70},
+				},
+			}
+			traceBatch := canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{span}}
+			logBatch := canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{log}}
+			batches := []canonical.Batch{logBatch, traceBatch}
+			if order.traceFirst {
+				batches = []canonical.Batch{traceBatch, logBatch}
+			}
+			for _, batch := range batches {
+				if err := database.CommitBatch(context.Background(), batch); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			summary, err := database.GetSessionSummary(context.Background(), mustConversationIdentity(t, "claude", "claude-session"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if summary.Tokens.Total() != 120 {
+				t.Fatalf("session usage = %#v, want one 120-token model call", summary.Tokens)
+			}
+			if len(summary.Agents) != 1 || summary.Agents[0].AgentID != "a548a8af0601337f2" {
+				t.Fatalf("runtime subagent was not retained: %#v", summary.Agents)
+			}
+			if summary.Agents[0].ParentAgentID != "main" || summary.Agents[0].Tokens.Total() != 120 {
+				t.Fatalf("subagent usage = %#v, want 120 tokens", summary.Agents[0].Tokens)
+			}
+		})
+	}
+}
+
+func TestClaudeTraceRevisionReassignsAndClearsRequestAttribution(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	usageID := "revision-request"
+	log := canonical.Log{
+		Source: "claude", ObservedAt: now, Name: "gen_ai.model.request", Kind: canonical.ActivityResponse,
+		Attributes: map[string]any{"gen_ai.usage.id": usageID, "gen_ai.usage.role": "authoritative_call"},
+		Agent:      canonical.AgentContext{RunID: "revision-session", Tokens: canonical.TokenUsage{Input: 8, Output: 2}},
+	}
+	span := canonical.Span{
+		Source: "claude", TraceID: "revision-trace", SpanID: "revision-span",
+		Name: "gen_ai.model.request.trace", Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now.Add(time.Second),
+		Attributes: map[string]any{"gen_ai.usage.id": usageID, "gen_ai.usage.role": "corroborating"},
+		Agent:      canonical.AgentContext{RunID: "revision-session", AgentID: "agent-a", ParentAgentID: "parent-a"},
+	}
+	if err := database.CommitBatch(ctx, canonical.Batch{Logs: []canonical.Log{log}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	span.Agent.AgentID = "agent-b"
+	span.Agent.ParentAgentID = "parent-b"
+	span.EndedAt = span.EndedAt.Add(time.Second)
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	identity := mustConversationIdentity(t, "claude", "revision-session")
+	summary, err := database.GetSessionSummary(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Agents) != 1 || summary.Agents[0].AgentID != "agent-b" ||
+		summary.Agents[0].ParentAgentID != "parent-b" || summary.Agents[0].Tokens.Total() != 10 {
+		t.Fatalf("revised runtime attribution = %#v", summary.Agents)
+	}
+
+	span.Agent.AgentID = ""
+	span.Agent.ParentAgentID = ""
+	span.EndedAt = span.EndedAt.Add(time.Second)
+	if err := database.CommitBatch(ctx, canonical.Batch{Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err = database.GetSessionSummary(ctx, identity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Agents) != 1 || summary.Agents[0].AgentID != "main" || summary.Agents[0].Tokens.Total() != 10 {
+		t.Fatalf("cleared runtime attribution left stale identity: %#v", summary.Agents)
+	}
+}
+
+func TestClaudeModelCallAttributionIsScopedByConversation(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	const sharedUsageID = "shared-request-id"
+	for index, sessionID := range []string{"session-a", "session-b"} {
+		log := canonical.Log{
+			Source: "claude", ObservedAt: now.Add(time.Duration(index) * time.Second), Name: "gen_ai.model.request", Kind: canonical.ActivityResponse,
+			Attributes: map[string]any{"gen_ai.usage.id": sharedUsageID, "gen_ai.usage.role": "authoritative_call"},
+			Agent: canonical.AgentContext{
+				RunID: sessionID, AgentDefinition: "Explore", AgentType: "Explore",
+				Tokens: canonical.TokenUsage{Input: int64(10 + index), Output: 1},
+			},
+		}
+		span := canonical.Span{
+			Source: "claude", TraceID: fmt.Sprintf("trace-%d", index), SpanID: fmt.Sprintf("span-%d", index),
+			Name: "gen_ai.model.request.trace", Kind: canonical.ActivityResponse,
+			StartedAt: now, EndedAt: now.Add(time.Second),
+			Attributes: map[string]any{"gen_ai.usage.id": sharedUsageID, "gen_ai.usage.role": "corroborating"},
+			Agent:      canonical.AgentContext{RunID: sessionID, AgentID: fmt.Sprintf("runtime-%d", index), ParentAgentID: "main"},
+		}
+		if err := database.CommitBatch(ctx, canonical.Batch{Logs: []canonical.Log{log}, Spans: []canonical.Span{span}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for index, sessionID := range []string{"session-a", "session-b"} {
+		summary, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "claude", sessionID))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantTokens := int64(11 + index)
+		if len(summary.Agents) != 1 || summary.Agents[0].AgentID != fmt.Sprintf("runtime-%d", index) || summary.Agents[0].Tokens.Total() != wantTokens {
+			t.Fatalf("conversation-scoped attribution for %s = %#v", sessionID, summary.Agents)
+		}
+	}
+}
+
+func TestUnmatchedClaudeAgentNameDoesNotCreateRuntimeAgent(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	log := canonical.Log{
+		Source: "claude", ObservedAt: time.Now().UTC(), Name: "gen_ai.model.request", Kind: canonical.ActivityResponse,
+		Attributes: map[string]any{"gen_ai.usage.id": "unmatched-request", "gen_ai.usage.role": "authoritative_call", "agent.name": "Explore"},
+		Agent: canonical.AgentContext{
+			RunID: "unmatched-session", AgentDefinition: "Explore", AgentType: "Explore",
+			Tokens: canonical.TokenUsage{Input: 8, Output: 2},
+		},
+	}
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Logs: []canonical.Log{log}}); err != nil {
+		t.Fatal(err)
+	}
+	summary, err := database.GetSessionSummary(context.Background(), mustConversationIdentity(t, "claude", "unmatched-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Agents) != 1 || summary.Agents[0].AgentID != "main" || summary.Agents[0].Tokens.Total() != 10 {
+		t.Fatalf("unmatched descriptive name became runtime identity or lost usage: %#v", summary.Agents)
+	}
+}
+
 func TestSessionSummaryInfersAgentParentFromSpanParentage(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

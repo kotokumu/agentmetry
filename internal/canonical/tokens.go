@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	agentKeys           = []string{"gen_ai.agent.id", "agent.id", "agent.name"}
+	agentKeys           = []string{"gen_ai.agent.id", "agent.id"}
 	agentDefinitionKeys = []string{"gen_ai.agent.definition"}
 	agentTypeKeys       = []string{"gen_ai.agent.type"}
 	parentAgentKeys     = []string{"gen_ai.agent.parent.id"}
@@ -41,6 +41,9 @@ func DeriveAgentContext(attributes map[string]any) AgentContext {
 }
 
 func DeriveCostUSD(attributes map[string]any) *float64 {
+	if role, _ := attributes["gen_ai.usage.role"].(string); role == "corroborating" {
+		return nil
+	}
 	for _, key := range []string{"gen_ai.usage.cost", "gen_ai.usage.cost_usd", "cost_usd", "estimated_cost_usd"} {
 		value, ok := number(attributes[key])
 		if ok && value >= 0 {

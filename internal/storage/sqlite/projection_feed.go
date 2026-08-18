@@ -63,6 +63,7 @@ func (store *Store) newActivityID() (string, error) {
 type storedSpanScope struct {
 	source, session, trace string
 	agentID, activityKind  string
+	usageID, usageRole     string
 	parentSpanID, status   string
 	startedAt, endedAt     string
 	input, output          int64
@@ -108,6 +109,7 @@ func buildProjectionPlan(ctx context.Context, transaction *sql.Tx, batch canonic
   FROM json_each(?)
 )
 SELECT spans.trace_id, spans.span_id, spans.source, spans.run_id, spans.agent_id, spans.activity_kind,
+  spans.usage_id, COALESCE(json_extract(spans.attributes_json, '$."gen_ai.usage.role"'), ''),
   spans.parent_span_id, spans.status, spans.started_at, spans.ended_at,
   spans.input_tokens, spans.output_tokens, spans.cache_read_tokens,
   spans.cache_write_tokens, spans.reasoning_tokens, spans.input_tokens_reported,
@@ -125,6 +127,7 @@ FROM spans JOIN requested USING (trace_id, span_id)`, string(payload))
 			var scope storedSpanScope
 			if err := rows.Scan(
 				&key.traceID, &key.spanID, &scope.source, &scope.session, &scope.agentID, &scope.activityKind,
+				&scope.usageID, &scope.usageRole,
 				&scope.parentSpanID, &scope.status, &scope.startedAt, &scope.endedAt,
 				&scope.input, &scope.output, &scope.cacheRead, &scope.cacheWrite, &scope.reasoning,
 				&scope.inputReported, &scope.outputReported, &scope.cacheReadReported,
@@ -169,6 +172,9 @@ FROM spans JOIN requested USING (trace_id, span_id)`, string(payload))
 			previousSessions[key] = struct{}{}
 			affectedSessions[key] = struct{}{}
 		}
+	}
+	if err := addClaudeModelCallTargets(ctx, transaction, targetSet, batch, previousSpans); err != nil {
+		return projectionPlan{}, err
 	}
 	if err := addPublishedSessionTargets(ctx, transaction, targetSet, affectedSessions); err != nil {
 		return projectionPlan{}, err

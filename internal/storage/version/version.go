@@ -6,4 +6,4 @@ package version
 // projections in a new Atlas schema. Older supported generations rebuild
 // directly into this generation; intermediate projection migrations are not
 // applied.
-const CurrentGeneration = 4
+const CurrentGeneration = 5

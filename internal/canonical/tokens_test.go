@@ -167,6 +167,31 @@ func TestDeriveAgentContextRecognizesTypedUsageWithoutMutatingAttributes(t *test
 	}
 }
 
+func TestDeriveAgentContextDoesNotUseAgentNameAsRuntimeID(t *testing.T) {
+	context := canonical.DeriveAgentContext(map[string]any{
+		"agent.name":              "Explore",
+		"gen_ai.agent.definition": "Explore",
+		"gen_ai.agent.type":       "Explore",
+	})
+
+	if context.AgentID != "" {
+		t.Fatalf("AgentID = %q, want empty runtime identity", context.AgentID)
+	}
+	if context.AgentDefinition != "Explore" || context.AgentType != "Explore" {
+		t.Fatalf("descriptive agent metadata was not retained: %#v", context)
+	}
+}
+
+func TestDeriveCostUSDIgnoresCorroboratingUsageEvidence(t *testing.T) {
+	cost := canonical.DeriveCostUSD(map[string]any{
+		"gen_ai.usage.role":     "corroborating",
+		"gen_ai.usage.cost_usd": 1.25,
+	})
+	if cost != nil {
+		t.Fatalf("corroborating cost = %v, want absent canonical contribution", *cost)
+	}
+}
+
 func TestTokenUsageTotalDoesNotDoubleCountCacheOrReasoningBreakdowns(t *testing.T) {
 	usage := canonical.TokenUsage{
 		Input:      10,
