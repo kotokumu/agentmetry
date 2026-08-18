@@ -24,7 +24,28 @@ test gate.
 2. `go test ./...` runs independently of the Web build.
 3. Integration tests explicitly build the Web UI and run with `-tags=integration`.
 4. Desktop target metadata tests pass and the Linux sidecar input builds.
-5. Tauri Rust dependencies resolve from crates.io and compile with `cargo check`.
+5. The Linux desktop application compiles with Cargo's release profile.
+6. Pushes to `main` compile the macOS and Windows desktop applications to
+   validate native builds and seed release-profile dependency caches.
+
+The Desktop validation and native cache-seeding jobs run only when the shared
+Desktop path filter detects an input that can affect the application build.
+Documentation-only and OpenSpec-only changes therefore skip those jobs while
+the Web, Go, and integration gates continue to run.
+
+## Build cache ownership
+
+- `actions/setup-go` owns the Go module and build caches. The sidecar compiler
+  selects `GOOS`, `GOARCH`, and `CGO_ENABLED` but does not replace `GOCACHE`.
+- `Swatinem/rust-cache` owns downloaded Cargo dependencies and compiled
+  dependency artifacts under `src-tauri/target`.
+- `rust-toolchain.toml` and each CI/CD setup step pin Rust 1.97.1 so local,
+  validation, and release builds use the same compiler and stable cache keys.
+- CI and release builds share the `desktop-build` scope because both compile
+  with Cargo's release profile. Runner operating systems remain separate cache
+  boundaries.
+- A missing or evicted cache changes build duration only. Every gate rebuilds
+  the same outputs from locked source dependencies on a cache miss.
 
 `web/dist/generated` is intentionally ignored by Git. The empty `web/dist`
 directory is retained with `.gitkeep` so the Go package can compile without a

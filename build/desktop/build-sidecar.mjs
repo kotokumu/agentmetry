@@ -2,10 +2,20 @@ import { spawnSync } from "node:child_process";
 import { chmodSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { tmpdir } from "node:os";
 import { targetMetadata } from "./targets.mjs";
 
-const root = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+const currentFile = fileURLToPath(import.meta.url);
+const root = resolve(dirname(currentFile), "../..");
+
+export function sidecarBuildEnvironment(target, inheritedEnvironment = process.env) {
+  const metadata = targetMetadata(target);
+  return {
+    ...inheritedEnvironment,
+    CGO_ENABLED: "0",
+    GOOS: metadata.goos,
+    GOARCH: metadata.goarch,
+  };
+}
 
 export function buildSidecar(target) {
   const metadata = targetMetadata(target);
@@ -17,13 +27,7 @@ export function buildSidecar(target) {
     ["build", "-trimpath", "-o", output, "./cmd/agentmetry"],
     {
       cwd: root,
-      env: {
-        ...process.env,
-        CGO_ENABLED: "0",
-        GOCACHE: process.env.GOCACHE ?? resolve(tmpdir(), "agentmetry-go-cache"),
-        GOOS: metadata.goos,
-        GOARCH: metadata.goarch,
-      },
+      env: sidecarBuildEnvironment(metadata.target),
       stdio: "inherit",
     },
   );
@@ -38,6 +42,8 @@ export function buildSidecar(target) {
   return output;
 }
 
-const targetArgument = process.argv.indexOf("--target");
-const target = targetArgument >= 0 ? process.argv[targetArgument + 1] : undefined;
-buildSidecar(target);
+if (process.argv[1] && resolve(process.argv[1]) === currentFile) {
+  const targetArgument = process.argv.indexOf("--target");
+  const target = targetArgument >= 0 ? process.argv[targetArgument + 1] : undefined;
+  buildSidecar(target);
+}
