@@ -1222,8 +1222,9 @@ func TestSessionSummaryAttributesClaudeRequestUsageToRuntimeAgentInEitherArrival
 	orders := []struct {
 		name       string
 		traceFirst bool
+		logAgentID string
 	}{
-		{name: "log then trace"},
+		{name: "log then trace replaces legacy descriptive agent ID", logAgentID: "general-purpose"},
 		{name: "trace then log", traceFirst: true},
 	}
 	for _, order := range orders {
@@ -1254,7 +1255,7 @@ func TestSessionSummaryAttributesClaudeRequestUsageToRuntimeAgentInEitherArrival
 					"gen_ai.usage.id":   "client-request-attribution",
 				},
 				Agent: canonical.AgentContext{
-					RunID: "claude-session", AgentDefinition: "Explore", AgentType: "Explore", Model: "claude-opus-5",
+					AgentID: order.logAgentID, RunID: "claude-session", AgentDefinition: "general-purpose", AgentType: "general-purpose", Model: "claude-opus-5",
 					Tokens: canonical.TokenUsage{Input: 100, Output: 20, CacheRead: 70},
 				},
 			}
