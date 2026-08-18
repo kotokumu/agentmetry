@@ -31,6 +31,10 @@ table "spans" {
   column "agent_type"        { type = text }
   column "parent_agent_id"   { type = text }
   column "run_id"            { type = text }
+  column "usage_id" {
+    type    = text
+    default = ""
+  }
   column "model"             { type = text }
   column "cost_usd" {
     type = real
@@ -88,6 +92,9 @@ table "spans" {
   }
   index "spans_source_run_agent_idx" {
     columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.agent_id]
+  }
+  index "spans_source_run_usage_idx" {
+    columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.usage_id]
   }
   index "spans_source_run_agent_parent_idx" {
     columns = [table.spans.column.source, table.spans.column.run_id, table.spans.column.agent_id, table.spans.column.parent_span_id, table.spans.column.trace_id, table.spans.column.span_id]
@@ -356,6 +363,10 @@ table "logs" {
   column "agent_type"         { type = text }
   column "parent_agent_id"    { type = text }
   column "run_id"             { type = text }
+  column "usage_id" {
+    type    = text
+    default = ""
+  }
   column "model"              { type = text }
   column "cost_usd" {
     type = real
@@ -422,6 +433,9 @@ table "logs" {
   }
   index "logs_source_run_agent_idx" {
     columns = [table.logs.column.source, table.logs.column.run_id, table.logs.column.agent_id]
+  }
+  index "logs_source_run_usage_idx" {
+    columns = [table.logs.column.source, table.logs.column.run_id, table.logs.column.usage_id]
   }
   index "logs_trace_observed_at_idx" {
     columns = [table.logs.column.trace_id, table.logs.column.observed_at]

@@ -79,6 +79,81 @@ func TestActivitySyncKeepsEqualLogsDistinct(t *testing.T) {
 	}
 }
 
+func TestActivitySyncPublishesLateClaudeAgentAttribution(t *testing.T) {
+	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	ctx := context.Background()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	usageID := "client-request-sync"
+	const logTraceID = "22222222222222222222222222222222"
+	log := canonical.Log{
+		Source: "claude", TraceID: logTraceID, ObservedAt: now, Name: "gen_ai.model.request", Kind: canonical.ActivityResponse,
+		Attributes: map[string]any{"gen_ai.usage.id": usageID, "gen_ai.usage.role": "authoritative_call"},
+		Agent:      canonical.AgentContext{RunID: "claude-sync", Tokens: canonical.TokenUsage{Input: 8, Output: 2}},
+	}
+	if err := database.CommitBatch(ctx, canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{log}}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := database.CurrentProjectionPosition(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	span := canonical.Span{
+		Source: "claude", TraceID: "11111111111111111111111111111111", SpanID: "1111111111111111",
+		Name: "gen_ai.model.request.trace", Kind: canonical.ActivityResponse, StartedAt: now, EndedAt: now.Add(time.Second),
+		Attributes: map[string]any{"gen_ai.usage.id": usageID, "gen_ai.usage.role": "corroborating"},
+		Agent:      canonical.AgentContext{RunID: "claude-sync", AgentID: "runtime-subagent", ParentAgentID: "main"},
+	}
+	if err := database.CommitBatch(ctx, canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{span}}); err != nil {
+		t.Fatal(err)
+	}
+	through, err := database.CurrentProjectionPosition(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	window, err := database.ReadProjectionChanges(ctx, after, 256, 1024)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !containsTarget(window.Targets, query.TraceTarget(logTraceID)) {
+		t.Fatalf("late attribution did not invalidate the request log trace: %#v", window.Targets)
+	}
+	page, _ := query.NewPage(0, 100)
+	identity, _ := query.NewConversationIdentity("claude", "claude-sync")
+	sync, err := database.SyncSessionActivities(ctx, query.SessionActivitySyncFilter{
+		Identity:           identity,
+		ActivitySyncFilter: query.ActivitySyncFilter{After: after, Through: through, Page: page},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requestMutation *query.ActivityMutation
+	for _, mutation := range sync.Mutations {
+		if mutation.Activity != nil && mutation.Activity.Name == "gen_ai.model.request" {
+			copy := mutation
+			requestMutation = &copy
+		}
+	}
+	if requestMutation == nil || requestMutation.Operation != query.ActivityMutationUpsert ||
+		requestMutation.Activity.AgentID != "runtime-subagent" || requestMutation.Activity.ParentAgentID != "main" ||
+		requestMutation.Activity.UsageID != usageID || requestMutation.Activity.Tokens.Total() != 10 {
+		t.Fatalf("authoritative request log was not republished with runtime attribution: %#v", sync.Mutations)
+	}
+	trace, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, logTraceID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.ActivityCount != 1 {
+		t.Fatalf("late attribution changed trace activity count to %d", trace.ActivityCount)
+	}
+	if len(trace.Agents) != 1 || trace.Agents[0].AgentID != "runtime-subagent" || trace.Agents[0].ParentAgentID != "main" {
+		t.Fatalf("late attribution left stale trace agents: %#v", trace.Agents)
+	}
+}
+
 func TestActivitySyncIncludesChildUpdatesInAggregatedRootSession(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

@@ -155,11 +155,22 @@ extracted from Codex tool arguments SHALL overwrite the corresponding canonical
 target, and a target extracted from output JSON SHALL overwrite the arguments
 target. Values replaced in canonical attributes SHALL remain in the raw export.
 
+Canonical agent-context derivation SHALL treat only `gen_ai.agent.id` and
+`agent.id` as runtime agent identities. A descriptive `agent.name` SHALL NOT
+become an agent ID unless a provider first maps it explicitly to one of those
+runtime identity attributes.
+
 #### Scenario: SC-ALIAS-01 — Preserve an existing canonical value
 
 - **GIVEN** an event using an ordinary source alias with a canonical destination and no documented provider-specific overwrite rule
 - **WHEN** provider normalization copies the alias
 - **THEN** Agentmetry keeps the canonical destination and retains the source attribute
+
+#### Scenario: SC-AGENT-ID-01 — Keep a descriptive name out of runtime identity
+
+- **GIVEN** canonical attributes with `agent.name=Explore` and no agent ID attribute
+- **WHEN** Agentmetry derives agent context
+- **THEN** runtime agent ID is absent
 
 ### Requirement: Claude Code event normalization
 
@@ -242,6 +253,8 @@ follows:
 
 Claude Code read-time agent metadata SHALL also derive a missing definition
 from agent ID and remove a leading `agent:` from agent type.
+`agent.name` SHALL NOT be treated as a runtime agent ID. A runtime agent ID
+SHALL be derived only from `gen_ai.agent.id` or `agent.id`.
 
 #### Scenario: SC-CL-ATTR-01 — Derive a Claude agent definition
 
@@ -254,6 +267,12 @@ from agent ID and remove a leading `agent:` from agent type.
 - **GIVEN** a Claude Code event with `query_source=repl_main_thread` and no canonical agent type
 - **WHEN** Agentmetry normalizes attributes
 - **THEN** `gen_ai.agent.type` is `root`
+
+#### Scenario: SC-CL-ATTR-03 — Keep an agent name out of runtime identity
+
+- **GIVEN** a Claude Code event with `agent.name=Explore` and no runtime agent ID
+- **WHEN** Agentmetry derives canonical agent context
+- **THEN** the agent definition and type may be `Explore`, but agent ID is absent
 
 ### Requirement: Claude Code content normalization
 
@@ -286,7 +305,9 @@ not add those cache counters again when canonical input tokens already exist.
 
 For a Claude Code `llm_request`, Agentmetry SHALL set
 `gen_ai.usage.role=corroborating` and derive the same usage identity, but SHALL
-not add token counters.
+not add token counters. Canonical cost projection SHALL ignore cost candidates
+on corroborating usage evidence while retaining the received attributes and raw
+export.
 
 For every normalized Claude event, when non-negative `cost_usd_micros` is
 parseable, Agentmetry SHALL set
@@ -306,6 +327,43 @@ SHALL continue canonical cost derivation from that candidate.
 - **GIVEN** an `llm_request` carrying token fields
 - **WHEN** Agentmetry normalizes usage
 - **THEN** the role is `corroborating` and no token counter is added by the provider profile
+
+### Requirement: Claude Code model-call attribution
+
+Agentmetry SHALL correlate Claude Code `api_request` logs and `llm_request`
+trace spans when source, conversation ID, and canonical usage ID are equal. The
+correlated call SHALL use token and cost measurements from the authoritative
+`api_request` and runtime agent ID and parent agent ID from the `llm_request`.
+The corroborating `llm_request` SHALL NOT add a second usage contribution.
+
+Applying the correlation SHALL be idempotent and independent of whether log or
+trace export arrives first. This correlation rule does not collapse duplicate
+authoritative log records. When later evidence changes a stored activity's
+runtime agent, Agentmetry SHALL rebuild affected session-agent rollups and
+publish an activity upsert. An unmatched agent name SHALL NOT create a
+synthetic runtime agent. Canonical usage ID SHALL have an indexed projection
+for bounded correlation within source and conversation scope.
+
+Claude aggregate token metrics and `subagent_completed.total_tokens` SHALL NOT
+be added to model-call totals.
+
+#### Scenario: SC-CL-ATTRIBUTION-01 — Attribute request usage to a runtime subagent
+
+- **GIVEN** an `api_request` for agent name `Explore` and an `llm_request` for runtime agent `a123` with the same conversation and usage IDs
+- **WHEN** Agentmetry projects both records
+- **THEN** the authoritative request tokens are attributed to runtime agent `a123` exactly once
+
+#### Scenario: SC-CL-ATTRIBUTION-02 — Correlate independent of arrival order
+
+- **GIVEN** matching Claude request log and trace evidence
+- **WHEN** either evidence record arrives before the other
+- **THEN** the final session-agent projection is identical
+
+#### Scenario: SC-CL-ATTRIBUTION-03 — Preserve unmatched identity uncertainty
+
+- **GIVEN** an `api_request` with `agent.name=Explore` and no matching trace runtime ID
+- **WHEN** Agentmetry projects the request
+- **THEN** it does not create a runtime agent whose ID is `Explore`
 
 #### Scenario: SC-CL-COST-01 — Convert Claude micro-cost
 
