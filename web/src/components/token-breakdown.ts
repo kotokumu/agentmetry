@@ -18,17 +18,17 @@ export class TokenBreakdown extends LitElement {
   @property({ type: Boolean, reflect: true }) compact = false;
 
   static styles = css`
-    :host { display: block; min-width: 0; }
+    :host { display: block; min-width: 0; max-width: 100%; }
     .summary { min-width: 0; }
     .total-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; }
     .total { color: var(--am-text); font-weight: 700; white-space: nowrap; }
     .unit, .partial, summary { color: var(--am-muted); font-size: .68rem; }
     details { margin-top: 4px; }
     summary { width: fit-content; cursor: pointer; color: var(--am-accent); }
-    .grid { display: grid; grid-template-columns: minmax(90px, 1fr) auto; gap: 4px 12px; margin-top: 7px; padding: 9px 11px; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 0 7px 7px 0; background: var(--am-surface-strong); }
-    .label { color: var(--am-muted); font-size: .68rem; }
-    .value { color: var(--am-text); font: .7rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-align: right; }
-    :host([compact]) .grid { padding: 6px 8px; }
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; box-sizing: border-box; max-width: 100%; min-width: 0; margin-top: 7px; padding: 9px 11px; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 0 7px 7px 0; background: var(--am-surface-strong); }
+    .label { min-width: 0; color: var(--am-muted); font-size: .68rem; overflow-wrap: anywhere; }
+    .value { min-width: 0; color: var(--am-text); font: .7rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; text-align: right; }
+    :host([compact]) .grid { gap-inline: 6px; padding: 6px 8px; }
     :host([compact]) details { margin-top: 2px; }
   `;
 
@@ -40,8 +40,16 @@ export class TokenBreakdown extends LitElement {
         <strong class="total">${this.usage.total === null ? hasUsage ? "Partial" : NOT_REPORTED : this.usage.total.toLocaleString()}</strong>
         ${this.usage.total !== null ? html`<span class="unit">tokens</span>` : hasUsage ? html`<span class="partial">usage</span>` : null}
       </div>
-      ${hasUsage ? html`<details><summary>Breakdown</summary><div class="grid">${rows.map(([label, value]) => html`<span class="label">${label}</span><strong class="value">${value.toLocaleString()}</strong>`)}</div></details>` : null}
+      ${hasUsage ? html`<details @toggle=${this.breakdownToggled}><summary>Breakdown</summary><div class="grid">${rows.map(([label, value]) => html`<span class="label">${label}</span><strong class="value">${value.toLocaleString()}</strong>`)}</div></details>` : null}
     </div>`;
+  }
+
+  private breakdownToggled(event: Event) {
+    this.dispatchEvent(new CustomEvent("token-breakdown-toggle", {
+      detail: { open: (event.currentTarget as HTMLDetailsElement).open },
+      bubbles: true,
+      composed: true,
+    }));
   }
 }
 

@@ -801,6 +801,66 @@ describe("dashboard components", () => {
     expect(tree.shadowRoot?.querySelectorAll(".connector")).toHaveLength(3);
   });
 
+  it("makes room for an expanded token breakdown in the agent topology", async () => {
+    const tree = document.createElement("am-agent-tree") as AgentTree;
+    tree.agents = [
+      { agentId: "main", activityCount: 2, tokens: { input: 100, output: 20, cacheRead: 60, cacheWrite: 4, reasoning: 8, total: 120 } },
+      { agentId: "child", parentAgentId: "main", activityCount: 1, tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null } },
+    ];
+    document.body.append(tree);
+    await tree.updateComplete;
+
+    const initialRoot = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")!;
+    const initialChild = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='child']")!;
+    const initialGraph = tree.shadowRoot?.querySelector<HTMLElement>(".graph")!;
+    const collapsedChildTop = Number.parseFloat(initialChild.style.top);
+    const collapsedGraphHeight = Number.parseFloat(initialGraph.style.height);
+    const breakdown = initialRoot.querySelector("am-token-breakdown");
+    await (breakdown as { updateComplete?: Promise<unknown> } | null)?.updateComplete;
+    const details = breakdown?.shadowRoot?.querySelector<HTMLDetailsElement>("details")!;
+    expect(initialRoot.style.height).toBe("");
+    Object.defineProperty(initialRoot, "offsetHeight", { configurable: true, value: 208 });
+
+    details.open = true;
+    details.dispatchEvent(new Event("toggle"));
+    await tree.updateComplete;
+
+    const expandedRoot = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='main']")!;
+    const expandedChild = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='child']")!;
+    const expandedGraph = tree.shadowRoot?.querySelector<HTMLElement>(".graph")!;
+    expect(expandedRoot.style.height).toBe("");
+    expect(Number.parseFloat(expandedChild.style.top)).toBeGreaterThan(collapsedChildTop);
+    expect(Number.parseFloat(expandedGraph.style.height)).toBeGreaterThan(collapsedGraphHeight);
+
+    Object.defineProperty(expandedRoot, "offsetHeight", { configurable: true, value: 116 });
+    details.open = false;
+    details.dispatchEvent(new Event("toggle"));
+    await tree.updateComplete;
+
+    expect(Number.parseFloat(tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='child']")?.style.top ?? "NaN")).toBe(collapsedChildTop);
+  });
+
+  it("lays out the topology from each node's rendered height", async () => {
+    const tree = document.createElement("am-agent-tree") as AgentTree;
+    const missing = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
+    tree.agents = [
+      { agentId: "a-long-runtime-id-that-can-wrap", activityCount: 2, tokens: missing },
+      { agentId: "child", parentAgentId: "a-long-runtime-id-that-can-wrap", activityCount: 1, tokens: missing },
+    ];
+    document.body.append(tree);
+    await tree.updateComplete;
+
+    const root = tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='a-long-runtime-id-that-can-wrap']")!;
+    const initialChildTop = Number.parseFloat(tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='child']")?.style.top ?? "NaN");
+    Object.defineProperty(root, "offsetHeight", { configurable: true, value: 180 });
+    tree.requestUpdate();
+    await tree.updateComplete;
+    await tree.updateComplete;
+
+    expect(root.style.height).toBe("");
+    expect(Number.parseFloat(tree.shadowRoot?.querySelector<HTMLElement>("[data-agent-id='child']")?.style.top ?? "NaN")).toBeGreaterThan(initialChildTop);
+  });
+
   it("explains when no agent relationships were reported", async () => {
     const tree = document.createElement("am-agent-tree") as AgentTree;
     document.body.append(tree);
