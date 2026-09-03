@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.1](https://github.com/kotokumu/agentmetry/compare/v1.11.0...v1.11.1) (2026-09-03)
+
+
+### Bug Fixes
+
+* **release:** preserve updater platform manifests ([12c0c4b](https://github.com/kotokumu/agentmetry/commit/12c0c4bb4763ee16a3f5d44466c9ea7d47e5ddda))
+* **release:** preserve updater platform manifests ([5429e47](https://github.com/kotokumu/agentmetry/commit/5429e479200ba079bf024fe5dfb334f259b5ef63))
+
 ## [1.11.0](https://github.com/kotokumu/agentmetry/compare/v1.10.4...v1.11.0) (2026-09-03)
 
 
