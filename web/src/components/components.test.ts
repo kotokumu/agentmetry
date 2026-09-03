@@ -51,7 +51,7 @@ const traceFixture: Trace = {
       tokens: { input: 100, output: 20, cacheRead: null, cacheWrite: null, reasoning: null, total: 120 },
     },
     {
-      source: "codex", signal: "trace", traceId: "trace-123456789", spanId: "child", parentSpanId: "missing", name: "child operation", kind: "delegation",
+      source: "codex", signal: "trace", traceId: "trace-123456789", spanId: "child", parentSpanId: "missing", missingParent: true, name: "child operation", kind: "delegation",
       agentId: "reviewer", agentDefinition: "repository-review", targetAgentId: "main", targetAgentType: "root", runId: "conversation-b", model: "model-b", startedAt: "2026-08-11T00:00:01Z", endedAt: "2026-08-11T00:00:02Z",
       observedAt: "2026-08-11T00:00:02Z", status: "Error", contributesToTotal: true,
       tokens: { input: 50, output: 10, cacheRead: 30, cacheWrite: null, reasoning: 5, total: 60 },
@@ -132,7 +132,7 @@ describe("dashboard components", () => {
     expect(content).toContain("Highest-impact recurring loops");
     expect(content).toContain("validation abcdef1234");
     expect(content).toContain("3 failed attempts");
-    expect(panel.shadowRoot?.querySelector<HTMLAnchorElement>('.episode a')?.getAttribute("href")).toBe("/traces/trace-1");
+    expect(panel.shadowRoot?.querySelector<HTMLAnchorElement>('.episode a')?.getAttribute("href")).toBe("/traces/trace-1?spanId=span-1");
     expect(content).toContain("Not available");
     expect(cards).toHaveLength(12);
     expect(cards.every((card) => card.description.length > 0)).toBe(true);
@@ -394,7 +394,7 @@ describe("dashboard components", () => {
     scrollBy.mockRestore();
   });
 
-  it("keeps expanded message content open when live activities are prepended", async () => {
+  it("keeps selected message content open when live activities are prepended", async () => {
     const longContent = "expanded content ".repeat(20);
     const table = document.createElement("am-activity-table") as ActivityTable;
     table.activities = [{
@@ -406,13 +406,14 @@ describe("dashboard components", () => {
     }];
     document.body.append(table);
     await table.updateComplete;
-    const expanded = table.shadowRoot?.querySelector<HTMLDetailsElement>("details");
-    if (expanded) expanded.open = true;
+    table.shadowRoot?.querySelector<HTMLButtonElement>("button.select-activity")?.click();
+    await table.updateComplete;
 
     table.activities = [{ ...table.activities[0], id: "new", name: "new", content: "new message" }, ...table.activities];
     await table.updateComplete;
 
-    expect(table.shadowRoot?.querySelector<HTMLDetailsElement>('tr[data-activity-id="existing"] details')?.open).toBe(true);
+    expect(table.selectedActivityId).toBe("existing");
+    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe(longContent);
   });
 
   it("navigates every loaded trace activity while keeping the DOM at 200 rows", async () => {
@@ -566,7 +567,20 @@ describe("dashboard components", () => {
     const traceLink = table.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace");
 
     expect(traceLink?.getAttribute("aria-label")).toContain("trace-123456789");
-    expect(traceLink?.getAttribute("href")).toBe("/traces/trace-123456789");
+    expect(traceLink?.getAttribute("href")).toBe("/traces/trace-123456789?spanId=span-1");
+  });
+
+  it("keeps native log trace navigation unanchored and never mixes related identities", async () => {
+    const table = document.createElement("am-activity-table") as ActivityTable;
+    table.activities = [{ ...traceFixture.activities[2], signal: "log", traceId: "log-only-trace", spanId: "correlated-span", relatedTraceId: "other-trace", relatedSpanId: "other-span" }];
+    document.body.append(table);
+    await table.updateComplete;
+    const listener = vi.fn();
+    table.addEventListener("trace-selected", listener);
+    const link = table.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace");
+    expect(link?.getAttribute("href")).toBe("/traces/log-only-trace");
+    link?.click();
+    expect((listener.mock.calls[0][0] as CustomEvent).detail).toMatchObject({ traceId: "log-only-trace", spanId: undefined });
   });
 
   it("emits the conversation context when a trace link is followed in place", async () => {
@@ -606,7 +620,7 @@ describe("dashboard components", () => {
 
     expect(table.shadowRoot?.textContent).toContain("Prompt prompt-1");
     expect(table.shadowRoot?.textContent).toContain("Usage request-1");
-    expect(table.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/traces/trace-123456789"]')).not.toBeNull();
+    expect(table.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/traces/trace-123456789?spanId=span-1"]')).not.toBeNull();
   });
 
   it("reveals a highlighted target only once while adjacent pages are appended", async () => {
@@ -1004,6 +1018,28 @@ describe("dashboard components", () => {
     await Promise.all(participantTokens.map((token) => (token as { updateComplete?: Promise<unknown> }).updateComplete));
     expect(participantTokens.map((token) => token.shadowRoot?.textContent).join(" ")).toContain("120");
     expect(participantTokens.map((token) => token.shadowRoot?.textContent).join(" ")).toContain("60");
+  });
+
+  it("reveals and focuses the exact native span beyond the rendered window", async () => {
+    const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
+    const activities = Array.from({ length: 250 }, (_, index) => ({
+      ...traceFixture.activities[0], spanId: `span-${index}`, name: `operation ${index}`, content: `body ${index}`,
+    }));
+    activities.unshift({ ...activities[249], signal: "log", name: "correlated log", content: "wrong body" });
+    waterfall.trace = { ...traceFixture, activities, activityCount: activities.length };
+    waterfall.selectedSpanId = "span-249";
+    document.body.append(waterfall);
+    await waterfall.updateComplete;
+
+    const selected = waterfall.shadowRoot?.querySelector<HTMLDetailsElement>('details[aria-current="location"]');
+    expect(selected?.textContent).toContain("body 249");
+    expect(selected?.textContent).not.toContain("wrong body");
+    expect(selected?.open).toBe(true);
+    expect(waterfall.shadowRoot?.activeElement).toBe(selected?.querySelector("summary"));
+
+    waterfall.trace = { ...waterfall.trace!, endedAt: "2026-08-11T00:05:00Z" };
+    await waterfall.updateComplete;
+    expect(waterfall.shadowRoot?.querySelector('details[aria-current="location"]')?.textContent).toContain("body 249");
   });
 
   it("renders spans and correlated logs in the trace waterfall", async () => {

@@ -15,9 +15,27 @@ func (store *Store) initializeTraceRollups(ctx context.Context) error {
 		return fmt.Errorf("inspect trace rollups: %w", err)
 	}
 	if count > 0 {
-		return nil
+		var mismatch int64
+		if err := store.db.QueryRowContext(ctx, `WITH actual AS (
+  SELECT trace_id, COUNT(*) AS activity_count FROM (
+    SELECT trace_id FROM spans WHERE trace_id <> ''
+    UNION ALL SELECT trace_id FROM logs WHERE trace_id <> ''
+  ) GROUP BY trace_id
+)
+SELECT COUNT(*) FROM (
+  SELECT actual.trace_id FROM actual LEFT JOIN trace_rollups r ON r.trace_id = actual.trace_id
+  WHERE r.trace_id IS NULL OR r.activity_count <> actual.activity_count
+  UNION ALL SELECT r.trace_id FROM trace_rollups r LEFT JOIN actual ON actual.trace_id = r.trace_id WHERE actual.trace_id IS NULL
+)`).Scan(&mismatch); err != nil {
+			return fmt.Errorf("inspect trace rollup completeness: %w", err)
+		}
+		if mismatch == 0 {
+			return nil
+		}
 	}
-	rows, err := store.db.QueryContext(ctx, `SELECT trace_id FROM spans WHERE trace_id <> '' UNION SELECT trace_id FROM logs WHERE trace_id <> ''`)
+	rows, err := store.db.QueryContext(ctx, `SELECT trace_id FROM spans WHERE trace_id <> ''
+UNION SELECT trace_id FROM logs WHERE trace_id <> ''
+UNION SELECT trace_id FROM trace_rollups`)
 	if err != nil {
 		return fmt.Errorf("discover trace rollups: %w", err)
 	}
@@ -77,7 +95,7 @@ func updateAffectedTraceRollups(ctx context.Context, transaction *sql.Tx, batch 
 		return nil
 	}
 	for _, old := range previous {
-		if old.activityKind == string(canonical.ActivityUnknown) || old.trace == "" {
+		if old.trace == "" {
 			continue
 		}
 		root, missing := 0, 0
@@ -103,7 +121,7 @@ FROM (
     CASE WHEN spans.parent_span_id <> '' AND NOT EXISTS (
       SELECT 1 FROM spans AS parent WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
     ) THEN 1 ELSE 0 END AS missing_parent
-  FROM spans WHERE spans.projection_sequence = ? AND spans.trace_id <> '' AND spans.activity_kind <> 'unknown'
+  FROM spans WHERE spans.projection_sequence = ? AND spans.trace_id <> ''
   UNION ALL
   SELECT trace_id, observed_at, observed_at, 0, 0, 0
   FROM logs WHERE projection_sequence = ? AND trace_id <> ''
@@ -185,7 +203,7 @@ FROM (
     CASE WHEN spans.parent_span_id <> '' AND NOT EXISTS (
       SELECT 1 FROM spans AS parent WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
     ) THEN 1 ELSE 0 END AS missing_parent
-  FROM spans WHERE spans.trace_id = ? AND spans.activity_kind <> 'unknown'
+  FROM spans WHERE spans.trace_id = ?
   UNION ALL
   SELECT observed_at, observed_at, 0, 0, 0 FROM logs WHERE trace_id = ?
 ) HAVING COUNT(*) > 0`, traceID, traceID, traceID)

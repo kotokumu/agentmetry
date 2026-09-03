@@ -1,3 +1,4 @@
+import { conditionsKey, hasSessionConditions, parseInvestigationFilters, sessionConditions, type InvestigationFilters, type SessionConditions } from "../model/investigation-conditions";
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
 import "../components/app-update-control";
@@ -11,6 +12,7 @@ import type { DashboardStateDetail } from "../components/dashboard-summary";
 import type { TraceExplorer } from "../components/trace-explorer";
 import type { RangeSelectedDetail } from "../components/time-range-filter";
 import { conversationTargetFromLocation, type ConversationTarget } from "../model/trace-analysis";
+import type { TraceInvestigationState } from "../model/trace-investigation";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
 import { agentmetryClient } from "../api/agentmetry-client";
 import { LIVE_UPDATE_EVENT, LiveUpdateController, type LiveUpdateDelivery } from "../controllers/live-update-controller";
@@ -23,6 +25,7 @@ import {
   traceLocation,
   type NavigationFilters,
   type NavigationOrigin,
+  type NavigationViewState,
 } from "./navigation";
 
 @customElement("am-app")
@@ -30,12 +33,22 @@ export class AgentmetryApp extends LitElement {
   @state() private range: TimeRange = "24h";
   @state() private sourceId = "";
   @state() private search = "";
+  @state() private conditions: SessionConditions = {};
+  @state() private filterError = "";
+  @state() private filterPending = false;
+  private filterRequest = 0;
+  private filterAbort?: AbortController;
   @state() private requestedConversation?: ConversationTarget;
   @state() private selectedTraceId = "";
+  @state() private selectedTraceSpanId = "";
+  @state() private requestedTraceInvestigation?: TraceInvestigationState;
   @state() private traceReturn?: NavigationOrigin;
   @state() private conversationReturn?: NavigationOrigin;
   @state() private workspaceInitialized = false;
   @state() private requestedAgentId = "";
+  @state() private requestedPurpose: NavigationViewState["purpose"] = "execution";
+  @state() private requestedActivityId = "";
+  @state() private requestedEvidenceFocus?: NavigationViewState["evidenceFocus"];
   @state() private routeAnnouncement = "Dashboard";
   @state() private dashboardStatus: DashboardStateDetail["status"] = "loading";
   @state() private sources: readonly TelemetrySource[] = [];
@@ -69,6 +82,8 @@ export class AgentmetryApp extends LitElement {
     window.removeEventListener("scroll", this.scrollChanged);
     history.scrollRestoration = this.previousScrollRestoration;
     this.liveUpdates.stop();
+    this.filterRequest += 1;
+    this.filterAbort?.abort();
     super.disconnectedCallback();
   }
 
@@ -92,12 +107,7 @@ export class AgentmetryApp extends LitElement {
       display: block;
       min-height: 100vh;
       color: var(--am-text);
-      background:
-        radial-gradient(circle at 12% -8%, rgba(109, 244, 214, .12), transparent 28rem),
-        radial-gradient(circle at 92% 2%, rgba(139, 166, 255, .10), transparent 32rem),
-        linear-gradient(90deg, rgba(154, 190, 214, .035) 1px, transparent 1px) 0 0 / 28px 28px,
-        linear-gradient(rgba(154, 190, 214, .035) 1px, transparent 1px) 0 0 / 28px 28px,
-        var(--am-paper);
+      background: var(--am-paper);
       font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color-scheme: dark;
     }
@@ -110,7 +120,7 @@ export class AgentmetryApp extends LitElement {
     .brand:focus-visible { border-radius: 7px; outline: 2px solid var(--am-accent); outline-offset: 4px; }
     .brand-mark { width: 30px; height: 30px; padding: 2px; border: 1px solid var(--am-border-strong); border-radius: 8px; background: rgba(237, 245, 251, .92); object-fit: contain; box-shadow: 0 0 20px rgba(var(--am-accent-rgb), .12); }
     .eyebrow { margin: 0 0 6px; color: var(--am-accent); font: 700 .64rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .15em; text-transform: uppercase; }
-    h1 { max-width: 720px; margin: 0; font: 650 clamp(2.2rem, 4vw, 4.2rem)/.9 Inter, ui-sans-serif, sans-serif; letter-spacing: -.065em; }
+    h1 { max-width: 720px; margin: 0; font: 650 clamp(1.4rem, 2.5vw, 2rem)/1.2 Inter, ui-sans-serif, sans-serif; letter-spacing: -.02em; }
     h1 span { color: var(--am-muted); font-weight: 400; }
     .header-controls { display: grid; justify-items: end; flex: 0 1 auto; min-width: min(100%, 520px); }
     .utility-controls { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; }
@@ -123,7 +133,7 @@ export class AgentmetryApp extends LitElement {
     am-trace-explorer[hidden], am-conversation-workspace[hidden] { display: none; }
     @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(101, 230, 165, .03), 0 0 20px rgba(101, 230, 165, .7); } }
     @media (max-width: 950px) { header { align-items: flex-start; flex-direction: column; } .header-controls { justify-items: start; } .utility-controls { justify-content: flex-start; } .status { justify-content: flex-start; text-align: left; } }
-    @media (max-width: 640px) { main { padding: 12px; } h1 { font-size: clamp(2.35rem, 12vw, 4rem); } .brand { margin-bottom: 14px; } }
+    @media (max-width: 640px) { main { padding: 12px; } h1 { font-size: 1.5rem; } .brand { margin-bottom: 14px; } }
     @media (max-width: 480px) { .status { align-items: flex-start; flex-direction: column; } .state-note::before { content: none; } }
     @media (prefers-reduced-motion: reduce) { .status-dot { animation: none; } }
   `;
@@ -150,6 +160,8 @@ export class AgentmetryApp extends LitElement {
 
       ${traceActive ? html`<am-trace-explorer
         .traceId=${this.selectedTraceId}
+        .anchorSpanId=${this.selectedTraceSpanId}
+        .requestedInvestigation=${this.requestedTraceInvestigation}
         .returnHref=${this.traceReturn?.href ?? dashboardHref}
         .returnLabel=${this.traceReturn?.label ?? "Conversations"}
         .locationForConversation=${(target: ConversationTarget) => conversationLocation(target, this.filters)}
@@ -157,22 +169,30 @@ export class AgentmetryApp extends LitElement {
         @trace-removed=${this.traceRemoved}
         @conversation-selected-from-trace=${this.conversationSelectedFromTrace}
         @trace-view-ready=${this.traceViewReady}
+        @trace-view-state-changed=${this.traceViewStateChanged}
       ></am-trace-explorer>` : null}
       ${this.workspaceInitialized ? html`<am-conversation-workspace
         .range=${this.range}
         .sourceId=${this.sourceId}
         .search=${this.search}
         .sources=${this.sources}
+        .conditions=${this.conditions}
+        .filterError=${this.filterError}
+        .filterPending=${this.filterPending}
         .requestedConversation=${this.requestedConversation}
         .listHref=${dashboardHref}
         .returnHref=${this.conversationReturn?.href ?? ""}
         .returnLabel=${this.conversationReturn?.label ?? ""}
         .requestedAgentId=${this.requestedAgentId}
+        .purpose=${this.requestedPurpose}
+        .requestedActivityId=${this.requestedActivityId}
+        .requestedEvidenceFocus=${this.requestedEvidenceFocus}
         .active=${!traceActive}
         ?hidden=${traceActive}
         .locationForSession=${(sourceId: string, sessionId: string) =>
           conversationLocation({ sourceId, conversationId: sessionId }, this.filters)}
-        .locationForTrace=${(traceId: string) => traceLocation(traceId, this.filters)}
+        .locationForTrace=${(traceId: string, spanId?: string) => traceLocation(traceId, this.filters, spanId)}
+        @investigation-filters-requested=${this.investigationFiltersRequested}
         @source-selected=${this.sourceSelected}
         @search-submitted=${this.searchSubmitted}
         @session-selected=${this.sessionSelected}
@@ -182,22 +202,26 @@ export class AgentmetryApp extends LitElement {
 		@conversation-removed=${this.conversationRemoved}
         @conversation-view-ready=${this.conversationViewReady}
         @conversation-view-state-changed=${this.conversationViewStateChanged}
+        @conversation-purpose-selected=${this.conversationPurposeSelected}
         @conversation-summary-changed=${this.conversationSummaryChanged}
       ></am-conversation-workspace>` : null}
     </main>`;
   }
 
   private rangeSelected(event: CustomEvent<RangeSelectedDetail>) {
+    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.filters, range: event.detail.range }); return; }
     this.range = event.detail.range;
     this.showFilteredDashboard();
   }
 
   private sourceSelected(event: CustomEvent<{ sourceId: string }>) {
+    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.filters, sourceId: event.detail.sourceId }); return; }
     this.sourceId = event.detail.sourceId;
     this.showFilteredDashboard();
   }
 
   private searchSubmitted(event: CustomEvent<{ search: string }>) {
+    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.filters, search: event.detail.search.trim() }); return; }
     this.search = event.detail.search.trim();
     if (this.requestedConversation) {
       const href = conversationLocation(this.requestedConversation, this.filters);
@@ -216,21 +240,29 @@ export class AgentmetryApp extends LitElement {
     this.readRoute(true, true);
   }
 
-  private traceSelected(event: CustomEvent<{ traceId: string; sourceId: string; conversationId: string; spanId?: string }>) {
+  private traceSelected(event: CustomEvent<{ traceId: string; sourceId: string; conversationId: string; spanId?: string; evidenceOrigin?: "episode" }>) {
     const originTarget: ConversationTarget = {
       sourceId: event.detail.sourceId,
       conversationId: event.detail.conversationId,
       traceId: event.detail.spanId ? event.detail.traceId : undefined,
       spanId: event.detail.spanId,
     };
-    const originHref = conversationLocation(originTarget, this.filters);
+    const originHref = event.detail.evidenceOrigin === "episode"
+      ? conversationLocation(this.requestedConversation ?? { sourceId: event.detail.sourceId, conversationId: event.detail.conversationId }, this.filters)
+      : conversationLocation(originTarget, this.filters);
     const origin: NavigationOrigin = {
       kind: "conversation",
       href: originHref,
       label: `Conversation ${shortId(event.detail.conversationId)}`,
     };
     this.beginNavigation(originHref);
-    history.pushState({ origin }, "", traceLocation(event.detail.traceId, this.filters));
+    if (event.detail.spanId) {
+      history.replaceState({ ...history.state, view: { ...history.state?.view, evidenceFocus: {
+        kind: event.detail.evidenceOrigin === "episode" ? "episode" : "activity",
+        traceId: event.detail.traceId, spanId: event.detail.spanId,
+      } } }, "", originHref);
+    }
+    history.pushState({ origin }, "", traceLocation(event.detail.traceId, this.filters, event.detail.spanId));
     this.readRoute(true, true);
   }
 
@@ -320,12 +352,22 @@ export class AgentmetryApp extends LitElement {
   private readonly popState = () => this.readRoute(true);
 
   private readRoute(restoreContext = false, resetScroll = false) {
-    const filters = filtersFromLocation(new URL(window.location.href));
+    this.filterRequest += 1;
+    this.filterAbort?.abort();
+    this.filterPending = false;
+    let filters = this.filters;
+    try { filters = filtersFromLocation(new URL(window.location.href)); this.filterError = ""; }
+    catch (error) { this.filterError = error instanceof Error ? error.message : "Invalid URL conditions."; }
+    const conditions = sessionConditions(filters);
+    if (conditionsKey(conditions) !== conditionsKey(this.conditions)) this.conditions = conditions;
     this.range = filters.range;
     this.sourceId = filters.sourceId;
     this.search = filters.search;
     const origin = navigationOriginFromState(history.state);
     const view = navigationViewStateFromState(history.state);
+    this.requestedPurpose = view?.purpose ?? (restoreContext && view?.evidenceFocus?.kind === "episode" ? "rework" : "execution");
+    this.requestedActivityId = view?.selectedActivityId ?? "";
+    this.requestedEvidenceFocus = restoreContext ? view?.evidenceFocus : undefined;
     this.pendingScrollY = restoreContext ? (resetScroll ? 0 : view?.scrollY) : undefined;
     if (resetScroll && typeof window.scrollTo === "function") window.scrollTo({ top: 0, behavior: "auto" });
     const conversationTarget = conversationTargetFromLocation(window.location.pathname, window.location.search);
@@ -343,6 +385,8 @@ export class AgentmetryApp extends LitElement {
     }
     const traceId = traceIdFromPath(window.location.pathname);
     this.selectedTraceId = traceId ?? "";
+    this.selectedTraceSpanId = traceId ? (new URL(location.href).searchParams.get("spanId") ?? "").toLowerCase() : "";
+    this.requestedTraceInvestigation = traceId && restoreContext ? view?.traceInvestigation : undefined;
     this.traceReturn = traceId && origin?.kind === "conversation" ? origin : undefined;
     this.conversationReturn = undefined;
     if (traceId) {
@@ -360,6 +404,28 @@ export class AgentmetryApp extends LitElement {
     this.pendingFocus = restoreContext ? "list" : undefined;
   }
 
+  private readonly investigationFiltersRequested = (event: CustomEvent<{ filters: InvestigationFilters }>) => {
+    void this.applyInvestigationFilters(event.detail.filters);
+  };
+
+  private async applyInvestigationFilters(input: InvestigationFilters) {
+    const request = ++this.filterRequest;
+    this.filterAbort?.abort();
+    const abort = this.filterAbort = new AbortController();
+    this.filterPending = true;
+    this.filterError = "";
+    try {
+      const filters = parseInvestigationFilters(input);
+      await agentmetryClient.listSessions(filters.range, filters.sourceId, filters.search, abort.signal, sessionConditions(filters));
+      if (request !== this.filterRequest) return;
+      this.beginNavigation();
+      history.pushState({}, "", dashboardLocation(filters));
+      this.readRoute(true, true);
+    } catch (error) {
+      if (request === this.filterRequest) this.filterError = error instanceof Error ? error.message : "Conditions could not be applied.";
+    } finally { if (request === this.filterRequest) this.filterPending = false; }
+  }
+
   private showFilteredDashboard() {
     const href = dashboardLocation(this.filters);
     this.beginNavigation();
@@ -369,7 +435,7 @@ export class AgentmetryApp extends LitElement {
   }
 
   private get filters(): NavigationFilters {
-    return { range: this.range, sourceId: this.sourceId, search: this.search };
+    return { range: this.range, sourceId: this.sourceId, search: this.search, ...this.conditions };
   }
 
   protected updated(_changed: PropertyValues<this>) {
@@ -378,7 +444,13 @@ export class AgentmetryApp extends LitElement {
 
   private readonly conversationViewReady = () => this.restoreRouteContext();
   private readonly traceViewReady = () => this.restoreRouteContext();
+  private readonly traceViewStateChanged = () => this.saveCurrentEntryView();
   private readonly conversationViewStateChanged = () => this.saveCurrentEntryView();
+  private readonly conversationPurposeSelected = (event: CustomEvent<{ purpose: NavigationViewState["purpose"] }>) => {
+    this.beginNavigation();
+    history.pushState({ ...history.state, view: { ...history.state?.view, purpose: event.detail.purpose } }, "", location.href);
+    this.readRoute(true);
+  };
 
   private readonly scrollChanged = () => {
     if (this.scrollSaveScheduled) return;
@@ -403,7 +475,7 @@ export class AgentmetryApp extends LitElement {
     history.replaceState({
       ...(origin ? { origin } : {}),
       view: {
-        ...(workspaceVisible ? workspace?.navigationViewState : {}),
+        ...(workspaceVisible ? workspace?.navigationViewState : this.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer")?.navigationViewState ?? {}),
         scrollY: window.scrollY,
       },
     }, "", href);

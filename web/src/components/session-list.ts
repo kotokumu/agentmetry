@@ -24,6 +24,7 @@ export class SessionList extends LitElement {
     .sources { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
     .source { border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 .58rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .04em; }
     .empty { color: var(--am-muted); padding: 18px 0; }
+    @media (prefers-reduced-motion: reduce) { a { transition: none; transform: none; } }
   `;
 
   render() {

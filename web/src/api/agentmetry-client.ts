@@ -1,6 +1,7 @@
+import { conditionsKey, hasSessionConditions, sessionConditions, type SessionConditions } from "../model/investigation-conditions";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
-import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
+import { timestampDate, timestampFromDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 import {
   AgentmetryQueryService,
   ActivityMutationOperation,
@@ -10,7 +11,14 @@ import {
   type Activity as ActivityMessage,
   type AgentSummary,
   type Dashboard,
+  type CompareReworkResponse,
+  type ReworkComparisonSummary as ComparisonSummaryMessage,
+  type ReworkComparisonValue as ComparisonValueMessage,
+  type ReworkCoverage as ReworkCoverageMessage,
   type HarnessContext as HarnessContextMessage,
+  type GetTraceOverviewResponse,
+  type GetTraceResponse,
+  type GetTraceWindowResponse,
   type PlanUsageSnapshot,
   type SessionSummary,
   type TokenUsage as TokenUsageMessage,
@@ -18,6 +26,7 @@ import {
 import type {
   Activity,
   ActivityDirection,
+  ContentEvidence,
   AgentSession,
   DashboardSummary,
   HarnessContext,
@@ -28,6 +37,9 @@ import type {
   TokenUsage,
   Trace,
 } from "../model/telemetry";
+import type { TraceInvestigationWindow, TraceOverview, TraceWindowResult } from "../model/trace-investigation";
+
+import { compareHarnessContexts, displayComparisonDirection, type ComparisonMetricID, type ComparisonSubject, type ComparisonValue, type ReworkComparisonPair, type ReworkComparisonRow, type SharedReworkComparison } from "../model/rework-comparison";
 
 const transport = createConnectTransport({ baseUrl: "" });
 const client = createClient(AgentmetryQueryService, transport);
@@ -58,6 +70,13 @@ export type ProjectionChangeWindow = Readonly<{
 export type ActivityMutation = Readonly<{ operation: "upsert" | "remove"; activityId: string; activity?: Activity }>;
 export type ActivitySyncPage = Readonly<{ mutations: readonly ActivityMutation[]; throughCursor: string; resyncRequired: boolean; nextPageToken?: string }>;
 
+export class ExactTraceEvidenceUnavailableError extends Error {
+  constructor(readonly spanId: string) {
+    super(`Requested span ${spanId} was not returned. Exact evidence is unavailable on this server.`);
+    this.name = "ExactTraceEvidenceUnavailableError";
+  }
+}
+
 export const agentmetryClient = {
   async *watchProjectionChanges(afterCursor: string, signal?: AbortSignal): AsyncGenerator<ProjectionChangeWindow> {
     for await (const response of client.watchProjectionChanges({ afterCursor }, signal ? { signal } : undefined)) {
@@ -78,11 +97,12 @@ export const agentmetryClient = {
     return mapDashboard(response.dashboard);
   },
 
-  async listSessions(range: UiTimeRange, sourceId: string, search: string, signal?: AbortSignal): Promise<readonly Session[]> {
+  async listSessions(range: UiTimeRange, sourceId: string, search: string, signal?: AbortSignal, conditions: SessionConditions = {}): Promise<readonly Session[]> {
     const response = await client.listSessions(
-      { filter: { range: toTimeRange(range), sourceId, search }, page: { pageSize: 100 } },
+      { filter: { range: toTimeRange(range), sourceId, search }, page: { pageSize: 100 }, conditions: hasSessionConditions(conditions) ? sessionConditions(conditions) : undefined },
       signal ? { signal } : undefined,
     );
+    assertSessionConditionsApplied(conditions, response.appliedConditions);
     return response.sessions.map((session) => mapSession(session));
   },
 
@@ -132,20 +152,7 @@ export const agentmetryClient = {
         failureResolutionDurationMs: Number(metrics.failureResolutionDurationMs),
         failureResolutionTokens: mapTokens(metrics.failureResolutionTokens),
       },
-      coverage: {
-        activityCoverage: response.coverage.activityCoverage,
-        canonicalEvents: Number(response.coverage.canonicalEvents),
-        classifiedEvents: Number(response.coverage.classifiedEvents),
-        knownOutcomes: Number(response.coverage.knownOutcomes),
-        validationAttempts: Number(response.coverage.validationAttempts),
-        fingerprintedFailures: Number(response.coverage.fingerprintedFailures),
-        identifiedValidationAttempts: Number(response.coverage.identifiedValidationAttempts),
-        idBackedValidationAttempts: Number(response.coverage.idBackedValidationAttempts),
-        mergedValidationAttempts: Number(response.coverage.mergedValidationAttempts),
-        uncorrelatedValidationObservations: Number(response.coverage.uncorrelatedValidationObservations),
-        conflictingAttemptObservations: Number(response.coverage.conflictingAttemptObservations),
-        ambiguousFailureAttempts: Number(response.coverage.ambiguousFailureAttempts),
-      },
+      coverage: mapReworkCoverage(response.coverage),
       capabilities: {
         changeRevert: { state: response.capabilities.changeRevert.state, reason: response.capabilities.changeRevert.reason },
         crossAgentOverlap: { state: response.capabilities.crossAgentOverlap.state, reason: response.capabilities.crossAgentOverlap.reason },
@@ -158,6 +165,11 @@ export const agentmetryClient = {
         traceId: episode.traceId, spanId: episode.spanId,
       })),
     };
+  },
+
+  async compareRework(pair: ReworkComparisonPair, signal?: AbortSignal): Promise<SharedReworkComparison> {
+    const response = await client.compareRework(pair, signal ? { signal } : undefined);
+    return mapReworkComparison(response);
   },
 
   async getSessionSummary(sourceId: string, sessionId: string, signal?: AbortSignal): Promise<Session> {
@@ -198,34 +210,31 @@ export const agentmetryClient = {
     };
   },
 
-  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = "", signal?: AbortSignal, liveTail = false): Promise<Trace> {
-    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken }, liveTail }, signal ? { signal } : undefined);
-    const page = response.page;
-    const actualOffset = Number(page?.startOffset ?? offset);
-    return {
-      traceId: response.traceId,
-      startedAt: timeValue(response.startedAt),
-      endedAt: timeValue(response.endedAt),
-      status: response.status,
-      rootSpanCount: Number(response.rootSpanCount),
-      missingParentCount: Number(response.missingParentCount),
-      conversations: response.conversations.map((value) => ({ sourceId: value.sourceId, id: value.id })),
-      agents: response.agents.map((value) => ({
-        sourceId: value.sourceId,
-        conversationId: value.conversationId,
-        agentId: value.agentId,
-        agentDefinition: value.agentDefinition || undefined,
-        agentType: value.agentType || undefined,
-        parentAgentId: value.parentAgentId || undefined,
-        model: value.model || undefined,
-      })),
-      activities: response.activities.map(mapActivity),
-      activityOffset: actualOffset,
-      activityCount: Number(response.totalActivities),
-      hasMore: page?.hasMore ?? false,
-      nextPageToken: page?.nextPageToken || undefined,
-      previousPageToken: page?.previousPageToken || undefined,
-    };
+  async getTrace(traceId: string, offset = 0, limit = 100, pageToken = "", signal?: AbortSignal, liveTail = false, anchorSpanId = ""): Promise<Trace> {
+    const response = await client.getTrace({ traceId, page: { pageSize: limit, pageToken }, liveTail, anchorSpanId }, signal ? { signal } : undefined);
+    if (anchorSpanId && !response.activities.some((activity) => activity.signal === "trace" && activity.traceId === traceId.toLowerCase() && activity.spanId === anchorSpanId.toLowerCase())) {
+      throw new ExactTraceEvidenceUnavailableError(anchorSpanId);
+    }
+    return mapTrace(response, offset);
+  },
+
+  async getTraceOverview(traceId: string, signal?: AbortSignal): Promise<TraceOverview> {
+    const response = await client.getTraceOverview({ traceId }, signal ? { signal } : undefined);
+    return mapTraceOverview(response);
+  },
+
+  async getTraceWindow(traceId: string, window: TraceInvestigationWindow, offset = 0, limit = 100, pageToken = "", signal?: AbortSignal): Promise<TraceWindowResult> {
+    const response = await client.getTraceWindow({
+      traceId,
+      window: {
+        startedAt: window.startedAt ? timestampFromDate(new Date(window.startedAt)) : undefined,
+        endedAt: window.endedAt ? timestampFromDate(new Date(window.endedAt)) : undefined,
+        kind: window.kind,
+        errorsOnly: window.errorsOnly,
+      },
+      page: { pageSize: limit, pageToken },
+    }, signal ? { signal } : undefined);
+    return mapTraceWindow(response, offset);
   },
 };
 
@@ -342,6 +351,21 @@ function mapAgent(value: AgentSummary): AgentSession {
   };
 }
 
+export function mapActivityContentEvidence(value: ActivityMessage): ContentEvidence {
+  const fallback: ContentEvidence = { source: value.source, activityId: value.id, signal: value.signal, kind: "unknown", evidence: "unknown", availability: value.content ? "available" : "not_reported", fields: [], truncated: false };
+  const evidence = value.contentEvidence;
+  if (!evidence || evidence.source !== value.source || evidence.activityId !== value.id || evidence.signal !== value.signal) return fallback;
+  const availability = ["available", "not_reported", "redacted", "not_returned"].includes(evidence.availability)
+    ? evidence.availability as ContentEvidence["availability"] : fallback.availability;
+  const knownKind = ["prompt", "response", "tool_input", "tool_output", "tool_input_output", "model_input", "reference", "unknown"].includes(evidence.kind);
+  const knownEvidence = ["reference", "read_output", "explicit_model_input", "unknown"].includes(evidence.evidence);
+  if (!knownKind || !knownEvidence) return { ...fallback, availability };
+  const fields = evidence.fields.filter((field) => ["prompt", "response", "tool_input", "tool_parameters", "full_command", "file_path", "error", "body", "body_ref", "arguments.message", "output"].includes(field));
+  const redactionReason = ["producer_redacted", "encrypted_input"].includes(evidence.redactionReason)
+    ? evidence.redactionReason as ContentEvidence["redactionReason"] : undefined;
+  return { ...fallback, kind: evidence.kind as ContentEvidence["kind"], evidence: evidence.evidence as ContentEvidence["evidence"], availability, fields, truncated: evidence.truncated, ...(redactionReason ? { redactionReason } : {}) };
+}
+
 function mapActivity(value: ActivityMessage): Activity {
   return {
     id: value.id,
@@ -350,6 +374,7 @@ function mapActivity(value: ActivityMessage): Activity {
     traceId: value.traceId || undefined,
     spanId: value.spanId || undefined,
     parentSpanId: value.parentSpanId || undefined,
+    missingParent: value.missingParent,
     promptId: value.promptId || undefined,
     usageId: value.usageId || undefined,
     relatedTraceId: value.relatedTraceId || undefined,
@@ -360,6 +385,7 @@ function mapActivity(value: ActivityMessage): Activity {
     targetAgentId: value.targetAgentId || undefined,
     targetAgentType: value.targetAgentType || undefined,
     content: value.content || undefined,
+    contentEvidence: mapActivityContentEvidence(value),
     agentId: value.agentId,
     agentDefinition: value.agentDefinition || undefined,
     agentType: value.agentType || undefined,
@@ -375,6 +401,61 @@ function mapActivity(value: ActivityMessage): Activity {
     contributesToTotal: value.contributesToTotal,
   };
 }
+
+const mapTrace = (response: GetTraceResponse, offset = 0): Trace => {
+  const page = response.page;
+  return {
+    traceId: response.traceId,
+    startedAt: timeValue(response.startedAt),
+    endedAt: timeValue(response.endedAt),
+    status: response.status,
+    rootSpanCount: Number(response.rootSpanCount),
+    missingParentCount: Number(response.missingParentCount),
+    conversations: response.conversations.map((value) => ({ sourceId: value.sourceId, id: value.id })),
+    agents: response.agents.map((value) => ({
+      sourceId: value.sourceId,
+      conversationId: value.conversationId,
+      agentId: value.agentId,
+      agentDefinition: value.agentDefinition || undefined,
+      agentType: value.agentType || undefined,
+      parentAgentId: value.parentAgentId || undefined,
+      model: value.model || undefined,
+    })),
+    activities: response.activities.map(mapActivity),
+    activityOffset: Number(page?.startOffset ?? offset),
+    activityCount: Number(response.totalActivities),
+    hasMore: page?.hasMore ?? false,
+    nextPageToken: page?.nextPageToken || undefined,
+    previousPageToken: page?.previousPageToken || undefined,
+  };
+};
+
+export const mapTraceOverview = (response: GetTraceOverviewResponse): TraceOverview => ({
+  traceId: response.traceId,
+  startedAt: timeValue(response.startedAt),
+  endedAt: timeValue(response.endedAt),
+  totalActivities: Number(response.totalActivities),
+  returnedActivities: Number(response.returnedActivities),
+  coverage: response.coverage,
+  activities: response.activities.map((activity) => ({
+    id: activity.id,
+    source: activity.source,
+    signal: activity.signal as Activity["signal"],
+    spanId: activity.spanId || undefined,
+    parentSpanId: activity.parentSpanId || undefined,
+    name: activity.name,
+    kind: activity.kind as Activity["kind"],
+    status: activity.status || undefined,
+    startedAt: timeValue(activity.startedAt),
+    endedAt: timeValue(activity.endedAt),
+    missingParent: activity.missingParent,
+  })),
+});
+
+export const mapTraceWindow = (response: GetTraceWindowResponse, offset = 0): TraceWindowResult => {
+  if (!response.trace) throw new Error("Trace window response was empty");
+  return { trace: mapTrace(response.trace, offset), matchingActivities: Number(response.matchingActivities) };
+};
 
 function mapActivitySync(value: { mutations: readonly { operation: ActivityMutationOperation; activityId: string; activity?: ActivityMessage }[]; throughCursor: string; resyncRequired: boolean; page?: { nextPageToken: string } }): ActivitySyncPage {
 	return {
@@ -420,4 +501,71 @@ function toTimeRange(value: UiTimeRange): TimeRange {
 
 function timeValue(value: { seconds: bigint; nanos: number } | undefined): string {
   return value ? timestampDate(value as Timestamp).toISOString() : "";
+}
+
+const comparisonMetricIDs: readonly ComparisonMetricID[] = ["initial_validation_success_proxy", "rework_token_share", "retry_cycle_effort_share", "tool_failure_rate", "recurring_loops_per_100_validations"];
+const invalidComparisonResponse = () => new Error("Invalid or unsupported diagnostic comparison response.");
+
+export function mapReworkComparison(response: CompareReworkResponse): SharedReworkComparison {
+  const baseline = mapComparisonSummary(response.baseline);
+  const current = mapComparisonSummary(response.current);
+  if (response.status === "invalid") {
+    const code = response.code;
+    if (code !== "identity_mismatch" && code !== "invalid_time" && code !== "baseline_ineligible") throw invalidComparisonResponse();
+    if (!response.reason) throw invalidComparisonResponse();
+    return { status: "invalid", code, reason: response.reason, baseline, current };
+  }
+  if (response.status !== "ready" || response.rows.length !== comparisonMetricIDs.length
+    || new Set(response.rows.map(({ id }) => id)).size !== comparisonMetricIDs.length) throw invalidComparisonResponse();
+  const rows = response.rows.map((row): ReworkComparisonRow => {
+    if (!comparisonMetricIDs.includes(row.id as ComparisonMetricID)) throw invalidComparisonResponse();
+    const id = row.id as ComparisonMetricID;
+    if (row.unit !== (id === "recurring_loops_per_100_validations" ? "per100" : "percent")) throw invalidComparisonResponse();
+    const before = mapComparisonValue(row.baseline);
+    const after = mapComparisonValue(row.current);
+    const unit = row.unit as "percent" | "per100";
+    if (row.availability === "unavailable" && (before.availability === "unavailable" || after.availability === "unavailable") && row.delta === undefined) {
+      return { availability: "unavailable", id, unit, baseline: before, current: after };
+    }
+    if (row.availability !== "comparable" || before.availability !== "available" || after.availability !== "available" || row.delta === undefined || !Number.isFinite(row.delta)) throw invalidComparisonResponse();
+    return { availability: "comparable", id, unit, baseline: before, current: after, delta: row.delta, direction: displayComparisonDirection(id, row.delta) };
+  });
+  const warnings = [["Baseline", baseline], ["Current", current]] as const;
+  return { status: "ready", baseline, current, rows,
+    harness: compareHarnessContexts(baseline.harness, current.harness),
+    warnings: warnings.flatMap(([label, subject]) => subject.projectionCoverage === "complete" ? [] : [subject.projectionCoverage === "partial" ? `${label} evidence is a partial retained projection.` : `${label} projection coverage is unknown.`]),
+  };
+}
+
+function mapComparisonSummary(value?: ComparisonSummaryMessage): ComparisonSubject {
+  if (!value?.sourceId || !value.sessionId || !value.coverage
+    || !["complete", "partial", "unknown"].includes(value.projectionCoverage)) throw invalidComparisonResponse();
+  return { sourceId: value.sourceId, sessionId: value.sessionId, startedAt: timeValue(value.startedAt), endedAt: timeValue(value.endedAt),
+    projectionCoverage: value.projectionCoverage as ComparisonSubject["projectionCoverage"], coverage: mapReworkCoverage(value.coverage), harness: mapHarnessContext(value.harnessContext),
+  };
+}
+
+function mapComparisonValue(value?: ComparisonValueMessage): ComparisonValue {
+  if (!value) throw invalidComparisonResponse();
+  const numerator = value.numerator ?? null;
+  const denominator = value.denominator ?? null;
+  if ((numerator !== null && !Number.isFinite(numerator)) || (denominator !== null && !Number.isFinite(denominator))) throw invalidComparisonResponse();
+  if (value.availability === "unavailable" && value.reason && value.value === undefined) return { availability: "unavailable", reason: value.reason, numerator, denominator };
+  if (value.availability !== "available" || numerator === null || denominator === null || value.value === undefined || !Number.isFinite(value.value)) throw invalidComparisonResponse();
+  return { availability: "available", numerator, denominator, displayValue: value.value };
+}
+
+function mapReworkCoverage(value: ReworkCoverageMessage): ReworkAnalysis["coverage"] {
+  return {
+    activityCoverage: value.activityCoverage, canonicalEvents: Number(value.canonicalEvents), classifiedEvents: Number(value.classifiedEvents), knownOutcomes: Number(value.knownOutcomes),
+    validationAttempts: Number(value.validationAttempts), fingerprintedFailures: Number(value.fingerprintedFailures), identifiedValidationAttempts: Number(value.identifiedValidationAttempts),
+    idBackedValidationAttempts: Number(value.idBackedValidationAttempts), mergedValidationAttempts: Number(value.mergedValidationAttempts),
+    uncorrelatedValidationObservations: Number(value.uncorrelatedValidationObservations), conflictingAttemptObservations: Number(value.conflictingAttemptObservations), ambiguousFailureAttempts: Number(value.ambiguousFailureAttempts),
+  };
+}
+
+export function assertSessionConditionsApplied(requested: SessionConditions, applied?: SessionConditions) {
+  if (hasSessionConditions(requested) && (!applied || conditionsKey(requested) !== conditionsKey(applied))) {
+    throw new Error("This server does not support all requested investigation conditions.");
+  }
 }

@@ -36,6 +36,7 @@ export class TimeRangeFilter extends LitElement {
     }
 
     button:hover:not([aria-pressed="true"]), button:focus-visible:not([aria-pressed="true"]) { color: var(--am-text); background: var(--am-surface-strong); outline: none; }
+    @media (prefers-reduced-motion: reduce) { button { transition: none; } }
   `;
 
   render() {

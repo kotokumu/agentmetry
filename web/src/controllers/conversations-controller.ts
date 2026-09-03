@@ -1,3 +1,4 @@
+import { conditionsKey, type SessionConditions } from "../model/investigation-conditions";
 import { Task, TaskStatus } from "@lit/task";
 import { Code, ConnectError } from "@connectrpc/connect";
 import type { ReactiveControllerHost } from "lit";
@@ -32,7 +33,7 @@ export class ConversationsController {
   private readonly client: AgentmetryClient;
   private readonly filters: () => TelemetryFilters;
   private readonly isActive: () => boolean;
-  private readonly sessionsTask: Task<readonly [TimeRange, string, string], SessionsResult>;
+  private readonly sessionsTask: Task<readonly [TimeRange, string, string, string], SessionsResult>;
   private readonly conversationTask: Task<readonly [boolean, string, string, string, string], ConversationResult>;
   private readonly reworkTask: Task<readonly [boolean, string, string], ReworkResult>;
   private requested?: ConversationTarget;
@@ -63,11 +64,11 @@ export class ConversationsController {
     this.sessionsTask = new Task(host, {
       args: () => {
         const value = filters();
-        return [value.range, value.sourceId, value.search] as const;
+        return [value.range, value.sourceId, value.search, conditionsKey(value)] as const;
       },
-      task: async ([range, sourceId, search], { signal }) => ({
-        key: telemetryFilterKey({ range, sourceId, search }),
-        sessions: await client.listSessions(range, sourceId, search, signal),
+      task: async ([range, sourceId, search, conditions], { signal }) => ({
+        key: telemetryFilterKey({ range, sourceId, search, ...JSON.parse(conditions) as SessionConditions }),
+        sessions: await client.listSessions(range, sourceId, search, signal, JSON.parse(conditions) as SessionConditions),
       }),
     });
     this.conversationTask = new Task(host, {
@@ -176,6 +177,7 @@ export class ConversationsController {
   }
 
   get loadingList() { return this.sessionsTask.status === TaskStatus.PENDING && this.listedSessions.length === 0; }
+  get listError() { return this.sessionsTask.error; }
   get listFailed() { return this.sessionsTask.status === TaskStatus.ERROR && this.listedSessions.length === 0; }
   get loadingConversation() { return this.conversationTask.status === TaskStatus.PENDING && this.selected === undefined; }
   get conversationFailed() { return this.conversationTask.status === TaskStatus.ERROR; }

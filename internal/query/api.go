@@ -12,17 +12,19 @@ type DashboardFilter struct {
 }
 
 type SessionListFilter struct {
-	Since     time.Time
-	SourceID  string
-	Search    string
-	SessionID string
-	Page      Page
+	Since      time.Time
+	SourceID   string
+	Search     string
+	SessionID  string
+	Page       Page
+	Conditions SessionConditions
 }
 
 type SessionPage struct {
-	Sessions   []Session
-	NextOffset int
-	HasMore    bool
+	Sessions          []Session
+	NextOffset        int
+	HasMore           bool
+	AppliedConditions *SessionConditions
 }
 
 type ActivityPageFilter struct {

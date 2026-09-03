@@ -1,9 +1,3 @@
-import type { TimeRange } from "../model/telemetry";
-
-export type TelemetryFilters = Readonly<{
-  range: TimeRange;
-  sourceId: string;
-  search: string;
-}>;
-
-export const telemetryFilterKey = ({ range, sourceId, search }: TelemetryFilters) => `${range}\u0000${sourceId}\u0000${search}`;
+import { conditionsKey, type InvestigationFilters } from "../model/investigation-conditions";
+export type TelemetryFilters = InvestigationFilters;
+export const telemetryFilterKey = (value: TelemetryFilters) => `${value.range}\u0000${value.sourceId}\u0000${value.search}\u0000${conditionsKey(value)}`;

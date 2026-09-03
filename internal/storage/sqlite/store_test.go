@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/google/go-cmp/cmp"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -220,6 +221,16 @@ func TestGetSessionReworkAnalyzesTheCompleteStoredSession(t *testing.T) {
 	if err != nil || harnessView.Classification != query.HarnessNoEligibleRecords {
 		t.Fatalf("harness context = %#v, want no eligible records", analysis.Harness)
 	}
+
+	for _, pair := range []query.ReworkComparisonPair{
+		{Baseline: mustConversationIdentity(t, "codex", "run-rework"), Current: mustConversationIdentity(t, "codex", "missing")},
+		{Baseline: mustConversationIdentity(t, "codex", "missing"), Current: mustConversationIdentity(t, "codex", "run-rework")},
+	} {
+		_, err := database.CompareRework(context.Background(), pair)
+		if !errors.Is(err, query.ErrConversationNotFound) {
+			t.Errorf("comparison with missing side = %v, want conversation not found", err)
+		}
+	}
 }
 
 func TestGetSessionReworkClassifiesCompleteHarnessEvidence(t *testing.T) {
@@ -340,6 +351,16 @@ func TestGetSessionReworkAggregatesChildActivitiesIntoCanonicalRoot(t *testing.T
 	if analysis.RunID != "parent" || analysis.Report.ValidationFailures != 1 || analysis.Report.FailFixRetryCycles != 1 {
 		t.Fatalf("aggregated child rework = %#v", analysis)
 	}
+	comparison, err := database.CompareRework(context.Background(), query.ReworkComparisonPair{
+		Baseline: mustConversationIdentity(t, "codex", "parent"), Current: mustConversationIdentity(t, "codex", "child"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if comparison.Status != "invalid" || comparison.Code != "baseline_ineligible" || comparison.Baseline.SessionID != "parent" || comparison.Current.SessionID != "parent" || len(comparison.Rows) != 0 {
+		t.Fatalf("root/child comparison did not reject resolved self comparison: %#v", comparison)
+	}
+
 }
 
 func TestGetSessionReworkAggregatesChildHarnessEvidenceIntoCanonicalRoot(t *testing.T) {
@@ -412,7 +433,7 @@ func TestSpanRevisionRepairsSessionTimeExtrema(t *testing.T) {
 	}
 }
 
-func TestSpanRevisionToUnknownRemovesEmptySessionAndTraceRollups(t *testing.T) {
+func TestSpanRevisionToUnknownRemovesEmptySessionButRetainsTraceEvidence(t *testing.T) {
 	database, err := store.Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -435,8 +456,12 @@ func TestSpanRevisionToUnknownRemovesEmptySessionAndTraceRollups(t *testing.T) {
 	if _, err := database.GetSessionSummary(ctx, mustConversationIdentity(t, "codex", "kind-session")); !errors.Is(err, query.ErrConversationNotFound) {
 		t.Fatalf("session error = %v, want not found", err)
 	}
-	if _, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, span.TraceID), Page: mustPage(t, 0, 100)}); !errors.Is(err, query.ErrTraceNotFound) {
-		t.Fatalf("trace error = %v, want not found", err)
+	trace, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, span.TraceID), Page: mustPage(t, 0, 100)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trace.ActivityCount != 1 || len(trace.Activities) != 1 || trace.Activities[0].Kind != canonical.ActivityUnknown {
+		t.Fatalf("unknown trace evidence was not retained consistently: %#v", trace)
 	}
 }
 
@@ -702,6 +727,88 @@ func TestSessionAggregationGroupsBeforePagination(t *testing.T) {
 			t.Fatalf("page %d HasMore = %v", offset, page.HasMore)
 		}
 	}
+	t.Run("structured conditions match full canonical groups before paging", func(t *testing.T) {
+		start := now.Truncate(time.Second).Add(-time.Minute + 100*time.Millisecond)
+		var records []canonical.Log
+		var links []canonical.SessionLink
+		for _, fixture := range []struct {
+			root, source string
+			start        time.Time
+			attributes   map[string]any
+			tool         string
+		}{
+			{"matched-a", "codex", start, map[string]any{"success": false}, "exec_command"},
+			{"matched-b", "codex", start.Add(-time.Minute), map[string]any{"exit_code": 1}, "exec_command"},
+			{"unknown-outcome", "codex", start.Add(20 * time.Second), nil, "exec_command"},
+			{"missing-tool", "codex", start.Add(10 * time.Second), map[string]any{"success": false}, ""},
+			{"other-source", "claude", start, map[string]any{"success": false}, "exec_command"},
+		} {
+			records = append(records,
+				canonical.Log{Source: fixture.source, ObservedAt: fixture.start, Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Body: "needle", Agent: canonical.AgentContext{RunID: fixture.root, Model: "fixture-model"}},
+				canonical.Log{Source: fixture.source, ObservedAt: fixture.start.Add(10*time.Millisecond + 250*time.Microsecond), Name: "gen_ai.tool.result", Kind: canonical.ActivityTool, ToolName: fixture.tool, Attributes: fixture.attributes, Agent: canonical.AgentContext{RunID: fixture.root + "-child"}},
+			)
+			links = append(links, canonical.SessionLink{Source: fixture.source, ParentSessionID: fixture.root, ChildSessionID: fixture.root + "-child", ObservedAt: fixture.start})
+		}
+		records = append(records,
+			canonical.Log{Source: "codex", Name: "gen_ai.response.completed", Kind: canonical.ActivityResponse, Body: "needle", Agent: canonical.AgentContext{RunID: "missing-time", Model: "fixture-model"}},
+			canonical.Log{Source: "codex", ObservedAt: start, Name: "gen_ai.tool.result", Kind: canonical.ActivityTool, ToolName: "exec_command", Attributes: map[string]any{"success": false}, Agent: canonical.AgentContext{RunID: "missing-time"}},
+		)
+		if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: records, SessionLinks: links}); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{{
+			Source: "codex", TraceID: "99999999999999999999999999999999", SpanID: "9999999999999999", Name: "gen_ai.tool.call",
+			Kind: canonical.ActivityTool, ToolName: "exec_command", StartedAt: start, EndedAt: start.Add(10 * time.Second), Status: "Error",
+			Agent: canonical.AgentContext{RunID: "single-long-span", Model: "fixture-model"},
+		}}}); err != nil {
+			t.Fatal(err)
+		}
+		conditions := query.SessionConditions{ObservedFailure: true, MinDurationMS: new(10.25), MaxDurationMS: new(10.25), Model: "fixture-model", Tool: "exec_command"}
+		for offset, wantID := range []string{"matched-a", "matched-b"} {
+			page, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), SourceID: "codex", Search: "needle", Conditions: conditions, Page: mustPage(t, offset, 1)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			var ids []string
+			for _, session := range page.Sessions {
+				ids = append(ids, session.ID)
+			}
+			if diff := cmp.Diff([]string{wantID}, ids); diff != "" {
+				t.Errorf("filtered page %d identities mismatch: %s", offset, diff)
+			}
+			if page.HasMore != (offset == 0) {
+				t.Errorf("filtered page %d HasMore = %v", offset, page.HasMore)
+			}
+			if diff := cmp.Diff(&conditions, page.AppliedConditions); diff != "" {
+				t.Errorf("applied conditions mismatch: %s", diff)
+			}
+		}
+		unknown, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), SessionID: "unknown-outcome", Conditions: query.SessionConditions{ObservedFailure: true}, Page: mustPage(t, 0, 100)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(unknown.Sessions) != 0 {
+			t.Errorf("unknown outcome matched failure: %#v", unknown.Sessions)
+		}
+		missing, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), SessionID: "missing-time", Conditions: query.SessionConditions{MinDurationMS: new(float64(0))}, Page: mustPage(t, 0, 100)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(missing.Sessions) != 0 {
+			t.Errorf("unreported timestamp matched duration: %#v", missing.Sessions)
+		}
+		longSpan, err := database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), SessionID: "single-long-span", Conditions: query.SessionConditions{MinDurationMS: new(10000.0), MaxDurationMS: new(10000.0)}, Page: mustPage(t, 0, 100)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(longSpan.Sessions) != 1 || longSpan.Sessions[0].ID != "single-long-span" {
+			t.Errorf("single 10s span did not match 10s elapsed duration: %#v", longSpan.Sessions)
+		}
+		_, err = database.ListSessions(context.Background(), query.SessionListFilter{Since: now.Add(-time.Hour), Conditions: query.SessionConditions{MinDurationMS: new(2.0), MaxDurationMS: new(1.0)}, Page: mustPage(t, 0, 100)})
+		if err == nil {
+			t.Error("inverted duration range succeeded")
+		}
+	})
 }
 
 func TestSessionAggregationPagesAroundAChildActivityAnchor(t *testing.T) {
@@ -1046,6 +1153,48 @@ func TestGetTraceCorrelatesConversationsAndReportsIncompleteParents(t *testing.T
 	if page.ActivityOffset != 1 || page.ActivityCount != 3 || len(page.Activities) != 1 || !page.HasMore || page.Activities[0].SpanID != "child" {
 		t.Fatalf("unexpected trace page: %#v", page)
 	}
+
+	t.Run("off-page anchor keeps exact native span despite correlated logs and tail", func(t *testing.T) {
+		const targetID = "000000000000006e"
+		more := make([]canonical.Span, 0, 120)
+		for i := 1; i <= 120; i++ {
+			status := "Ok"
+			if i == 2 || i == 110 || i == 118 {
+				status = "Error"
+			}
+			at := now.Add(time.Duration(i+5) * time.Second)
+			more = append(more, canonical.Span{Source: "codex", TraceID: traceID, SpanID: fmt.Sprintf("%016x", i),
+				Name: "gen_ai.tool.call", Kind: canonical.ActivityTool, StartedAt: at, EndedAt: at, Status: status})
+		}
+		if err := database.CommitBatch(ctx, canonical.Batch{Signal: canonical.SignalTrace, Spans: more}); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.CommitBatch(ctx, canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{
+			{Source: "codex", TraceID: traceID, SpanID: targetID, Name: "earlier correlated log", Kind: canonical.ActivityMessage, ObservedAt: now.Add(10500 * time.Millisecond)},
+			{Source: "codex", TraceID: traceID, SpanID: targetID, Name: "same-time correlated log", Kind: canonical.ActivityMessage, ObservedAt: now.Add(115 * time.Second)},
+		}}); err != nil {
+			t.Fatal(err)
+		}
+		spanID, err := query.ParseSpanID(targetID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		anchored, err := database.GetTrace(ctx, query.TraceFilter{TraceID: mustTraceID(t, traceID), SpanID: spanID, Page: mustPage(t, 10, 5), Tail: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := make([]string, 0, len(anchored.Activities))
+		for _, activity := range anchored.Activities {
+			got = append(got, string(activity.Signal)+":"+activity.SpanID)
+		}
+		want := []string{"trace:000000000000006c", "trace:000000000000006d", "trace:000000000000006e", "log:000000000000006e", "trace:000000000000006f"}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("anchored activities (-want +got): %s", diff)
+		}
+		if anchored.ActivityOffset != 111 || anchored.ActivityCount != 125 || !anchored.HasMore || !anchored.StartedAt.Equal(now) || !anchored.EndedAt.Equal(now.Add(125*time.Second)) {
+			t.Errorf("anchor changed trace extent or pagination: %#v", anchored)
+		}
+	})
 }
 
 func TestGetTraceReturnsNotFoundForUnknownIdentity(t *testing.T) {
@@ -1057,6 +1206,22 @@ func TestGetTraceReturnsNotFoundForUnknownIdentity(t *testing.T) {
 	_, err = database.GetTrace(context.Background(), query.TraceFilter{TraceID: mustTraceID(t, "22222222222222222222222222222222")})
 	if !errors.Is(err, query.ErrTraceNotFound) {
 		t.Fatalf("error = %v, want ErrTraceNotFound", err)
+	}
+
+	const traceID = "11111111111111111111111111111111"
+	const targetID = "0000000000000007"
+	if err := database.CommitBatch(context.Background(), canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{
+		Source: "codex", TraceID: traceID, SpanID: targetID, Name: "log without native span", ObservedAt: time.Now().UTC(),
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	spanID, err := query.ParseSpanID(targetID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = database.GetTrace(context.Background(), query.TraceFilter{TraceID: mustTraceID(t, traceID), SpanID: spanID})
+	if !errors.Is(err, query.ErrTraceTargetNotFound) || errors.Is(err, query.ErrTraceNotFound) {
+		t.Fatalf("logs-only target error = %v, want distinct target-not-found", err)
 	}
 }
 

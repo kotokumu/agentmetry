@@ -230,15 +230,17 @@ type SourceCapabilitiesOutput struct {
 }
 
 type OverviewInput struct {
-	Range     string `json:"range,omitempty" jsonschema:"Time range: 1h, 24h, or 7d. Defaults to 24h."`
-	Source    string `json:"source,omitempty" jsonschema:"Optional telemetry source ID, such as one returned in overview.sources."`
-	Search    string `json:"search,omitempty" jsonschema:"Optional case-insensitive full-session text search."`
-	PageSize  int    `json:"pageSize,omitempty" jsonschema:"Maximum number of sessions to return. Defaults to 100; capped at 100."`
-	PageToken string `json:"pageToken,omitempty" jsonschema:"Opaque continuation token returned by the previous call."`
+	Range      string                  `json:"range,omitempty" jsonschema:"Time range: 1h, 24h, or 7d. Defaults to 24h."`
+	Source     string                  `json:"source,omitempty" jsonschema:"Optional telemetry source ID, such as one returned in overview.sources."`
+	Search     string                  `json:"search,omitempty" jsonschema:"Optional case-insensitive full-session text search."`
+	PageSize   int                     `json:"pageSize,omitempty" jsonschema:"Maximum number of sessions to return. Defaults to 100; capped at 100."`
+	PageToken  string                  `json:"pageToken,omitempty" jsonschema:"Opaque continuation token returned by the previous call."`
+	Conditions query.SessionConditions `json:"conditions,omitempty" jsonschema:"Optional AND conditions on full canonical sessions before paging. Dashboard aggregates keep their existing range/source/search scope."`
 }
 
 type TraceInput struct {
 	TraceID        string `json:"traceId" jsonschema:"Required OTLP trace ID."`
+	AnchorSpanID   string `json:"anchorSpanId,omitempty" jsonschema:"Optional OTLP span ID. Returns a bounded page containing that native span, ahead of pageToken."`
 	PageSize       int    `json:"pageSize,omitempty" jsonschema:"Maximum number of trace activities to return. Defaults to 100; capped at 100."`
 	PageToken      string `json:"pageToken,omitempty" jsonschema:"Opaque continuation token returned by the previous call."`
 	IncludeContent bool   `json:"includeContent,omitempty" jsonschema:"Opt in to captured activity bodies. Defaults to false."`
@@ -285,31 +287,32 @@ type TokenUsageOutput struct {
 }
 
 type ActivityOutput struct {
-	Source             string           `json:"source"`
-	Signal             string           `json:"signal"`
-	TraceID            string           `json:"traceId,omitempty"`
-	SpanID             string           `json:"spanId,omitempty"`
-	ParentSpanID       string           `json:"parentSpanId,omitempty"`
-	Name               string           `json:"name"`
-	Kind               string           `json:"kind"`
-	ToolName           string           `json:"toolName,omitempty"`
-	TargetAgentID      string           `json:"targetAgentId,omitempty"`
-	TargetAgentType    string           `json:"targetAgentType,omitempty"`
-	Content            string           `json:"content,omitempty"`
-	ContentState       string           `json:"contentState"`
-	AgentID            string           `json:"agentId"`
-	AgentDefinition    string           `json:"agentDefinition,omitempty"`
-	AgentType          string           `json:"agentType,omitempty"`
-	ParentAgentID      string           `json:"parentAgentId,omitempty"`
-	RunID              string           `json:"runId"`
-	Model              string           `json:"model"`
-	StartedAt          time.Time        `json:"startedAt"`
-	EndedAt            time.Time        `json:"endedAt"`
-	ObservedAt         time.Time        `json:"observedAt"`
-	Status             string           `json:"status,omitempty"`
-	Tokens             TokenUsageOutput `json:"tokens"`
-	CostUSD            *float64         `json:"costUsd,omitempty"`
-	ContributesToTotal bool             `json:"contributesToTotal"`
+	ContentEvidence    query.ContentEvidence `json:"contentEvidence"`
+	Source             string                `json:"source"`
+	Signal             string                `json:"signal"`
+	TraceID            string                `json:"traceId,omitempty"`
+	SpanID             string                `json:"spanId,omitempty"`
+	ParentSpanID       string                `json:"parentSpanId,omitempty"`
+	Name               string                `json:"name"`
+	Kind               string                `json:"kind"`
+	ToolName           string                `json:"toolName,omitempty"`
+	TargetAgentID      string                `json:"targetAgentId,omitempty"`
+	TargetAgentType    string                `json:"targetAgentType,omitempty"`
+	Content            string                `json:"content,omitempty"`
+	ContentState       string                `json:"contentState"`
+	AgentID            string                `json:"agentId"`
+	AgentDefinition    string                `json:"agentDefinition,omitempty"`
+	AgentType          string                `json:"agentType,omitempty"`
+	ParentAgentID      string                `json:"parentAgentId,omitempty"`
+	RunID              string                `json:"runId"`
+	Model              string                `json:"model"`
+	StartedAt          time.Time             `json:"startedAt"`
+	EndedAt            time.Time             `json:"endedAt"`
+	ObservedAt         time.Time             `json:"observedAt"`
+	Status             string                `json:"status,omitempty"`
+	Tokens             TokenUsageOutput      `json:"tokens"`
+	CostUSD            *float64              `json:"costUsd,omitempty"`
+	ContributesToTotal bool                  `json:"contributesToTotal"`
 }
 
 type AgentSessionOutput struct {
@@ -354,9 +357,10 @@ type OverviewDataOutput struct {
 }
 
 type OverviewOutput struct {
-	Overview          OverviewDataOutput `json:"overview"`
-	NextPageToken     string             `json:"nextPageToken,omitempty"`
-	PreviousPageToken string             `json:"previousPageToken,omitempty"`
+	Overview          OverviewDataOutput       `json:"overview"`
+	NextPageToken     string                   `json:"nextPageToken,omitempty"`
+	PreviousPageToken string                   `json:"previousPageToken,omitempty"`
+	AppliedConditions *query.SessionConditions `json:"appliedConditions,omitempty"`
 }
 
 type TraceDataOutput struct {
@@ -441,6 +445,11 @@ func New(reader Reader, now Clock) http.Handler {
 		Description: "Compares up to 10 explicitly named source-qualified runs using observed summary metrics.",
 	}, service.compareRuns)
 	mcp.AddTool(server, &mcp.Tool{
+		Name: "compare_rework", Title: "Compare rework diagnostics",
+		Description: "Compares five diagnostic metrics from one coherent read of an explicit baseline/current pair. Returns raw operands, missing-value reasons, coverage, and reported harness context without activity bodies. Pair eligibility is distinct from compare_runs aggregate comparisons.",
+		Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true},
+	}, service.compareRework)
+	mcp.AddTool(server, &mcp.Tool{
 		Name: "get_source_capabilities", Title: "Get source capabilities",
 		Description: "Explains source-specific observability limits for Claude Code and Codex; unavailable fields are not treated as zero.",
 	}, service.getSourceCapabilities)
@@ -497,11 +506,12 @@ func (service *Service) getAgentContext(context.Context, *mcp.CallToolRequest, A
 			{Name: "tokenUsage", Description: "Observed typed token counters.", Fields: []string{"input", "output", "cacheRead", "cacheWrite", "reasoning", "total"}, Caveats: []string{"null means unavailable; it is not zero."}},
 		},
 		Tools: []ToolCapability{
-			{Name: "list_runs", Purpose: "Discover candidate runs", Optional: []string{"range", "source", "search", "pageSize", "pageToken"}, Returns: []string{"bounded run summaries", "aggregates"}},
+			{Name: "list_runs", Purpose: "Discover candidate runs", Optional: []string{"range", "source", "search", "pageSize", "pageToken", "conditions"}, Returns: []string{"bounded run summaries", "aggregates", "appliedConditions for the session list"}},
 			{Name: "get_run_context", Purpose: "Verify one explicit run identity", Required: []string{"source", "runId"}, Returns: []string{"run metadata", "traces", "agent topology"}},
 			{Name: "get_run_summary", Purpose: "Measure one run", Required: []string{"source", "runId"}, Returns: []string{"tokens", "agents", "wall duration", "observed active duration", "activity projection completeness", "source coverage"}},
 			{Name: "get_run_timeline", Purpose: "Inspect supporting evidence", Required: []string{"source", "runId"}, Optional: []string{"agentId", "pageSize", "pageToken", "direction", "includeContent"}, Returns: []string{"bounded activity page"}},
-			{Name: "get_trace", Purpose: "Inspect cross-run causal evidence", Required: []string{"traceId"}, Optional: []string{"pageSize", "pageToken", "includeContent"}, Returns: []string{"trace summary", "participants", "bounded activities"}},
+			{Name: "get_trace", Purpose: "Inspect cross-run causal evidence", Required: []string{"traceId"}, Optional: []string{"anchorSpanId", "pageSize", "pageToken", "includeContent"}, Returns: []string{"trace summary", "participants", "bounded activities"}},
+			{Name: "compare_rework", Purpose: "Compare five normalized rework diagnostics for an explicit pair", Required: []string{"baseline.source", "baseline.runId", "current.source", "current.runId"}, Returns: []string{"pair eligibility", "raw metric operands and differences", "coverage", "reported harness context; no activity bodies"}},
 			{Name: "get_token_usage", Purpose: "Compare observed token usage", Required: []string{"source", "runId"}, Returns: []string{"run total", "agent breakdown"}},
 			{Name: "find_bottlenecks", Purpose: "Find long observed activities", Required: []string{"source", "runId"}, Returns: []string{"evidence-backed findings"}},
 			{Name: "find_coordination_risks", Purpose: "Find explicit coordination evidence", Required: []string{"source", "runId"}, Returns: []string{"error and missing-target findings"}},
@@ -745,6 +755,13 @@ func (service *Service) getTrace(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
+	var spanID query.SpanID
+	if input.AnchorSpanID != "" {
+		spanID, err = query.ParseSpanID(input.AnchorSpanID)
+		if err != nil {
+			return nil, TraceOutput{}, err
+		}
+	}
 	pageSize := input.PageSize
 	if pageSize == 0 {
 		pageSize = 100
@@ -760,7 +777,7 @@ func (service *Service) getTrace(ctx context.Context, _ *mcp.CallToolRequest, in
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
-	trace, err := service.traceReader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Page: queryPage})
+	trace, err := service.traceReader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, SpanID: spanID, Page: queryPage})
 	if err != nil {
 		return nil, TraceOutput{}, err
 	}
@@ -768,6 +785,9 @@ func (service *Service) getTrace(ctx context.Context, _ *mcp.CallToolRequest, in
 }
 
 func (service *Service) getOverview(ctx context.Context, _ *mcp.CallToolRequest, input OverviewInput) (*mcp.CallToolResult, OverviewOutput, error) {
+	if err := query.ValidateSessionConditions(input.Conditions); err != nil {
+		return nil, OverviewOutput{}, err
+	}
 	filter, err := query.FilterForRange(service.now(), input.Range)
 	if err != nil {
 		return nil, OverviewOutput{}, err
@@ -792,11 +812,11 @@ func (service *Service) getOverview(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, OverviewOutput{}, err
 	}
-	sessions, err := service.sessionReader.ListSessions(ctx, query.SessionListFilter{Since: filter.Since, SourceID: input.Source, Search: input.Search, Page: queryPage})
+	sessions, err := service.sessionReader.ListSessions(ctx, query.SessionListFilter{Since: filter.Since, SourceID: input.Source, Search: input.Search, Page: queryPage, Conditions: input.Conditions})
 	if err != nil {
 		return nil, OverviewOutput{}, err
 	}
-	output := OverviewOutput{Overview: mapDashboardAndSessions(dashboard, sessions.Sessions)}
+	output := OverviewOutput{Overview: mapDashboardAndSessions(dashboard, sessions.Sessions), AppliedConditions: sessions.AppliedConditions}
 	if sessions.HasMore {
 		output.NextPageToken = encodePageToken(sessions.NextOffset)
 	}
@@ -1019,10 +1039,15 @@ func mapActivity(activity query.Activity) ActivityOutput {
 }
 
 func mapActivityWithContent(activity query.Activity, includeContent bool) ActivityOutput {
+	body, evidence := query.ContentForDelivery(activity)
+	if !includeContent {
+		evidence.Availability = "not_returned"
+	}
 	return ActivityOutput{
-		Source: activity.Source, Signal: string(activity.Signal), TraceID: activity.TraceID, SpanID: activity.SpanID,
+		ContentEvidence: evidence,
+		Source:          activity.Source, Signal: string(activity.Signal), TraceID: activity.TraceID, SpanID: activity.SpanID,
 		ParentSpanID: activity.ParentSpanID, Name: activity.Name, Kind: string(activity.Kind),
-		ToolName: activity.ToolName, TargetAgentID: activity.TargetAgentID, TargetAgentType: activity.TargetAgentType, Content: content(activity.Content, includeContent), ContentState: contentState(activity.Content, includeContent),
+		ToolName: activity.ToolName, TargetAgentID: activity.TargetAgentID, TargetAgentType: activity.TargetAgentType, Content: content(body, includeContent), ContentState: contentState(body, includeContent),
 		AgentID: activity.AgentID, AgentDefinition: activity.AgentDefinition,
 		AgentType: activity.AgentType, ParentAgentID: activity.ParentAgentID,
 		RunID: activity.RunID, Model: activity.Model, StartedAt: activity.StartedAt, EndedAt: activity.EndedAt,

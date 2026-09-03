@@ -40,9 +40,9 @@ export class KpiCard extends LitElement {
     p {
       margin: 0;
       color: var(--am-muted, #91a0b8);
-      font: 700 .66rem/1.2 "SFMono-Regular", "Cascadia Code", monospace;
-      letter-spacing: 0.11em;
-      text-transform: uppercase;
+      font: 600 .8rem/1.4 "SFMono-Regular", "Cascadia Code", monospace;
+      letter-spacing: .01em;
+
     }
 
     strong {
@@ -58,7 +58,7 @@ export class KpiCard extends LitElement {
       display: block;
       margin-top: 6px;
       color: var(--am-muted, #91a0b8);
-      font-size: .7rem;
+      font-size: .8rem;
       line-height: 1.45;
     }
 
@@ -93,7 +93,7 @@ export class KpiCard extends LitElement {
       background: #0b1119;
       box-shadow: 0 16px 36px rgba(0, 0, 0, .42);
       color: var(--am-text, #f3f7ff);
-      font-size: .7rem;
+      font-size: .8rem;
       line-height: 1.5;
       opacity: 0;
       pointer-events: none;
@@ -102,10 +102,11 @@ export class KpiCard extends LitElement {
     }
     .tooltip[data-open] { visibility: visible; opacity: 1; transform: translateY(0); }
 
+    @media (prefers-reduced-motion: reduce) { article, .tooltip { transition: none; } article:hover { transform: none; } }
     @media (max-width: 480px) {
       article { min-height: 100px; padding: 14px; }
       strong { font-size: 1.35rem; }
-      p { font-size: .6rem; }
+      p { font-size: .8rem; }
     }
   `;
 

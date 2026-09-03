@@ -61,23 +61,55 @@ FROM grouped WHERE ended_at >= ?`, filter.SourceID, filter.SourceID, since).Scan
 }
 
 func (store *Store) ListSessions(ctx context.Context, filter query.SessionListFilter) (query.SessionPage, error) {
+	if err := query.ValidateSessionConditions(filter.Conditions); err != nil {
+		return query.SessionPage{}, err
+	}
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.SessionPage{}, fmt.Errorf("begin session list snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
 	var matchedRoots map[sessionRef]struct{}
 	if strings.TrimSpace(filter.Search) != "" {
-		graph, err := store.loadSessionGraph(ctx, filter.SourceID)
+		graph, err := loadSessionGraphWithReader(ctx, transaction, filter.SourceID)
 		if err != nil {
 			return query.SessionPage{}, err
 		}
-		matchedRoots, err = store.searchSessionRoots(ctx, filter, graph)
+		matchedRoots, err = store.searchSessionRoots(ctx, transaction, filter, graph)
 		if err != nil {
 			return query.SessionPage{}, err
 		}
 	}
-	return store.listSessionsFromRollups(ctx, filter, matchedRoots)
+	if !filter.Conditions.Empty() {
+		structured, err := matchSessionConditions(ctx, transaction, filter)
+		if err != nil {
+			return query.SessionPage{}, err
+		}
+		if matchedRoots != nil {
+			for ref := range structured {
+				if _, found := matchedRoots[ref]; !found {
+					delete(structured, ref)
+				}
+			}
+		}
+		matchedRoots = structured
+	}
+	page, err := store.listSessionsFromRollups(ctx, transaction, filter, matchedRoots)
+	if err != nil {
+		return query.SessionPage{}, err
+	}
+	if !filter.Conditions.Empty() {
+		page.AppliedConditions = &filter.Conditions
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.SessionPage{}, fmt.Errorf("commit session list snapshot: %w", err)
+	}
+	return page, nil
 }
 
-func (store *Store) searchSessionRoots(ctx context.Context, filter query.SessionListFilter, graph sessionGraph) (map[sessionRef]struct{}, error) {
+func (store *Store) searchSessionRoots(ctx context.Context, reader sqlReader, filter query.SessionListFilter, graph sessionGraph) (map[sessionRef]struct{}, error) {
 	branches, args := summaryBranches(formatTime(time.Unix(0, 0)), filter.SourceID, "", filter.Search)
-	rows, err := store.readDB.QueryContext(ctx, fmt.Sprintf(`WITH activity AS (
+	rows, err := reader.QueryContext(ctx, fmt.Sprintf(`WITH activity AS (
 %s
 )
 SELECT DISTINCT source, run_id FROM activity`, branches), args...)
@@ -96,7 +128,7 @@ SELECT DISTINCT source, run_id FROM activity`, branches), args...)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate matching sessions: %w", err)
 	}
-	activeRows, err := store.readDB.QueryContext(ctx, `SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id
+	activeRows, err := reader.QueryContext(ctx, `SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id
 FROM session_rollups r
 LEFT JOIN session_memberships m ON m.source = r.source AND m.session_id = r.run_id
 WHERE (? = '' OR r.source = ?)
@@ -122,7 +154,7 @@ HAVING MAX(r.ended_at) >= ?`, filter.SourceID, filter.SourceID, formatTime(filte
 	return matched, nil
 }
 
-func (store *Store) listSessionsFromRollups(ctx context.Context, filter query.SessionListFilter, matchedRoots map[sessionRef]struct{}) (query.SessionPage, error) {
+func (store *Store) listSessionsFromRollups(ctx context.Context, reader sqlReader, filter query.SessionListFilter, matchedRoots map[sessionRef]struct{}) (query.SessionPage, error) {
 	pageSize := filter.Page.Size()
 	offset := filter.Page.Offset()
 	requestedSession := filter.SessionID
@@ -135,7 +167,7 @@ func (store *Store) listSessionsFromRollups(ctx context.Context, filter query.Se
 		payload, _ := json.Marshal(keys)
 		matchedJSON = string(payload)
 	}
-	rows, err := store.readDB.QueryContext(ctx, `WITH grouped AS (
+	rows, err := reader.QueryContext(ctx, `WITH grouped AS (
   SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id,
     MIN(r.started_at) AS started_at, MAX(r.ended_at) AS ended_at,
     SUM(r.activity_count) AS activity_count, SUM(r.agent_count) AS agent_count
@@ -277,31 +309,14 @@ func (store *Store) GetSessionRework(ctx context.Context, identity query.Convers
 		return query.SessionRework{}, fmt.Errorf("begin session rework snapshot: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	ref := sessionRef{sourceID: identity.SourceID(), sessionID: identity.ConversationID()}
-	graph, err := loadSessionGroupWithReader(ctx, transaction, ref)
-	if err != nil {
-		return query.SessionRework{}, err
-	}
-	root := graph.root(ref)
-	summary, err := store.loadSessionSummary(ctx, transaction, root, graph)
-	if err != nil {
-		return query.SessionRework{}, err
-	}
-	activities, err := store.loadSessionReworkActivities(ctx, transaction, root, graph)
-	if err != nil {
-		return query.SessionRework{}, err
-	}
-	harnessContext, err := store.loadSessionHarnessContext(ctx, transaction, root, graph)
+	snapshot, err := store.loadReworkDiagnosticSnapshot(ctx, transaction, identity)
 	if err != nil {
 		return query.SessionRework{}, err
 	}
 	if err := transaction.Commit(); err != nil {
 		return query.SessionRework{}, fmt.Errorf("commit session rework snapshot: %w", err)
 	}
-	return query.SessionRework{
-		SourceID: root.sourceID, RunID: root.sessionID, SessionTokens: summary.Tokens,
-		Harness: harnessContext, Report: query.AnalyzeRework(summary, activities),
-	}, nil
+	return snapshot.Analysis, nil
 }
 
 func (store *Store) loadSessionReworkActivities(ctx context.Context, reader sqlReader, root sessionRef, graph sessionGraph) ([]query.Activity, error) {
@@ -396,7 +411,7 @@ func (store *Store) dashboardAggregates(ctx context.Context, since, sourceID, se
 		if parseErr != nil {
 			return 0, 0, canonical.TokenUsage{}, parseErr
 		}
-		matched, searchErr := store.searchSessionRoots(ctx, query.SessionListFilter{Since: parsedSince, SourceID: sourceID, Search: search}, graph)
+		matched, searchErr := store.searchSessionRoots(ctx, store.readDB, query.SessionListFilter{Since: parsedSince, SourceID: sourceID, Search: search}, graph)
 		if searchErr != nil {
 			return 0, 0, canonical.TokenUsage{}, searchErr
 		}

@@ -234,6 +234,21 @@ func TestTraceAPIReturnsCompleteVersionedTrace(t *testing.T) {
 	if strings.Contains(response.Body.String(), `"conversations":null`) || strings.Contains(response.Body.String(), `"agents":null`) || strings.Contains(response.Body.String(), `"activities":null`) {
 		t.Fatalf("trace collections must serialize as arrays: %s", response.Body.String())
 	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/v1/traces/"+traceID+"?spanId=ABCDEFABCDEFABCD&limit=3&offset=110", nil)
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || reader.traceFilter.SpanID.String() != "abcdefabcdefabcd" || reader.traceFilter.Page.Size() != 3 || reader.traceFilter.Page.Offset() != 110 {
+		t.Errorf("anchor read mapping: %d, %#v", response.Code, reader.traceFilter)
+	}
+	for _, suffix := range []string{"?spanId=not-a-span", "?spanId=0000000000000000", "?spanId=ABCDEFABCDEFABCD&limit=101"} {
+		reader.traceFilter = query.TraceFilter{}
+		response = httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/traces/"+traceID+suffix, nil))
+		if response.Code != http.StatusBadRequest || reader.traceFilter.TraceID.String() != "" {
+			t.Errorf("invalid anchor request %q reached reader or wrong status: %d", suffix, response.Code)
+		}
+	}
 }
 
 func TestTraceAPIMapsUnknownTraceToNotFound(t *testing.T) {
@@ -246,6 +261,13 @@ func TestTraceAPIMapsUnknownTraceToNotFound(t *testing.T) {
 
 	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "trace not found") {
 		t.Fatalf("unexpected response: %d %s", response.Code, response.Body.String())
+	}
+
+	reader.traceErr = query.ErrTraceTargetNotFound
+	response = httptest.NewRecorder()
+	handler.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/traces/22222222222222222222222222222222?spanId=abcdefabcdefabcd", nil))
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "target span not found") {
+		t.Errorf("native target not-found mapping: %d %s", response.Code, response.Body.String())
 	}
 }
 

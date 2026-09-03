@@ -62,6 +62,38 @@ omitted unless `includeContent` is explicitly set. OTLP-only data does not
 guarantee task outcomes, git diffs, test results, or artifact conflicts, so
 those are reported as unavailable rather than inferred.
 
+`compare_runs` summarizes one to ten explicitly selected runs and permits
+different sources or overlapping periods. `compare_rework` compares an ordered
+baseline/current pair from the same source. It validates non-overlapping
+conversation identity, reads both sides in one snapshot, and returns five
+normalized diagnostic rows with raw operands, missing-value reasons, coverage,
+and reported harness context. Neither tool returns activity bodies.
+
+The Web conversation workspace separates Execution, Rework, and Comparison.
+Execution shows compact activity rows and a selected-body detail. Content labels
+identify a received prompt, response, tool input/output, reference, or explicit
+model input only when the retained projection supports that meaning. A file read
+or `AGENTS.md` reference alone does not prove inclusion in a later model request.
+Producer redaction, body not reported, body not requested, projection coverage,
+and rows hidden by a display filter remain separate states.
+
+Conversation filters combine source, relative time, text, observed failure,
+elapsed bounds, model, and tool across the complete retained conversation before
+pagination. The server echoes structured conditions; clients reject absent or
+mismatched acknowledgement rather than showing ignored filters as applied.
+Named Web filters are local browser preferences. A saved `1h`, `24h`, or `7d`
+range is evaluated again when applied; no result snapshot or absolute timestamp
+is stored.
+
+Trace links can target an exact native span and return to the same conversation,
+agent, filter, and selected activity. For long traces, the trace explorer first
+loads a body-free overview of up to 5,000 timing rows, then loads detailed
+activities for the selected time window. Window, activity-kind, error-only, and
+selected-span state are restored through browser history; an exact incoming span
+also remains addressable in the URL. The overview reports its retained total and
+coverage separately from the number of detailed matches; an error filter includes
+only observed failures, not activities with unknown outcomes.
+
 ## Connect your agents
 
 ### Claude Code
