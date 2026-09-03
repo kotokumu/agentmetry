@@ -243,6 +243,30 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Normalize updater manifest
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          updater_dir="$RUNNER_TEMP/agentmetry-updater"
+          mkdir -p "$updater_dir"
+          gh release download "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "latest.json" \
+            --pattern "*.sig" \
+            --dir "$updater_dir"
+          node build/desktop/updater-manifest.mjs \
+            "$updater_dir/latest.json" \
+            "$updater_dir" \
+            "$GITHUB_REPOSITORY" \
+            "$GITHUB_REF_NAME"
+          gh release upload "$GITHUB_REF_NAME" \
+            --repo "$GITHUB_REPOSITORY" \
+            "$updater_dir/latest.json" \
+            --clobber
+
       - name: Verify release assets and publish draft
         shell: bash
         env:
