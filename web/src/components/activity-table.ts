@@ -58,7 +58,7 @@ export class ActivityTable extends LitElement {
     .select-activity { border: 1px solid transparent; background: transparent; padding: 4px; text-align: left; color: var(--am-text); cursor: pointer; font: inherit; }
     .select-activity[aria-pressed="true"] { border-color: var(--am-accent); }
     .selected-label, .status { display: block; margin-top: 3px; color: var(--am-muted); font-size: .68rem; }
-    .activity-detail { border: 1px solid var(--am-border); border-radius: 8px; padding: 16px; background: var(--am-surface-raised); overflow-wrap: anywhere; }
+    .activity-detail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); border: 1px solid var(--am-border); border-radius: 8px; padding: 16px; background: var(--am-surface-raised); overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-gutter: stable; }
     .activity-detail h3 { margin: 0 0 12px; font-size: .95rem; }
     .activity-detail h4 { margin: 16px 0 8px; font-size: .78rem; }
     .activity-detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: .82rem/1.65 "SFMono-Regular", "Cascadia Code", monospace; }
@@ -81,7 +81,10 @@ export class ActivityTable extends LitElement {
     .continuation button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
     .continuation button:hover, .continuation button:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     .continuation button:disabled { cursor: wait; opacity: .55; }
-    @media (max-width: 1100px) { .reading-layout { grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 1100px) {
+      .reading-layout { grid-template-columns: minmax(0, 1fr); }
+      .activity-detail { position: static; max-height: none; overflow: visible; scrollbar-gutter: auto; }
+    }
     @media (prefers-reduced-motion: reduce) { tbody tr { transition: none; } }
   `;
 
@@ -180,7 +183,10 @@ export class ActivityTable extends LitElement {
     this.cachedSelectedActivity = activity;
     this.dispatchEvent(new CustomEvent("activity-selected", { detail: { activityId: this.selectedActivityId }, bubbles: true, composed: true }));
     await this.updateComplete;
-    this.shadowRoot?.querySelector<HTMLElement>("#activity-detail")?.focus({ preventScroll: false });
+    const detail = this.shadowRoot?.querySelector<HTMLElement>("#activity-detail");
+    if (!detail) return;
+    detail.scrollTop = 0;
+    detail.focus({ preventScroll: false });
   }
 
   private revealSelectedWindow() {
