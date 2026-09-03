@@ -46,6 +46,51 @@ customElements.define("test-trace-host", TraceHost);
 afterEach(() => document.body.replaceChildren());
 
 describe("Lit data controllers", () => {
+  it("allows paging a new target after cancelling an in-flight live refresh", async () => {
+    let release!: (trace: Trace) => void;
+    const pending = new Promise<Trace>((resolve) => { release = resolve; });
+    let firstReads = 0;
+    const page = (traceId: string, offset = 0): Trace => ({
+      traceId, startedAt: "", endedAt: "", status: "ok", rootSpanCount: 1, missingParentCount: 0, conversations: [], agents: [],
+      activities: [{ ...activity(`${traceId}-${offset}`), id: `${traceId}-${offset}` }], activityOffset: offset, activityCount: 2, hasMore: offset === 0, nextPageToken: offset === 0 ? "next" : undefined,
+    });
+    traceClient = { getTrace: vi.fn().mockImplementation((traceId: string, offset: number) => {
+      if (traceId === "first" && ++firstReads > 1) return pending;
+      return Promise.resolve(page(traceId, offset));
+    }) } as unknown as AgentmetryClient;
+    const host = document.createElement("test-trace-host") as TraceHost;
+    document.body.append(host);
+    host.trace.open("first");
+    await vi.waitFor(() => expect(host.trace.value?.traceId).toBe("first"));
+    const refreshing = host.trace.applyLiveUpdate({ resyncRequired: true, throughCursor: "cursor", targets: [] });
+    host.trace.open("second");
+    await vi.waitFor(() => expect(host.trace.value?.traceId).toBe("second"));
+    await host.trace.loadMore();
+    release(page("first"));
+    await refreshing;
+    expect(host.trace.value?.activities.map(({ name }) => name)).toEqual(["second-0", "second-1"]);
+  });
+
+  it("loads exact trace evidence and does not expose an earlier target after a missing anchor", async () => {
+    const traceId = "11111111111111111111111111111111";
+    const target = { ...activity("requested span"), traceId, spanId: "0000000000000099", content: "target body" };
+    traceClient = {
+      getTrace: vi.fn().mockImplementation(async (_trace: string, _offset: number, _limit: number, _token: string, _signal: AbortSignal, _tail: boolean, anchor: string) => {
+        if (anchor === "000000000000ffff") throw new ConnectError("trace target not found", Code.NotFound);
+        return { traceId, activities: anchor ? [target] : [activity("wrong first page")], activityCount: 150, activityOffset: anchor ? 125 : 0, hasMore: false };
+      }),
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-trace-host") as TraceHost;
+    document.body.append(host);
+    host.trace.open(traceId, target.spanId);
+    await vi.waitFor(() => expect(host.trace.value?.activities[0]?.content).toBe("target body"));
+    host.trace.open(traceId, "000000000000ffff");
+    await vi.waitFor(() => expect(host.trace.failed).toBe(true));
+    expect(host.trace.value).toBeUndefined();
+    expect(String(host.trace.error)).toContain("target not found");
+    expect(host.trace.traceId).toBe(traceId);
+  });
+
 
   it("loads rework for the selected source-qualified conversation and never exposes stale identity", async () => {
     const first = session([]);

@@ -2,6 +2,7 @@ import { LitElement, css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import {
   COMPARISON_DISPLAY_DECIMALS,
+  roundComparisonDisplay,
   type ComparisonMetricID,
   type ComparisonUnit,
   type ComparisonValue,
@@ -83,7 +84,7 @@ export class ReworkComparison extends LitElement {
       case "empty":
         return html`<div class="state"><strong>No non-overlapping baseline in the current conversation list</strong><p>Broaden the time range or filters, or collect another completed conversation from this source.</p></div>`;
       case "loading":
-        return html`<div class="state" role="status"><strong>Loading baseline diagnostics</strong><p>Reading the selected conversation summary and normalized rework evidence.</p></div>`;
+        return html`<div class="state" role="status"><strong>Loading baseline diagnostics</strong><p>Reading both conversations in one diagnostic snapshot.</p></div>`;
       case "failed":
         return html`<div class="state" role="alert"><strong>Comparison unavailable</strong><p>${this.state.message}</p><button class="retry" type="button" @click=${this.retry}>Retry comparison</button></div>`;
       case "waiting":
@@ -164,8 +165,9 @@ const renderValue = (value: ComparisonValue, unit: ComparisonUnit, evidence: str
 `;
 const formatDelta = (row: ReworkComparisonRow) => {
   if (row.availability === "unavailable") return NOT_REPORTED;
-  const sign = row.delta > 0 ? "+" : "";
-  return `${sign}${row.delta.toFixed(COMPARISON_DISPLAY_DECIMALS)} ${row.unit === "percent" ? "pp" : "per 100"}`;
+  const displayed = roundComparisonDisplay(row.delta);
+  const sign = displayed > 0 ? "+" : "";
+  return `${sign}${displayed.toFixed(COMPARISON_DISPLAY_DECIMALS)} ${row.unit === "percent" ? "pp" : "per 100"}`;
 };
 const directionLabel = (direction: "improved" | "regressed" | "unchanged" | "unavailable") => ({ improved: "Improved", regressed: "Regressed", unchanged: "No change", unavailable: "Not comparable" })[direction];
 const invalidTitle = (code: "identity_mismatch" | "invalid_time" | "baseline_ineligible") => ({

@@ -28,6 +28,8 @@ type SignalCounts struct {
 }
 
 type Activity struct {
+	ContentEvidence    *ContentEvidence       `json:"contentEvidence,omitempty"`
+	MissingParent      *bool                  `json:"missingParent,omitempty"`
 	ID                 string                 `json:"id"`
 	Source             string                 `json:"source"`
 	Signal             canonical.Signal       `json:"signal"`

@@ -1,5 +1,5 @@
-import { LitElement, css, html } from "lit";
-import { customElement, property } from "lit/decorators.js";
+import { LitElement, css, html, type PropertyValues } from "lit";
+import { customElement, property, state } from "lit/decorators.js";
 import type { ReworkAnalysis } from "../model/telemetry";
 import { NOT_REPORTED } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
@@ -9,8 +9,13 @@ import "./kpi-card";
 export class ReworkSummary extends LitElement {
   @property({ attribute: false }) analysis?: ReworkAnalysis;
   @property({ attribute: false }) legacySessionTotalTokens: number | null = null;
+  @property({ attribute: false }) locationForTrace: (traceId: string, spanId?: string) => string =
+    (traceId, spanId) => `/traces/${encodeURIComponent(traceId)}${spanId ? `?spanId=${encodeURIComponent(spanId)}` : ""}`;
   @property({ type: Boolean }) loading = false;
   @property() error = "";
+  @state() private visibleEpisodeCount = 3;
+  private episodeSourceId?: string;
+  private episodeSessionId?: string;
 
   static styles = [featurePanelStyles, css`
     :host { display: block; min-width: 0; }
@@ -36,13 +41,39 @@ export class ReworkSummary extends LitElement {
     .episode p { margin: 0; color: var(--am-muted); font-size: .66rem; line-height: 1.5; }
     .episode a { display: inline-block; margin-top: 7px; color: var(--am-accent); font-size: .66rem; text-decoration: none; }
     .episode a:hover, .episode a:focus-visible { text-decoration: underline; outline: 2px solid var(--am-accent-soft); }
+    .episode-count { margin: 8px 0 0; color: var(--am-muted); font-size: .68rem; }
     .state { min-height: 140px; display: grid; place-items: center; text-align: center; }
     .state strong { display: block; margin-bottom: 6px; color: var(--am-text); }
-    .state button { margin-top: 12px; border: 1px solid var(--am-border); border-radius: 7px; padding: 7px 11px; background: var(--am-surface-raised); color: var(--am-text); cursor: pointer; font: inherit; }
-    .state button:hover, .state button:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
+    .state button, .show-more { margin-top: 12px; border: 1px solid var(--am-border); border-radius: 7px; padding: 7px 11px; background: var(--am-surface-raised); color: var(--am-text); cursor: pointer; font: inherit; }
+    .state button:hover, .state button:focus-visible, .show-more:hover, .show-more:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     @media (max-width: 1050px) { .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .evidence, .episode-list { grid-template-columns: 1fr; } }
     @media (max-width: 520px) { .heading { display: block; } .coverage-badge { display: inline-block; margin-top: 9px; } .metrics { grid-template-columns: 1fr; } }
   `];
+
+  protected willUpdate(changed: PropertyValues<this>) {
+    if (changed.has("analysis") && this.analysis
+      && (this.analysis.sourceId !== this.episodeSourceId || this.analysis.sessionId !== this.episodeSessionId)) {
+      this.visibleEpisodeCount = 3;
+      this.episodeSourceId = this.analysis.sourceId;
+      this.episodeSessionId = this.analysis.sessionId;
+    }
+  }
+
+  async focusEvidence(traceId: string, spanId: string): Promise<boolean> {
+    await this.updateComplete;
+    if (!spanId || !this.analysis || this.loading || this.error) return false;
+    const { sourceId, sessionId } = this.analysis;
+    const index = this.sortedEpisodes.findIndex((episode) => episode.spanId === spanId && episode.traceId === traceId);
+    if (index < 0) return false;
+    this.visibleEpisodeCount = Math.max(this.visibleEpisodeCount, index + 1);
+    await this.updateComplete;
+    if (this.analysis?.sourceId !== sourceId || this.analysis.sessionId !== sessionId) return false;
+    const link = Array.from(this.shadowRoot?.querySelectorAll<HTMLAnchorElement>(".episode a") ?? [])
+      .find((candidate) => candidate.dataset.spanId === spanId && candidate.dataset.traceId === traceId);
+    if (!link) return false;
+    link.focus({ preventScroll: true });
+    return this.shadowRoot?.activeElement === link;
+  }
 
   render() {
     if (this.loading) return html`<section class="panel state" role="status"><div><strong>Analyzing development rework</strong><p>Normalizing the complete retained session.</p></div></section>`;
@@ -79,7 +110,7 @@ export class ReworkSummary extends LitElement {
         <am-kpi-card label="Repeated commands" .value=${formatCount(metrics.repeatedCommands)} hint="Same agent and command" description="Each execution after the first of the same normalized command by one agent. Re-running validation after an edit may be healthy rather than rework."></am-kpi-card>
         <am-kpi-card label="Re-edited files" .value=${formatCount(metrics.reeditedFiles)} hint="Same agent and file" description="Each edit after the first to the same file by one agent. Iterative editing can be normal; this is a concentration signal, not proof of wasted work."></am-kpi-card>
       </div></div>
-      ${renderFailureEpisodes(this.analysis.failureEpisodes)}
+      ${this.renderFailureEpisodes()}
       <div class="evidence">
         <article><strong>${partial ? "Partial evidence" : "Evidence coverage"}</strong><p>${metrics.validationAttemptsWithOutcome} of ${coverage.validationAttempts} logical validation attempts report outcomes · ${coverage.identifiedValidationAttempts} have command identity · ${coverage.fingerprintedFailures} of ${metrics.validationFailures} failures fingerprinted · ${coverage.idBackedValidationAttempts} ID-backed (${coverage.mergedValidationAttempts} merged) / ${coverage.uncorrelatedValidationObservations} uncorrelated / ${coverage.conflictingAttemptObservations} identity conflicts / ${coverage.ambiguousFailureAttempts} ambiguous errors</p></article>
         ${capability("Change revert", capabilities.changeRevert.state, capabilities.changeRevert.reason)}
@@ -88,21 +119,44 @@ export class ReworkSummary extends LitElement {
     </section>`;
   }
 
+  private renderFailureEpisodes() {
+    const episodes = this.sortedEpisodes;
+    if (episodes.length === 0) return null;
+    const visible = episodes.slice(0, this.visibleEpisodeCount);
+    return html`<div class="episodes"><h3>Highest-impact recurring loops</h3><div class="episode-list" id="failure-episodes">${visible.map((episode) => html`
+      <article class="episode">
+        <strong>${episode.operation} · ${shortFingerprint(episode.validationFingerprint).replace("error", "validation")}</strong>
+        <code title=${episode.errorFingerprints.join(", ")}>${episode.errorFingerprints.map(shortFingerprint).join(" · ")}</code>
+        <p>${episode.failureAttempts} failed attempts · ${episode.resolved ? `resolved in ${formatDuration(episode.resolutionDurationMs)}` : "unresolved"} · agent ${episode.agentId || "main"}</p>
+        ${episode.traceId ? html`<a href=${this.locationForTrace(episode.traceId, episode.spanId)} data-span-id=${episode.spanId} data-trace-id=${episode.traceId} @click=${(event: MouseEvent) => this.openEvidence(event, episode)}>Open first failed attempt</a>` : null}
+      </article>`)}</div>
+      <p class="episode-count">Showing ${visible.length} of ${episodes.length} reported episodes</p>
+      ${episodes.length > visible.length ? html`<button class="show-more" type="button" aria-controls="failure-episodes" @click=${this.showMoreEpisodes}>Show more loops (${episodes.length - visible.length} remaining)</button>` : null}
+    </div>`;
+  }
+
+  private get sortedEpisodes() {
+    return [...this.analysis?.failureEpisodes ?? []].sort((first, second) => second.failureAttempts - first.failureAttempts);
+  }
+
+  private openEvidence(event: MouseEvent, episode: ReworkAnalysis["failureEpisodes"][number]) {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !this.analysis) return;
+    event.preventDefault();
+    this.dispatchEvent(new CustomEvent("trace-selected", {
+      detail: {
+        sourceId: this.analysis.sourceId, conversationId: this.analysis.sessionId,
+        traceId: episode.traceId, spanId: episode.spanId, evidenceOrigin: "episode",
+      },
+      bubbles: true,
+      composed: true,
+    }));
+  }
+
+  private showMoreEpisodes = () => { this.visibleEpisodeCount += 3; };
   private retry = () => this.dispatchEvent(new CustomEvent("rework-retry-requested", { bubbles: true, composed: true }));
 }
 
 const capability = (label: string, state: string, reason: string) => html`<article><strong>${label} · ${state === "unavailable" ? "Not available" : state}</strong><p>${reason}</p></article>`;
-const renderFailureEpisodes = (episodes: ReworkAnalysis["failureEpisodes"]) => {
-  if (episodes.length === 0) return null;
-  const visible = [...episodes].sort((first, second) => second.failureAttempts - first.failureAttempts).slice(0, 3);
-  return html`<div class="episodes"><h3>Highest-impact recurring loops</h3><div class="episode-list">${visible.map((episode) => html`
-    <article class="episode">
-      <strong>${episode.operation} · ${shortFingerprint(episode.validationFingerprint).replace("error", "validation")}</strong>
-      <code title=${episode.errorFingerprints.join(", ")}>${episode.errorFingerprints.map(shortFingerprint).join(" · ")}</code>
-      <p>${episode.failureAttempts} failed attempts · ${episode.resolved ? `resolved in ${formatDuration(episode.resolutionDurationMs)}` : "unresolved"} · agent ${episode.agentId || "main"}</p>
-      ${episode.traceId ? html`<a href=${`/traces/${encodeURIComponent(episode.traceId)}`}>Open first failed attempt</a>` : null}
-    </article>`)}${episodes.length > visible.length ? html`<article class="episode"><strong>${episodes.length - visible.length} more loops</strong><p>Shown in the analysis API.</p></article>` : null}</div></div>`;
-};
 const shortFingerprint = (fingerprint: string) => fingerprint.replace("sha256:", "error ").slice(0, 18);
 const formatCount = (value: number) => value.toLocaleString();
 const formatFirstPassHint = (successes: number, eligible: number) => eligible > 0 ? `${successes} of ${eligible} validation identities` : "No validation identities with known outcomes";

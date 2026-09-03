@@ -303,6 +303,10 @@ func (server *Server) GetDashboard(ctx context.Context, request *connect.Request
 }
 
 func (server *Server) ListSessions(ctx context.Context, request *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	conditions := sessionConditions(request.Msg.GetConditions())
+	if err := query.ValidateSessionConditions(conditions); err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	filter, err := dashboardFilter(server.now(), request.Msg.GetFilter())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -321,14 +325,15 @@ func (server *Server) ListSessions(ctx context.Context, request *connect.Request
 	}
 	page, err := server.reader.ListSessions(ctx, query.SessionListFilter{
 		Since: filter.Since, SourceID: filter.SourceID, Search: filter.Search,
-		Page: queryPage,
+		Page: queryPage, Conditions: conditions,
 	})
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
 	return connect.NewResponse(&v1.ListSessionsResponse{
-		Sessions: mapSessions(page.Sessions),
-		Page:     pageInfo(page.HasMore, page.NextOffset, offset > 0, max(0, offset-pageSize), offset),
+		Sessions:          mapSessions(page.Sessions),
+		Page:              pageInfo(page.HasMore, page.NextOffset, offset > 0, max(0, offset-pageSize), offset),
+		AppliedConditions: mapSessionConditions(page.AppliedConditions),
 	}), nil
 }
 
@@ -416,6 +421,13 @@ func (server *Server) GetTrace(ctx context.Context, request *connect.Request[v1.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
+	var spanID query.SpanID
+	if value := request.Msg.GetAnchorSpanId(); value != "" {
+		spanID, err = query.ParseSpanID(value)
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+	}
 	pageSize, err := boundedPageSize(request.Msg.GetPage())
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -428,20 +440,24 @@ func (server *Server) GetTrace(ctx context.Context, request *connect.Request[v1.
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
-	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, Page: queryPage, Tail: request.Msg.GetLiveTail() && request.Msg.GetPage().GetPageToken() == ""})
-	if errors.Is(err, query.ErrTraceNotFound) {
+	trace, err := server.reader.GetTrace(ctx, query.TraceFilter{TraceID: traceID, SpanID: spanID, Page: queryPage, Tail: request.Msg.GetLiveTail() && request.Msg.GetPage().GetPageToken() == ""})
+	if errors.Is(err, query.ErrTraceNotFound) || errors.Is(err, query.ErrTraceTargetNotFound) {
 		return nil, connect.NewError(connect.CodeNotFound, err)
 	}
 	if err != nil {
 		return nil, connect.NewError(connect.CodeInternal, err)
 	}
-	return connect.NewResponse(&v1.GetTraceResponse{
+	return connect.NewResponse(mapTraceResponse(trace, pageSize)), nil
+}
+
+func mapTraceResponse(trace query.Trace, pageSize int) *v1.GetTraceResponse {
+	return &v1.GetTraceResponse{
 		TraceId: trace.TraceID, StartedAt: timestamp(trace.StartedAt), EndedAt: timestamp(trace.EndedAt),
 		Status: string(trace.Status), RootSpanCount: trace.RootSpanCount, MissingParentCount: trace.MissingParentCount,
 		Conversations: mapConversationRefs(trace.Conversations), Agents: mapTraceAgents(trace.Agents), Activities: mapActivities(trace.Activities),
 		Page:            pageInfo(trace.HasMore, trace.ActivityOffset+len(trace.Activities), trace.ActivityOffset > 0, max(0, trace.ActivityOffset-pageSize), trace.ActivityOffset),
 		TotalActivities: trace.ActivityCount,
-	}), nil
+	}
 }
 
 func dashboardFilter(now time.Time, filter *v1.TimeFilter) (query.DashboardFilter, error) {
@@ -580,17 +596,7 @@ func mapSessionRework(value query.SessionRework) (*v1.GetSessionReworkResponse, 
 			ResolvedFailureLoops: report.ResolvedFailureLoops, UnresolvedFailureLoops: report.UnresolvedFailureLoops,
 			FailureResolutionDurationMs: report.FailureResolutionDuration.Milliseconds(), FailureResolutionTokens: mapTokens(report.FailureResolutionTokens),
 		},
-		Coverage: &v1.ReworkCoverage{
-			ActivityCoverage: report.Coverage.ActivityCoverage, CanonicalEvents: report.Coverage.CanonicalEvents,
-			ClassifiedEvents: report.Coverage.ClassifiedEvents, KnownOutcomes: report.Coverage.KnownOutcomes,
-			ValidationAttempts: report.Coverage.ValidationAttempts, FingerprintedFailures: report.Coverage.FingerprintedFailures,
-			IdentifiedValidationAttempts:       report.Coverage.IdentifiedValidationAttempts,
-			IdBackedValidationAttempts:         report.Coverage.IDBackedValidationAttempts,
-			UncorrelatedValidationObservations: report.Coverage.UncorrelatedValidationObservations,
-			ConflictingAttemptObservations:     report.Coverage.ConflictingAttemptObservations,
-			MergedValidationAttempts:           report.Coverage.MergedValidationAttempts,
-			AmbiguousFailureAttempts:           report.Coverage.AmbiguousFailureAttempts,
-		},
+		Coverage: mapReworkCoverage(report.Coverage),
 		Capabilities: &v1.ReworkCapabilities{
 			ChangeRevert:      mapAnalysisCapability(report.Capabilities.ChangeRevert),
 			CrossAgentOverlap: mapAnalysisCapability(report.Capabilities.CrossAgentOverlap),
@@ -653,13 +659,16 @@ func mapAnalysisCapability(value query.AnalysisCapability) *v1.AnalysisCapabilit
 func mapActivities(values []query.Activity) []*v1.Activity {
 	result := make([]*v1.Activity, 0, len(values))
 	for _, value := range values {
+		body, evidence := query.ContentForDelivery(value)
 		result = append(result, &v1.Activity{
 			Id: value.ID, Source: value.Source, Signal: string(value.Signal), TraceId: value.TraceID, SpanId: value.SpanID, ParentSpanId: value.ParentSpanID,
 			Name: value.Name, Kind: string(value.Kind), ToolName: value.ToolName, TargetAgentId: value.TargetAgentID, TargetAgentType: value.TargetAgentType,
-			Content: value.Content, AgentId: value.AgentID, AgentDefinition: value.AgentDefinition, AgentType: value.AgentType, ParentAgentId: value.ParentAgentID,
+			Content: body, AgentId: value.AgentID, AgentDefinition: value.AgentDefinition, AgentType: value.AgentType, ParentAgentId: value.ParentAgentID,
 			RunId: value.RunID, Model: value.Model, StartedAt: timestamp(value.StartedAt), EndedAt: timestamp(value.EndedAt), ObservedAt: timestamp(value.ObservedAt),
 			Status: value.Status, Tokens: mapTokens(value.Tokens), CostUsd: value.CostUSD, ContributesToTotal: value.ContributesToTotal,
-			PromptId: value.PromptID, UsageId: value.UsageID, RelatedTraceId: value.RelatedTraceID, RelatedSpanId: value.RelatedSpanID,
+			MissingParent:   value.MissingParent,
+			ContentEvidence: &v1.ContentEvidence{Source: evidence.Source, ActivityId: evidence.ActivityID, Signal: evidence.Signal, Kind: evidence.Kind, Evidence: evidence.Evidence, Availability: evidence.Availability, Fields: evidence.Fields, Truncated: evidence.Truncated, RedactionReason: evidence.RedactionReason},
+			PromptId:        value.PromptID, UsageId: value.UsageID, RelatedTraceId: value.RelatedTraceID, RelatedSpanId: value.RelatedSpanID,
 		})
 	}
 	return result

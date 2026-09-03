@@ -31,6 +31,13 @@ func (store *Store) GetTrace(ctx context.Context, filter query.TraceFilter) (que
 	if filter.Tail {
 		offset = max(0, int(summary.ActivityCount)-limit)
 	}
+	if spanID := filter.SpanID.String(); spanID != "" {
+		position, err := traceSpanOffset(ctx, transaction, traceID, spanID)
+		if err != nil {
+			return query.Trace{}, err
+		}
+		offset = filter.Page.OffsetAround(position)
+	}
 	branchLimit := filter.Page.WindowEnd(offset)
 	const statement = `SELECT stored_activity_id, activity_key, source, signal, trace_id, span_id, parent_span_id, name,
   activity_kind, tool_name, target_agent_id, target_agent_type, content,
@@ -141,6 +148,33 @@ type traceSummary struct {
 	MissingParentCount int64
 	Conversations      []query.ConversationRef
 	Agents             []query.TraceAgent
+}
+
+func traceSpanOffset(ctx context.Context, reader sqlReader, traceID, spanID string) (int, error) {
+	// Rank only identity and timing metadata, with the same ordering as GetTrace.
+	// Correlated logs participate in the page order but never satisfy the target.
+	const statement = `SELECT position FROM (
+  SELECT signal, span_id, ROW_NUMBER() OVER (
+    ORDER BY started_at ASC, observed_at ASC, signal DESC, activity_key ASC
+  ) - 1 AS position
+  FROM (
+    SELECT 'trace' AS signal, span_id, started_at, ended_at AS observed_at,
+      'span:' || trace_id || ':' || span_id AS activity_key
+    FROM spans WHERE trace_id = ?
+    UNION ALL
+    SELECT 'log', span_id, observed_at, observed_at, 'log:' || id
+    FROM logs WHERE trace_id = ?
+  )
+) WHERE signal = 'trace' AND span_id = ?`
+	var offset int
+	err := reader.QueryRowContext(ctx, statement, traceID, traceID, spanID).Scan(&offset)
+	if err == sql.ErrNoRows {
+		return 0, query.ErrTraceTargetNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("find trace target span: %w", err)
+	}
+	return offset, nil
 }
 
 func (store *Store) loadTraceSummary(ctx context.Context, reader sqlReader, traceID string) (traceSummary, error) {

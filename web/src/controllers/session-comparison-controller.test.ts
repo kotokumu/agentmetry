@@ -1,3 +1,5 @@
+import { Code, ConnectError } from "@connectrpc/connect";
+import type { ReworkComparisonPair, SharedReworkComparison } from "../model/rework-comparison";
 import { LitElement } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProjectionTargetKind } from "../gen/agentmetry/v1/agentmetry_pb";
@@ -32,13 +34,6 @@ const rework = (sessionId: string, sourceId = "codex"): ReworkAnalysis => ({
   },
   failureEpisodes: [],
 });
-const uniformHarness = (fingerprint: string) => ({
-  availability: "available",
-  state: "uniform",
-  counts: { eligibleRecords: 1, reportedRecords: 1, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 1 },
-  identity: { scope: "project-7f2a", fingerprint },
-} as const);
-
 let comparisonClient: SessionComparisonReader;
 let current: Session | undefined;
 let sessions: readonly Session[] = [];
@@ -64,196 +59,101 @@ afterEach(() => {
   active = true;
 });
 
+const pairResult = (pair: ReworkComparisonPair, delta = 17): SharedReworkComparison => {
+  const subject = (reference: ReworkComparisonPair["baseline"]) => ({ ...reference,
+    startedAt: "2026-08-17T08:00:00Z", endedAt: "2026-08-17T09:00:00Z",
+    projectionCoverage: "complete" as const, coverage: rework(reference.sessionId).coverage,
+    harness: rework(reference.sessionId).harness,
+  });
+  return { status: "ready", baseline: subject(pair.baseline), current: subject(pair.current), warnings: [],
+    harness: { status: "not_comparable", baseline: rework("before").harness, current: rework("current").harness, baselineIssue: "unreported", currentIssue: "unreported" },
+    rows: [{ id: "tool_failure_rate", unit: "percent", availability: "comparable", delta, direction: "regressed",
+      baseline: { availability: "available", numerator: 1, denominator: 4, displayValue: 25 },
+      current: { availability: "available", numerator: 2, denominator: 4, displayValue: 50 } }],
+  };
+};
+const setupPair = () => {
+  current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
+  sessions = [current, session("nearest", "2026-08-17T08:00:00Z", "2026-08-17T09:59:00Z"), session("older", "2026-08-17T07:00:00Z", "2026-08-17T08:00:00Z")];
+};
+const mount = () => {
+  const host = document.createElement("test-comparison-host") as ComparisonHost;
+  document.body.append(host);
+  return host;
+};
+
 describe("SessionComparisonController", () => {
-  it("loads the most recently completed eligible visible baseline", async () => {
-    current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const nearest = session("nearest", "2026-08-17T08:00:00Z", "2026-08-17T09:59:00Z");
-    const older = session("older", "2026-08-17T07:00:00Z", "2026-08-17T08:00:00Z");
-    sessions = [current, older, nearest, session("overlap", "2026-08-17T09:00:00Z", "2026-08-17T10:01:00Z")];
-    const getSessionSummary = vi.fn().mockResolvedValue(nearest);
-    const getSessionRework = vi.fn().mockResolvedValue(rework("nearest"));
-    comparisonClient = { getSessionSummary, getSessionRework } as SessionComparisonReader;
-
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("nearest"));
+  it("uses the returned comparison without recomputing values from separately loaded analyses", async () => {
+    setupPair();
+    comparisonClient = { compareRework: vi.fn().mockImplementation(async (pair: ReworkComparisonPair) => pairResult(pair)) };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState()).toMatchObject({ status: "ready", rows: [{ delta: 17 }] }));
+    expect(host.comparison.selectedBaselineId).toBe("nearest");
     expect(host.comparison.candidates.map(({ id }) => id)).toEqual(["nearest", "older"]);
-    expect(getSessionSummary).toHaveBeenCalledWith("codex", "nearest", expect.any(AbortSignal));
-    expect(getSessionRework).toHaveBeenCalledWith("codex", "nearest", expect.any(AbortSignal));
   });
 
-  it("hides the previous result while an explicitly selected baseline loads", async () => {
-    current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const nearest = session("nearest", "2026-08-17T08:00:00Z", "2026-08-17T09:59:00Z");
-    const older = session("older", "2026-08-17T07:00:00Z", "2026-08-17T08:00:00Z");
-    sessions = [current, nearest, older];
-    let resolveOlderSummary!: (value: Session) => void;
-    const olderSummary = new Promise<Session>((resolve) => { resolveOlderSummary = resolve; });
-    comparisonClient = {
-      getSessionSummary: vi.fn().mockImplementation((_source: string, id: string) => id === "older" ? olderSummary : Promise.resolve(nearest)),
-      getSessionRework: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(rework(id))),
-    } as SessionComparisonReader;
+  it("hides an old comparison while a different explicit baseline loads", async () => {
+    setupPair();
+    let release!: (value: SharedReworkComparison) => void;
+    const pending = new Promise<SharedReworkComparison>((resolve) => { release = resolve; });
+    comparisonClient = { compareRework: vi.fn().mockImplementation(async (pair: ReworkComparisonPair) => pair.baseline.sessionId === "older" ? pending : pairResult(pair)) };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState().status).toBe("ready"));
+    host.comparison.selectBaseline("older");
+    await vi.waitFor(() => expect(host.comparison.viewState()).toMatchObject({ status: "loading", selectedBaselineId: "older" }));
+    release(pairResult({ baseline: { sourceId: "codex", sessionId: "older" }, current: { sourceId: "codex", sessionId: "current" } }, 9));
+    await vi.waitFor(() => expect(host.comparison.viewState()).toMatchObject({ status: "ready", selectedBaselineId: "older", rows: [{ delta: 9 }] }));
+  });
 
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("nearest"));
+  it("rejects a response for another source-qualified pair", async () => {
+    setupPair();
+    comparisonClient = { compareRework: vi.fn().mockImplementation(async (pair: ReworkComparisonPair) => pairResult({ ...pair, current: { ...pair.current, sourceId: "claude" } })) };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState()).toMatchObject({ status: "failed" }));
+    expect(host.comparison.viewState()).toHaveProperty("message", "Comparison identities do not match the requested conversations.");
+  });
 
+  it("reports an unsupported comparison server explicitly and retries operational failures", async () => {
+    setupPair();
+    comparisonClient = { compareRework: vi.fn().mockRejectedValueOnce(new ConnectError("unimplemented", Code.Unimplemented)).mockImplementation(async (pair: ReworkComparisonPair) => pairResult(pair)) };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState()).toMatchObject({ status: "failed", message: "This server does not support shared diagnostic comparison." }));
+    await host.comparison.refresh();
+    expect(host.comparison.viewState().status).toBe("ready");
+    expect(host.comparison.selectedBaselineId).toBe("nearest");
+  });
+
+  it("resets an explicit baseline when current conversation changes", async () => {
+    setupPair();
+    comparisonClient = { compareRework: vi.fn().mockImplementation(async (pair: ReworkComparisonPair) => pairResult(pair)) };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState().status).toBe("ready"));
     host.comparison.selectBaseline("older");
     await host.updateComplete;
-    await vi.waitFor(() => expect(host.comparison.loading).toBe(true));
     expect(host.comparison.selectedBaselineId).toBe("older");
-    expect(host.comparison.baseline).toBeUndefined();
-
-    resolveOlderSummary(older);
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("older"));
-  });
-
-  it("never exposes a response associated with the previous current conversation", async () => {
-    const first = session("current-1", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const firstBaseline = session("before-1", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z");
-    const second = session("current-2", "2026-08-17T12:00:00Z", "2026-08-17T13:00:00Z");
-    const secondBaseline = session("before-2", "2026-08-17T11:01:00Z", "2026-08-17T11:59:00Z");
-    current = first;
-    sessions = [first, firstBaseline];
-    let resolveFirst!: (value: Session) => void;
-    const firstRequest = new Promise<Session>((resolve) => { resolveFirst = resolve; });
-    comparisonClient = {
-      getSessionSummary: vi.fn().mockImplementation((_source: string, id: string) => id === "before-1" ? firstRequest : Promise.resolve(secondBaseline)),
-      getSessionRework: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(rework(id))),
-    } as SessionComparisonReader;
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-
-    current = second;
-    sessions = [second, secondBaseline];
-    host.requestUpdate();
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("before-2"));
-    resolveFirst(firstBaseline);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
-    expect(host.comparison.baseline?.session.id).toBe("before-2");
-  });
-
-  it("isolates a baseline failure and retries it without changing candidates", async () => {
-    current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const baseline = session("before", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z");
-    sessions = [current, baseline];
-    const getSessionSummary = vi.fn().mockRejectedValueOnce(new Error("temporary")).mockResolvedValueOnce(baseline);
-    comparisonClient = {
-      getSessionSummary,
-      getSessionRework: vi.fn().mockResolvedValue(rework("before")),
-    } as SessionComparisonReader;
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-
-    await vi.waitFor(() => expect(host.comparison.failed).toBe(true));
-    expect(host.comparison.viewState()).toMatchObject({ status: "failed", message: "Baseline diagnostics could not be loaded." });
-    expect(host.comparison.candidates.map(({ id }) => id)).toEqual(["before"]);
-    host.comparison.refresh();
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("before"));
-    expect(getSessionSummary).toHaveBeenCalledTimes(2);
-  });
-
-  it("resets an explicit baseline whenever the current conversation changes, including A to B to A", async () => {
-    const first = session("current-a", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const firstDefault = session("a-default", "2026-08-17T09:00:00Z", "2026-08-17T09:59:00Z");
-    const firstAlternate = session("a-alternate", "2026-08-17T08:00:00Z", "2026-08-17T08:59:00Z");
-    const second = session("current-b", "2026-08-17T12:00:00Z", "2026-08-17T13:00:00Z");
-    const secondDefault = session("b-default", "2026-08-17T11:01:00Z", "2026-08-17T11:59:00Z");
-    current = first;
-    sessions = [first, firstDefault, firstAlternate];
-    comparisonClient = {
-      getSessionSummary: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(sessions.find((candidate) => candidate.id === id))),
-      getSessionRework: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(rework(id))),
-    } as SessionComparisonReader;
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-    await vi.waitFor(() => expect(host.comparison.selectedBaselineId).toBe("a-default"));
-
-    host.comparison.selectBaseline("a-alternate");
-    await host.updateComplete;
-    expect(host.comparison.selectedBaselineId).toBe("a-alternate");
-
-    current = second;
-    sessions = [second, secondDefault, first, firstDefault, firstAlternate];
+    const original = current;
+    current = session("new-current", "2026-08-17T12:00:00Z", "2026-08-17T13:00:00Z");
     host.requestUpdate();
     await host.updateComplete;
-    expect(host.comparison.selectedBaselineId).toBe("b-default");
-
-    current = first;
-    sessions = [first, firstDefault, firstAlternate];
+    expect(host.comparison.selectedBaselineId).toBe("current");
+    current = original;
     host.requestUpdate();
     await host.updateComplete;
-    expect(host.comparison.selectedBaselineId).toBe("a-default");
+    expect(host.comparison.selectedBaselineId).toBe("nearest");
   });
 
-  it("refreshes for baseline live changes but leaves current-only refreshes to the conversation controller", async () => {
-    current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const baseline = session("before", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z");
-    sessions = [current, baseline];
-    const getSessionSummary = vi.fn().mockResolvedValue(baseline);
-    comparisonClient = {
-      getSessionSummary,
-      getSessionRework: vi.fn().mockResolvedValue(rework("before")),
-    } as SessionComparisonReader;
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("before"));
-    expect(getSessionSummary).toHaveBeenCalledTimes(1);
-
-    await host.comparison.applyLiveUpdate({
-      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "current", traceId: "" }],
-      resyncRequired: false,
-      throughCursor: "1",
-    });
-    expect(getSessionSummary).toHaveBeenCalledTimes(1);
-
-    await host.comparison.applyLiveUpdate({
-      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "before", traceId: "" }],
-      resyncRequired: false,
-      throughCursor: "2",
-    });
-    expect(getSessionSummary).toHaveBeenCalledTimes(2);
-  });
-
-  it("recomputes harness relationships after late evidence without changing an explicit baseline", async () => {
-    current = session("current", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");
-    const nearest = session("nearest", "2026-08-17T09:00:00Z", "2026-08-17T09:59:00Z");
-    const selected = session("selected", "2026-08-17T08:00:00Z", "2026-08-17T08:59:00Z");
-    sessions = [current, nearest, selected];
-    const fingerprint = "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db";
-    const changedFingerprint = "sha256:dfbc1de58f3b905c7b0c0fd79361699336b5f9da617b1db8f35c76673f95b29d";
-    let baselineAnalysis: ReworkAnalysis = { ...rework("selected"), harness: uniformHarness(fingerprint) };
-    comparisonClient = {
-      getSessionSummary: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(id === "selected" ? selected : nearest)),
-      getSessionRework: vi.fn().mockImplementation((_source: string, id: string) => Promise.resolve(id === "selected" ? baselineAnalysis : rework(id))),
-    } as SessionComparisonReader;
-    const host = document.createElement("test-comparison-host") as ComparisonHost;
-    document.body.append(host);
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("nearest"));
-
-    host.comparison.selectBaseline("selected");
-    await vi.waitFor(() => expect(host.comparison.baseline?.session.id).toBe("selected"));
-    const currentSame = { ...rework("current"), harness: uniformHarness(fingerprint) };
-    expect(host.comparison.viewState(currentSame)).toMatchObject({ status: "ready", harness: { status: "reported_same" } });
-
-    baselineAnalysis = {
-      ...baselineAnalysis,
-      harness: { availability: "available", state: "mixed", counts: { eligibleRecords: 2, reportedRecords: 2, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 2 } },
-    };
-    await host.comparison.applyLiveUpdate({
-      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "selected", traceId: "" }],
-      resyncRequired: false,
-      throughCursor: "3",
-    });
-    expect(host.comparison.selectedBaselineId).toBe("selected");
-    expect(host.comparison.viewState(currentSame)).toMatchObject({ status: "ready", harness: { status: "not_comparable", baselineIssue: "mixed" } });
-
-    baselineAnalysis = { ...baselineAnalysis, harness: uniformHarness(fingerprint) };
-    await host.comparison.refresh();
-    const currentChanged = { ...currentSame, harness: uniformHarness(changedFingerprint) };
-    expect(host.comparison.selectedBaselineId).toBe("selected");
-    expect(host.comparison.viewState(currentChanged)).toMatchObject({ status: "ready", harness: { status: "reported_changed" } });
+  it("refreshes the coherent pair for changes to either conversation while keeping the explicit baseline", async () => {
+    setupPair();
+    let delta = 1;
+    comparisonClient = { compareRework: vi.fn().mockImplementation(async (pair: ReworkComparisonPair) => pairResult(pair, delta)) };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState().status).toBe("ready"));
+    host.comparison.selectBaseline("older");
+    await vi.waitFor(() => expect(host.comparison.viewState()).toMatchObject({ status: "ready", selectedBaselineId: "older" }));
+    for (const sessionId of ["current", "older"]) {
+      delta += 1;
+      await host.comparison.applyLiveUpdate({ targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId, traceId: "" }], resyncRequired: false, throughCursor: String(delta) });
+      expect(host.comparison.viewState()).toMatchObject({ status: "ready", selectedBaselineId: "older", rows: [{ delta }] });
+    }
   });
 });

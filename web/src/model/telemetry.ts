@@ -2,11 +2,20 @@ export type TimeRange = "1h" | "24h" | "7d";
 export type ActivityDirection = "newer" | "older";
 export type TelemetrySource = Readonly<{ id: string; label: string }>;
 export type TokenUsage = Readonly<{ input: number | null; output: number | null; cacheRead: number | null; cacheWrite: number | null; reasoning: number | null; total: number | null }>;
+export type ContentEvidence = Readonly<{
+  source: string; activityId: string; signal: string;
+  kind: "prompt" | "response" | "tool_input" | "tool_output" | "tool_input_output" | "model_input" | "reference" | "unknown";
+  evidence: "reference" | "read_output" | "explicit_model_input" | "unknown";
+  availability: "available" | "not_reported" | "redacted" | "not_returned";
+  fields: readonly string[]; truncated: boolean;
+  redactionReason?: "producer_redacted" | "encrypted_input";
+}>;
 export type Activity = Readonly<{
   id?: string; source: string; signal: "trace" | "log" | "metric"; name: string; traceId?: string; spanId?: string; parentSpanId?: string;
+  missingParent?: boolean;
   promptId?: string; usageId?: string; relatedTraceId?: string; relatedSpanId?: string;
   kind: "unknown" | "prompt" | "response" | "tool" | "delegation" | "message" | "reasoning";
-  toolName?: string; targetAgentId?: string; targetAgentType?: string; content?: string; agentId: string;
+  toolName?: string; targetAgentId?: string; targetAgentType?: string; content?: string; contentEvidence?: ContentEvidence; agentId: string;
   agentDefinition?: string; agentType?: string; parentAgentId?: string; runId: string; model: string;
   startedAt?: string; endedAt?: string; observedAt: string; status?: string; tokens: TokenUsage; costUsd?: number; contributesToTotal: boolean;
 }>;

@@ -18,6 +18,7 @@ export class SessionFilter extends LitElement {
     select:hover, input:hover { border-color: color-mix(in srgb, var(--am-border) 55%, var(--am-accent)); }
     select:focus, input:focus { border-color: var(--am-accent); box-shadow: 0 0 0 3px var(--am-accent-soft); outline: none; }
     input::placeholder { color: color-mix(in srgb, var(--am-muted) 72%, transparent); }
+    @media (prefers-reduced-motion: reduce) { select, input { transition: none; } }
   `;
 
   render() {

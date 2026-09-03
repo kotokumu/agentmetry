@@ -45,12 +45,21 @@ const (
 	// AgentmetryQueryServiceGetSessionReworkProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's GetSessionRework RPC.
 	AgentmetryQueryServiceGetSessionReworkProcedure = "/agentmetry.v1.AgentmetryQueryService/GetSessionRework"
+	// AgentmetryQueryServiceCompareReworkProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's CompareRework RPC.
+	AgentmetryQueryServiceCompareReworkProcedure = "/agentmetry.v1.AgentmetryQueryService/CompareRework"
 	// AgentmetryQueryServiceListSessionActivitiesProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's ListSessionActivities RPC.
 	AgentmetryQueryServiceListSessionActivitiesProcedure = "/agentmetry.v1.AgentmetryQueryService/ListSessionActivities"
 	// AgentmetryQueryServiceGetTraceProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's GetTrace RPC.
 	AgentmetryQueryServiceGetTraceProcedure = "/agentmetry.v1.AgentmetryQueryService/GetTrace"
+	// AgentmetryQueryServiceGetTraceOverviewProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's GetTraceOverview RPC.
+	AgentmetryQueryServiceGetTraceOverviewProcedure = "/agentmetry.v1.AgentmetryQueryService/GetTraceOverview"
+	// AgentmetryQueryServiceGetTraceWindowProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's GetTraceWindow RPC.
+	AgentmetryQueryServiceGetTraceWindowProcedure = "/agentmetry.v1.AgentmetryQueryService/GetTraceWindow"
 	// AgentmetryQueryServiceWatchProjectionChangesProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's WatchProjectionChanges RPC.
 	AgentmetryQueryServiceWatchProjectionChangesProcedure = "/agentmetry.v1.AgentmetryQueryService/WatchProjectionChanges"
@@ -74,10 +83,14 @@ type AgentmetryQueryServiceClient interface {
 	// Returns server-calculated rework indicators for one source-qualified
 	// session. Raw operation bodies and retained OTLP attributes are excluded.
 	GetSessionRework(context.Context, *connect.Request[v1.GetSessionReworkRequest]) (*connect.Response[v1.GetSessionReworkResponse], error)
+	// Compares diagnostic evidence from two explicitly selected conversations in one snapshot.
+	CompareRework(context.Context, *connect.Request[v1.CompareReworkRequest]) (*connect.Response[v1.CompareReworkResponse], error)
 	// Returns one bounded, cursor-addressed activity page for a session.
 	ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error)
 	// Returns the bounded trace evidence for one trace ID.
 	GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error)
+	GetTraceOverview(context.Context, *connect.Request[v1.GetTraceOverviewRequest]) (*connect.Response[v1.GetTraceOverviewResponse], error)
+	GetTraceWindow(context.Context, *connect.Request[v1.GetTraceWindowRequest]) (*connect.Response[v1.GetTraceWindowResponse], error)
 	// Streams bounded invalidation windows for committed read-model changes.
 	WatchProjectionChanges(context.Context, *connect.Request[v1.WatchProjectionChangesRequest]) (*connect.ServerStreamForClient[v1.WatchProjectionChangesResponse], error)
 	// Returns a bounded commit-ordered mutation page for one session.
@@ -121,6 +134,12 @@ func NewAgentmetryQueryServiceClient(httpClient connect.HTTPClient, baseURL stri
 			connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetSessionRework")),
 			connect.WithClientOptions(opts...),
 		),
+		compareRework: connect.NewClient[v1.CompareReworkRequest, v1.CompareReworkResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceCompareReworkProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("CompareRework")),
+			connect.WithClientOptions(opts...),
+		),
 		listSessionActivities: connect.NewClient[v1.ListSessionActivitiesRequest, v1.ListSessionActivitiesResponse](
 			httpClient,
 			baseURL+AgentmetryQueryServiceListSessionActivitiesProcedure,
@@ -131,6 +150,18 @@ func NewAgentmetryQueryServiceClient(httpClient connect.HTTPClient, baseURL stri
 			httpClient,
 			baseURL+AgentmetryQueryServiceGetTraceProcedure,
 			connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTrace")),
+			connect.WithClientOptions(opts...),
+		),
+		getTraceOverview: connect.NewClient[v1.GetTraceOverviewRequest, v1.GetTraceOverviewResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceGetTraceOverviewProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTraceOverview")),
+			connect.WithClientOptions(opts...),
+		),
+		getTraceWindow: connect.NewClient[v1.GetTraceWindowRequest, v1.GetTraceWindowResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceGetTraceWindowProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTraceWindow")),
 			connect.WithClientOptions(opts...),
 		),
 		watchProjectionChanges: connect.NewClient[v1.WatchProjectionChangesRequest, v1.WatchProjectionChangesResponse](
@@ -160,8 +191,11 @@ type agentmetryQueryServiceClient struct {
 	listSessions           *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
 	getSession             *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
 	getSessionRework       *connect.Client[v1.GetSessionReworkRequest, v1.GetSessionReworkResponse]
+	compareRework          *connect.Client[v1.CompareReworkRequest, v1.CompareReworkResponse]
 	listSessionActivities  *connect.Client[v1.ListSessionActivitiesRequest, v1.ListSessionActivitiesResponse]
 	getTrace               *connect.Client[v1.GetTraceRequest, v1.GetTraceResponse]
+	getTraceOverview       *connect.Client[v1.GetTraceOverviewRequest, v1.GetTraceOverviewResponse]
+	getTraceWindow         *connect.Client[v1.GetTraceWindowRequest, v1.GetTraceWindowResponse]
 	watchProjectionChanges *connect.Client[v1.WatchProjectionChangesRequest, v1.WatchProjectionChangesResponse]
 	syncSessionActivities  *connect.Client[v1.SyncSessionActivitiesRequest, v1.SyncSessionActivitiesResponse]
 	syncTraceActivities    *connect.Client[v1.SyncTraceActivitiesRequest, v1.SyncTraceActivitiesResponse]
@@ -187,6 +221,11 @@ func (c *agentmetryQueryServiceClient) GetSessionRework(ctx context.Context, req
 	return c.getSessionRework.CallUnary(ctx, req)
 }
 
+// CompareRework calls agentmetry.v1.AgentmetryQueryService.CompareRework.
+func (c *agentmetryQueryServiceClient) CompareRework(ctx context.Context, req *connect.Request[v1.CompareReworkRequest]) (*connect.Response[v1.CompareReworkResponse], error) {
+	return c.compareRework.CallUnary(ctx, req)
+}
+
 // ListSessionActivities calls agentmetry.v1.AgentmetryQueryService.ListSessionActivities.
 func (c *agentmetryQueryServiceClient) ListSessionActivities(ctx context.Context, req *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
 	return c.listSessionActivities.CallUnary(ctx, req)
@@ -195,6 +234,16 @@ func (c *agentmetryQueryServiceClient) ListSessionActivities(ctx context.Context
 // GetTrace calls agentmetry.v1.AgentmetryQueryService.GetTrace.
 func (c *agentmetryQueryServiceClient) GetTrace(ctx context.Context, req *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error) {
 	return c.getTrace.CallUnary(ctx, req)
+}
+
+// GetTraceOverview calls agentmetry.v1.AgentmetryQueryService.GetTraceOverview.
+func (c *agentmetryQueryServiceClient) GetTraceOverview(ctx context.Context, req *connect.Request[v1.GetTraceOverviewRequest]) (*connect.Response[v1.GetTraceOverviewResponse], error) {
+	return c.getTraceOverview.CallUnary(ctx, req)
+}
+
+// GetTraceWindow calls agentmetry.v1.AgentmetryQueryService.GetTraceWindow.
+func (c *agentmetryQueryServiceClient) GetTraceWindow(ctx context.Context, req *connect.Request[v1.GetTraceWindowRequest]) (*connect.Response[v1.GetTraceWindowResponse], error) {
+	return c.getTraceWindow.CallUnary(ctx, req)
 }
 
 // WatchProjectionChanges calls agentmetry.v1.AgentmetryQueryService.WatchProjectionChanges.
@@ -225,10 +274,14 @@ type AgentmetryQueryServiceHandler interface {
 	// Returns server-calculated rework indicators for one source-qualified
 	// session. Raw operation bodies and retained OTLP attributes are excluded.
 	GetSessionRework(context.Context, *connect.Request[v1.GetSessionReworkRequest]) (*connect.Response[v1.GetSessionReworkResponse], error)
+	// Compares diagnostic evidence from two explicitly selected conversations in one snapshot.
+	CompareRework(context.Context, *connect.Request[v1.CompareReworkRequest]) (*connect.Response[v1.CompareReworkResponse], error)
 	// Returns one bounded, cursor-addressed activity page for a session.
 	ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error)
 	// Returns the bounded trace evidence for one trace ID.
 	GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error)
+	GetTraceOverview(context.Context, *connect.Request[v1.GetTraceOverviewRequest]) (*connect.Response[v1.GetTraceOverviewResponse], error)
+	GetTraceWindow(context.Context, *connect.Request[v1.GetTraceWindowRequest]) (*connect.Response[v1.GetTraceWindowResponse], error)
 	// Streams bounded invalidation windows for committed read-model changes.
 	WatchProjectionChanges(context.Context, *connect.Request[v1.WatchProjectionChangesRequest], *connect.ServerStream[v1.WatchProjectionChangesResponse]) error
 	// Returns a bounded commit-ordered mutation page for one session.
@@ -268,6 +321,12 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 		connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetSessionRework")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentmetryQueryServiceCompareReworkHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceCompareReworkProcedure,
+		svc.CompareRework,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("CompareRework")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentmetryQueryServiceListSessionActivitiesHandler := connect.NewUnaryHandler(
 		AgentmetryQueryServiceListSessionActivitiesProcedure,
 		svc.ListSessionActivities,
@@ -278,6 +337,18 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 		AgentmetryQueryServiceGetTraceProcedure,
 		svc.GetTrace,
 		connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTrace")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryQueryServiceGetTraceOverviewHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceGetTraceOverviewProcedure,
+		svc.GetTraceOverview,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTraceOverview")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryQueryServiceGetTraceWindowHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceGetTraceWindowProcedure,
+		svc.GetTraceWindow,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("GetTraceWindow")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentmetryQueryServiceWatchProjectionChangesHandler := connect.NewServerStreamHandler(
@@ -308,10 +379,16 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 			agentmetryQueryServiceGetSessionHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetSessionReworkProcedure:
 			agentmetryQueryServiceGetSessionReworkHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceCompareReworkProcedure:
+			agentmetryQueryServiceCompareReworkHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceListSessionActivitiesProcedure:
 			agentmetryQueryServiceListSessionActivitiesHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetTraceProcedure:
 			agentmetryQueryServiceGetTraceHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceGetTraceOverviewProcedure:
+			agentmetryQueryServiceGetTraceOverviewHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceGetTraceWindowProcedure:
+			agentmetryQueryServiceGetTraceWindowHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceWatchProjectionChangesProcedure:
 			agentmetryQueryServiceWatchProjectionChangesHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceSyncSessionActivitiesProcedure:
@@ -343,12 +420,24 @@ func (UnimplementedAgentmetryQueryServiceHandler) GetSessionRework(context.Conte
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.GetSessionRework is not implemented"))
 }
 
+func (UnimplementedAgentmetryQueryServiceHandler) CompareRework(context.Context, *connect.Request[v1.CompareReworkRequest]) (*connect.Response[v1.CompareReworkResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.CompareRework is not implemented"))
+}
+
 func (UnimplementedAgentmetryQueryServiceHandler) ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.ListSessionActivities is not implemented"))
 }
 
 func (UnimplementedAgentmetryQueryServiceHandler) GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.GetTrace is not implemented"))
+}
+
+func (UnimplementedAgentmetryQueryServiceHandler) GetTraceOverview(context.Context, *connect.Request[v1.GetTraceOverviewRequest]) (*connect.Response[v1.GetTraceOverviewResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.GetTraceOverview is not implemented"))
+}
+
+func (UnimplementedAgentmetryQueryServiceHandler) GetTraceWindow(context.Context, *connect.Request[v1.GetTraceWindowRequest]) (*connect.Response[v1.GetTraceWindowResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.GetTraceWindow is not implemented"))
 }
 
 func (UnimplementedAgentmetryQueryServiceHandler) WatchProjectionChanges(context.Context, *connect.Request[v1.WatchProjectionChangesRequest], *connect.ServerStream[v1.WatchProjectionChangesResponse]) error {

@@ -98,7 +98,7 @@ func (api *API) conversation(response http.ResponseWriter, request *http.Request
 	conversation.Sources = nonNil(conversation.Sources)
 	conversation.TraceIDs = nonNil(conversation.TraceIDs)
 	conversation.Agents = nonNil(conversation.Agents)
-	conversation.Activities = nonNil(conversation.Activities)
+	conversation.Activities = activitiesForResponse(conversation.Activities)
 	writeJSON(response, http.StatusOK, struct {
 		Version      string        `json:"version"`
 		Conversation query.Session `json:"conversation"`
@@ -110,6 +110,14 @@ func (api *API) trace(response http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		writeJSONError(response, http.StatusBadRequest, err)
 		return
+	}
+	var spanID query.SpanID
+	if value := request.URL.Query().Get("spanId"); value != "" {
+		spanID, err = query.ParseSpanID(value)
+		if err != nil {
+			writeJSONError(response, http.StatusBadRequest, err)
+			return
+		}
 	}
 	offset, err := pageInteger(request, "offset", 0)
 	if err != nil || offset < 0 {
@@ -126,8 +134,8 @@ func (api *API) trace(response http.ResponseWriter, request *http.Request) {
 		writeJSONError(response, http.StatusBadRequest, err)
 		return
 	}
-	trace, err := api.reader.GetTrace(request.Context(), query.TraceFilter{TraceID: traceID, Page: page})
-	if errors.Is(err, query.ErrTraceNotFound) {
+	trace, err := api.reader.GetTrace(request.Context(), query.TraceFilter{TraceID: traceID, SpanID: spanID, Page: page})
+	if errors.Is(err, query.ErrTraceNotFound) || errors.Is(err, query.ErrTraceTargetNotFound) {
 		writeJSONError(response, http.StatusNotFound, err)
 		return
 	}
@@ -137,7 +145,7 @@ func (api *API) trace(response http.ResponseWriter, request *http.Request) {
 	}
 	trace.Conversations = nonNil(trace.Conversations)
 	trace.Agents = nonNil(trace.Agents)
-	trace.Activities = nonNil(trace.Activities)
+	trace.Activities = activitiesForResponse(trace.Activities)
 	writeJSON(response, http.StatusOK, struct {
 		Version string      `json:"version"`
 		Trace   query.Trace `json:"trace"`
@@ -194,7 +202,7 @@ func (api *API) sessionActivities(response http.ResponseWriter, request *http.Re
 			Total      int64            `json:"total"`
 			HasMore    bool             `json:"hasMore"`
 		}{
-			Activities: session.Activities,
+			Activities: activitiesForResponse(session.Activities),
 			Total:      session.ActivityCount,
 			HasMore:    int64(filter.ActivityOffset+len(session.Activities)) < session.ActivityCount,
 		})
@@ -268,6 +276,13 @@ func (api *API) overview(response http.ResponseWriter, request *http.Request) {
 		writeJSONError(response, http.StatusInternalServerError, fmt.Errorf("overview unavailable"))
 		return
 	}
+	overview.RecentActivity = activitiesForResponse(overview.RecentActivity)
+	sessions := make([]query.Session, len(overview.Sessions))
+	copy(sessions, overview.Sessions)
+	for i := range sessions {
+		sessions[i].Activities = activitiesForResponse(sessions[i].Activities)
+	}
+	overview.Sessions = sessions
 	writeJSON(response, http.StatusOK, struct {
 		Version  string         `json:"version"`
 		Overview query.Overview `json:"overview"`
@@ -317,4 +332,17 @@ func writeJSONError(response http.ResponseWriter, status int, err error) {
 	writeJSON(response, status, struct {
 		Error string `json:"error"`
 	}{Error: err.Error()})
+}
+
+// Copy projected values before adding delivery metadata so response mapping never
+// changes query data that another read or analysis may share.
+func activitiesForResponse(values []query.Activity) []query.Activity {
+	result := make([]query.Activity, len(values))
+	for i, value := range values {
+		body, evidence := query.ContentForDelivery(value)
+		value.Content = body
+		value.ContentEvidence = &evidence
+		result[i] = value
+	}
+	return result
 }

@@ -1,11 +1,8 @@
 import type { ConversationTarget } from "../model/trace-analysis";
-import type { TimeRange } from "../model/telemetry";
+import { conditionParameters, filtersFromParameters, type InvestigationFilters } from "../model/investigation-conditions";
+import { parseTraceInvestigationState, type TraceInvestigationState } from "../model/trace-investigation";
 
-export type NavigationFilters = Readonly<{
-  range: TimeRange;
-  sourceId: string;
-  search: string;
-}>;
+export type NavigationFilters = InvestigationFilters;
 
 export type NavigationOrigin = Readonly<{
   kind: "conversation" | "trace";
@@ -15,6 +12,10 @@ export type NavigationOrigin = Readonly<{
 
 export type NavigationViewState = Readonly<{
   selectedAgentId?: string;
+  purpose?: "execution" | "rework" | "comparison";
+  selectedActivityId?: string;
+  traceInvestigation?: TraceInvestigationState;
+  evidenceFocus?: Readonly<{ kind: "episode" | "activity"; traceId: string; spanId: string }>;
   scrollY?: number;
 }>;
 
@@ -23,20 +24,7 @@ export type NavigationState = Readonly<{
   view?: NavigationViewState;
 }>;
 
-const DEFAULT_FILTERS: NavigationFilters = {
-  range: "24h",
-  sourceId: "",
-  search: "",
-};
-
-export const filtersFromLocation = (location: Pick<URL, "searchParams">): NavigationFilters => {
-  const range = location.searchParams.get("range");
-  return {
-    range: range === "1h" || range === "7d" ? range : DEFAULT_FILTERS.range,
-    sourceId: location.searchParams.get("source") ?? DEFAULT_FILTERS.sourceId,
-    search: location.searchParams.get("q") ?? DEFAULT_FILTERS.search,
-  };
-};
+export const filtersFromLocation = (location: Pick<URL, "searchParams">): NavigationFilters => filtersFromParameters(location.searchParams);
 
 export const dashboardLocation = (filters: NavigationFilters) => withFilters("/", filters);
 
@@ -55,8 +43,11 @@ export const conversationLocation = (
   );
 };
 
-export const traceLocation = (traceId: string, filters: NavigationFilters) =>
-  withFilters(`/traces/${encodeURIComponent(traceId)}`, filters);
+export const traceLocation = (traceId: string, filters: NavigationFilters, spanId?: string) => {
+  const query = filterParameters(filters);
+  if (spanId) query.set("spanId", spanId);
+  return withQuery(`/traces/${encodeURIComponent(traceId)}`, query);
+};
 
 export const navigationOriginFromState = (state: unknown): NavigationOrigin | undefined => {
   if (!state || typeof state !== "object" || !("origin" in state)) return undefined;
@@ -78,19 +69,20 @@ export const navigationViewStateFromState = (state: unknown): NavigationViewStat
   if (!view || typeof view !== "object") return undefined;
   const candidate = view as Partial<NavigationViewState>;
   const selectedAgentId = typeof candidate.selectedAgentId === "string" ? candidate.selectedAgentId : undefined;
+  const purpose = candidate.purpose === "execution" || candidate.purpose === "rework" || candidate.purpose === "comparison" ? candidate.purpose : undefined;
+  const selectedActivityId = typeof candidate.selectedActivityId === "string" ? candidate.selectedActivityId : undefined;
   const scrollY = typeof candidate.scrollY === "number" && Number.isFinite(candidate.scrollY) && candidate.scrollY >= 0
     ? candidate.scrollY
     : undefined;
-  return selectedAgentId === undefined && scrollY === undefined ? undefined : { selectedAgentId, scrollY };
+  const focus = candidate.evidenceFocus;
+  const traceInvestigation = parseTraceInvestigationState(candidate.traceInvestigation);
+  const evidenceFocus = focus && (focus.kind === "episode" || focus.kind === "activity")
+    && typeof focus.traceId === "string" && typeof focus.spanId === "string" && focus.traceId && focus.spanId ? focus : undefined;
+  return selectedAgentId === undefined && scrollY === undefined && evidenceFocus === undefined && purpose === undefined && selectedActivityId === undefined && traceInvestigation === undefined
+    ? undefined : { selectedAgentId, scrollY, ...(purpose ? { purpose } : {}), ...(selectedActivityId !== undefined ? { selectedActivityId } : {}), ...(evidenceFocus ? { evidenceFocus } : {}), ...(traceInvestigation ? { traceInvestigation } : {}) };
 };
 
-const filterParameters = (filters: NavigationFilters) => {
-  const query = new URLSearchParams();
-  if (filters.range !== DEFAULT_FILTERS.range) query.set("range", filters.range);
-  if (filters.sourceId) query.set("source", filters.sourceId);
-  if (filters.search) query.set("q", filters.search);
-  return query;
-};
+const filterParameters = conditionParameters;
 
 const withFilters = (path: string, filters: NavigationFilters) => withQuery(path, filterParameters(filters));
 

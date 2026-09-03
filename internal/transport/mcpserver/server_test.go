@@ -2,9 +2,11 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/kotokumu/agentmetry/internal/canonical"
 	"github.com/kotokumu/agentmetry/internal/product"
 	"github.com/kotokumu/agentmetry/internal/query"
@@ -13,10 +15,12 @@ import (
 type readerStub struct {
 	dashboardFilter query.DashboardFilter
 	sessionFilter   query.SessionListFilter
+	sessionPage     query.SessionPage
 	activityFilter  query.ActivityPageFilter
 	activityPage    query.ActivityPage
 	traceFilter     query.TraceFilter
 	trace           query.Trace
+	traceErr        error
 	summary         query.Session
 	summaryErr      error
 }
@@ -40,7 +44,7 @@ func (reader *readerStub) GetDashboard(_ context.Context, filter query.Dashboard
 
 func (reader *readerStub) ListSessions(_ context.Context, filter query.SessionListFilter) (query.SessionPage, error) {
 	reader.sessionFilter = filter
-	return query.SessionPage{}, nil
+	return reader.sessionPage, nil
 }
 
 func (reader *readerStub) GetSessionSummary(_ context.Context, _ query.ConversationIdentity) (query.Session, error) {
@@ -54,7 +58,7 @@ func (reader *readerStub) ListSessionActivities(_ context.Context, filter query.
 
 func (reader *readerStub) GetTrace(_ context.Context, filter query.TraceFilter) (query.Trace, error) {
 	reader.traceFilter = filter
-	return reader.trace, nil
+	return reader.trace, reader.traceErr
 }
 
 func TestGetOverviewUsesSharedRangeAndQueryContract(t *testing.T) {
@@ -78,6 +82,30 @@ func TestGetOverviewUsesSharedRangeAndQueryContract(t *testing.T) {
 	}
 	if output.Overview.SignalCounts.Traces != 4 {
 		t.Fatalf("unexpected output: %#v", output)
+	}
+	conditions := query.SessionConditions{ObservedFailure: true, MinDurationMS: new(10.25), MaxDurationMS: new(200.5), Model: "fixture-model", Tool: "exec_command"}
+	reader.sessionPage.AppliedConditions = &conditions
+	_, filtered, err := service.getOverview(context.Background(), nil, OverviewInput{Range: "7d", Source: "codex", Search: "needle", Conditions: conditions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(conditions, reader.sessionFilter.Conditions); diff != "" {
+		t.Errorf("conditions not forwarded: %s", diff)
+	}
+	if diff := cmp.Diff(&conditions, filtered.AppliedConditions); diff != "" {
+		t.Errorf("applied conditions mismatch: %s", diff)
+	}
+	reader.sessionPage.AppliedConditions = nil
+	_, unacknowledged, err := service.getOverview(context.Background(), nil, OverviewInput{Conditions: conditions})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if unacknowledged.AppliedConditions != nil {
+		t.Error("adapter invented condition acknowledgement")
+	}
+	_, _, err = service.getOverview(context.Background(), nil, OverviewInput{Conditions: query.SessionConditions{MinDurationMS: new(2.0), MaxDurationMS: new(1.0)}})
+	if err == nil {
+		t.Error("inverted condition range succeeded")
 	}
 }
 
@@ -108,6 +136,25 @@ func TestGetTraceReturnsCompleteTraceAndPreservesTypedUsage(t *testing.T) {
 	}
 	if output.Trace.Conversations == nil || output.Trace.Agents == nil {
 		t.Fatalf("trace collections must be non-nil arrays: %#v", output.Trace)
+	}
+
+	reader.trace.Activities[0].Content = "captured body"
+	_, output, err = service.getTrace(context.Background(), nil, TraceInput{
+		TraceID: traceID, AnchorSpanID: "ABCDEFABCDEFABCD", PageSize: 3, PageToken: encodePageToken(110),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.traceFilter.SpanID.String() != "abcdefabcdefabcd" || reader.traceFilter.Page.Size() != 3 || reader.traceFilter.Page.Offset() != 110 {
+		t.Errorf("native span anchor mapping: %#v", reader.traceFilter)
+	}
+	if output.Trace.Activities[0].Content != "" || output.Trace.Activities[0].ContentState != "not_returned" {
+		t.Errorf("anchored read changed content default: %#v", output.Trace.Activities[0])
+	}
+	reader.traceErr = query.ErrTraceTargetNotFound
+	_, _, err = service.getTrace(context.Background(), nil, TraceInput{TraceID: traceID, AnchorSpanID: "abcdefabcdefabcd"})
+	if !errors.Is(err, query.ErrTraceTargetNotFound) {
+		t.Errorf("target-not-found was not preserved: %v", err)
 	}
 }
 
@@ -140,6 +187,18 @@ func TestGetTraceRejectsInvalidOTLPIdentity(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected invalid trace ID error")
+	}
+
+	for _, input := range []TraceInput{
+		{TraceID: "11111111111111111111111111111111", AnchorSpanID: "not-a-span"},
+		{TraceID: "11111111111111111111111111111111", AnchorSpanID: "0000000000000000"},
+		{TraceID: "11111111111111111111111111111111", AnchorSpanID: "ABCDEFABCDEFABCD", PageSize: 101},
+	} {
+		reader := &readerStub{}
+		_, _, err := testService(reader, time.Now).getTrace(context.Background(), nil, input)
+		if err == nil || reader.traceFilter.TraceID.String() != "" {
+			t.Errorf("invalid anchor input reached reader or missing error: %#v %v", input, err)
+		}
 	}
 }
 
@@ -247,5 +306,45 @@ func TestGetRunTimelineRejectsUnsupportedDirection(t *testing.T) {
 
 	if err == nil {
 		t.Fatal("expected unsupported direction error")
+	}
+}
+
+func Test_mapActivityWithContent(t *testing.T) {
+	type args struct {
+		activity       query.Activity
+		includeContent bool
+	}
+	tests := []struct {
+		name string
+		args args
+		want ActivityOutput
+	}{
+		{
+			name: "default read omits body and all attribute values",
+			args: args{activity: query.Activity{ID: "a", Source: "codex", Signal: "log", Content: "Result: body sentinel", Attributes: map[string]any{"output": "body sentinel", "secret": "attribute sentinel"}}},
+			want: ActivityOutput{Source: "codex", Signal: "log", ContentState: "not_returned", ContentEvidence: query.ContentEvidence{Source: "codex", ActivityID: "a", Signal: "log", Kind: "tool_output", Evidence: "read_output", Availability: "not_returned", Fields: []string{"output"}}},
+		},
+		{
+			name: "explicit read returns body with shared evidence",
+			args: args{activity: query.Activity{ID: "a", Source: "codex", Signal: "log", Content: "Result: body sentinel", Attributes: map[string]any{"output": "body sentinel", "secret": "attribute sentinel"}}, includeContent: true},
+			want: ActivityOutput{Source: "codex", Signal: "log", Content: "Result: body sentinel", ContentState: "available", ContentEvidence: query.ContentEvidence{Source: "codex", ActivityID: "a", Signal: "log", Kind: "tool_output", Evidence: "read_output", Availability: "available", Fields: []string{"output"}}},
+		},
+		{
+			name: "explicit read does not promote a redaction marker to a body",
+			args: args{activity: query.Activity{ID: "a", Source: "codex", Signal: "log", Content: "[REDACTED]", Attributes: map[string]any{"prompt": "[REDACTED]"}}, includeContent: true},
+			want: ActivityOutput{Source: "codex", Signal: "log", ContentState: "unavailable", ContentEvidence: query.ContentEvidence{Source: "codex", ActivityID: "a", Signal: "log", Kind: "prompt", Evidence: "unknown", Availability: "redacted", Fields: []string{"prompt"}, RedactionReason: "producer_redacted"}},
+		},
+		{
+			name: "explicit reference text does not imply body availability",
+			args: args{activity: query.Activity{ID: "a", Source: "claude", Signal: "log", Content: "file:///private/request.json", Attributes: map[string]any{"body_ref": "file:///private/request.json"}}, includeContent: true},
+			want: ActivityOutput{Source: "claude", Signal: "log", Content: "file:///private/request.json", ContentState: "available", ContentEvidence: query.ContentEvidence{Source: "claude", ActivityID: "a", Signal: "log", Kind: "reference", Evidence: "reference", Availability: "not_reported", Fields: []string{"body_ref"}}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := mapActivityWithContent(tt.args.activity, tt.args.includeContent); !cmp.Equal(tt.want, got) {
+				t.Errorf("mapActivityWithContent() = %v, want %v\ndiff=%s", got, tt.want, cmp.Diff(tt.want, got))
+			}
+		})
 	}
 }

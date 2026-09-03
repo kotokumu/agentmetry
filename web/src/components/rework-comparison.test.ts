@@ -1,6 +1,8 @@
+import { comparisonWire } from "../test-fixtures/rework-comparison";
+import { mapReworkComparison } from "../api/agentmetry-client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildReworkComparisonReport, type ReworkComparisonViewState } from "../model/rework-comparison";
-import type { ReworkAnalysis, Session, TokenUsage } from "../model/telemetry";
+import { type ReworkComparisonViewState } from "../model/rework-comparison";
+import type { Session, TokenUsage } from "../model/telemetry";
 import "./rework-comparison";
 import type { ReworkComparison } from "./rework-comparison";
 
@@ -9,33 +11,11 @@ const session = (id: string, startedAt: string, endedAt: string): Session => ({
   id, sourceId: "codex", sources: [{ id: "codex", label: "Codex" }], traceIds: [], startedAt, endedAt,
   activityCount: 0, tokens: tokens(1_000), agents: [], activities: [],
 });
-const analysis = (sessionId: string, current = false): ReworkAnalysis => ({
-  sourceId: "codex", sessionId,
-  sessionTokens: tokens(1_000),
-  harness: { availability: "available", state: "uniform", counts: { eligibleRecords: 4, reportedRecords: 4, unreportedRecords: 0, invalidRecords: 0, distinctIdentities: 1 }, identity: { scope: "project-7f2a", fingerprint: current ? "sha256:dfbc1de58f3b905c7b0c0fd79361699336b5f9da617b1db8f35c76673f95b29d" : "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", label: current ? "AGENTS v2" : "AGENTS v1" } },
-  metrics: {
-    validationFailures: 0, failFixRetryCycles: 0,
-    reworkDurationMs: current ? 100 : 400, totalAgentEffortMs: 1_000, reworkAgentEffortRate: current ? 0.1 : 0.4,
-    reworkTokens: tokens(current ? 200 : 400), toolAttemptsWithOutcome: 4, toolFailures: current ? 1 : 2,
-    toolFailureRate: current ? 0.25 : 0.5, apiRetryWaste: { attempts: 0, durationMs: 0, tokens: tokens(null) },
-    repeatedCommands: 0, reeditedFiles: 0, validationAttemptsWithOutcome: current ? 5 : 4,
-    firstPassEligibleValidations: 4, firstPassSuccesses: current ? 3 : 1, firstPassSuccessRate: current ? 0.75 : 0.25,
-    recurringFailureLoops: current ? 1 : 2, repeatedFailureAttempts: 0, resolvedFailureLoops: 0, unresolvedFailureLoops: 0,
-    failureResolutionDurationMs: 0, failureResolutionTokens: tokens(null),
-  },
-  coverage: {
-    activityCoverage: current ? "partial_page" : "observed_projection_complete", canonicalEvents: 1, classifiedEvents: 1, knownOutcomes: 1,
-    validationAttempts: 4, fingerprintedFailures: 0, identifiedValidationAttempts: 4, idBackedValidationAttempts: 4,
-    mergedValidationAttempts: 0, uncorrelatedValidationObservations: 0, conflictingAttemptObservations: 0, ambiguousFailureAttempts: 0,
-  },
-  capabilities: {
-    changeRevert: { state: "unavailable", reason: "" }, crossAgentOverlap: { state: "unavailable", reason: "" },
-  },
-  failureEpisodes: [],
-});
-
 const readyState = (baseline: Session, current: Session): ReworkComparisonViewState => {
-  const report = buildReworkComparisonReport(baseline, analysis(baseline.id), current, analysis(current.id, true));
+  const wire = comparisonWire();
+  wire.baseline!.sessionId = baseline.id;
+  wire.current!.sessionId = current.id;
+  const report = mapReworkComparison(wire);
   if (report.status !== "ready") throw new Error(report.reason);
   return {
     status: "ready",
@@ -50,6 +30,22 @@ const readyState = (baseline: Session, current: Session): ReworkComparisonViewSt
 afterEach(() => document.body.replaceChildren());
 
 describe("am-rework-comparison", () => {
+  it("rounds a tiny raw delta only for display without a misleading sign", async () => {
+    const wire = comparisonWire();
+    wire.rows[0].delta = 0.04;
+    const report = mapReworkComparison(wire);
+    if (report.status !== "ready") throw new Error("expected ready");
+    const panel = document.createElement("am-rework-comparison") as ReworkComparison;
+    panel.state = { ...report, options: [], selectedBaselineId: "before" };
+    document.body.append(panel);
+    await panel.updateComplete;
+    const change = panel.shadowRoot?.querySelector(".change");
+    expect(change?.classList.contains("unchanged")).toBe(true);
+    expect(change?.textContent).toContain("0.0 pp");
+    expect(change?.textContent).not.toContain("+0.0");
+    expect(report.rows[0].availability === "comparable" ? report.rows[0].delta : null).toBe(0.04);
+  });
+
   it("renders normalized before/after rows, evidence, explanations, and projection warnings", async () => {
     const baseline = session("baseline-session-123456", "2026-08-17T08:00:00Z", "2026-08-17T09:00:00Z");
     const current = session("current-session-123456", "2026-08-17T10:00:00Z", "2026-08-17T11:00:00Z");

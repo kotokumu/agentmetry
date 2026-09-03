@@ -1,3 +1,6 @@
+import { toJson } from "@bufbuild/protobuf";
+import { CompareReworkResponseSchema } from "../gen/agentmetry/v1/agentmetry_pb";
+import { comparisonWire } from "../test-fixtures/rework-comparison";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Code, ConnectError } from "@connectrpc/connect";
 import "./agentmetry-app";
@@ -88,6 +91,33 @@ const activitiesResponse = (session: TestSession, agentId = "") => ({
   total: session.activityCount,
 });
 
+const traceOverviewResponse = (trace: { traceId: string; startedAt: string; endedAt: string; activities: readonly Record<string, unknown>[] }) => ({
+  traceId: trace.traceId,
+  startedAt: trace.startedAt,
+  endedAt: trace.endedAt,
+  totalActivities: String(trace.activities.length),
+  returnedActivities: String(trace.activities.length),
+  coverage: "complete",
+  activities: trace.activities.map((activity, index) => ({
+    id: activity.id ?? `overview-${index}`,
+    source: activity.source ?? "",
+    signal: activity.signal ?? "",
+    spanId: activity.spanId ?? "",
+    parentSpanId: activity.parentSpanId ?? "",
+    name: activity.name ?? "",
+    kind: activity.kind ?? "unknown",
+    status: activity.status ?? "",
+    startedAt: activity.startedAt ?? activity.observedAt,
+    endedAt: activity.endedAt ?? activity.observedAt,
+    missingParent: false,
+  })),
+});
+
+const traceWindowResponse = (trace: { activities: readonly unknown[] } & Record<string, unknown>) => ({
+  trace: { ...trace, totalActivities: String(trace.activities.length), page: { startOffset: "0", hasMore: false } },
+  matchingActivities: String(trace.activities.length),
+});
+
 const reworkResponse = (session: TestSession) => ({
   sourceId: session.sourceId,
   sessionId: session.id,
@@ -144,7 +174,7 @@ const traceRootOf = (app: AgentmetryApp) => traceExplorerOf(app)?.shadowRoot;
 const dashboardOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<DashboardSummary>("am-dashboard-summary");
 
 const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
-  const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { agentId?: string; sessionId?: string } : {};
+  const body = init?.body ? JSON.parse(new TextDecoder().decode(init.body as Uint8Array)) as { agentId?: string; sessionId?: string; baseline?: { sourceId: string; sessionId: string }; current?: { sourceId: string; sessionId: string } } : {};
   const requestedSession = overview.sessions.find(({ id }) => id === body.sessionId) ?? overview.sessions[0];
   switch (connectPath(url).split("/").at(-1)) {
     case "GetDashboard": return connectResponse(dashboardResponse(overview));
@@ -152,6 +182,12 @@ const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(asy
     case "GetSession": return connectResponse(requestedSession ? { session: sessionSummary(requestedSession), traceIds: requestedSession.traceIds ?? [] } : {});
     case "ListSessionActivities": return connectResponse(requestedSession ? activitiesResponse(requestedSession, body.agentId) : { activities: [], page: { hasMore: false }, total: 0 });
     case "GetSessionRework": return connectResponse(requestedSession ? reworkResponse(requestedSession) : {});
+    case "CompareRework": {
+      const wire = comparisonWire();
+      Object.assign(wire.baseline!, body.baseline);
+      Object.assign(wire.current!, body.current);
+      return connectResponse(toJson(CompareReworkResponseSchema, wire));
+    }
     default: return connectResponse({});
   }
 });
@@ -164,6 +200,38 @@ afterEach(() => {
 });
 
 describe("Agentmetry app composition", () => {
+  it("applies acknowledged full conditions and preserves the last query on unsupported or invalid drafts", async () => {
+    const stub = overviewFetch(emptyOverview);
+    vi.stubGlobal("fetch", stub);
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(workspaceOf(app)).toBeTruthy());
+    const request = (filters: object) => workspaceOf(app)!.dispatchEvent(new CustomEvent("investigation-filters-requested", { detail: { filters }, bubbles: true, composed: true }));
+    const filters = { range: "24h", sourceId: "codex", search: "test", observedFailure: true, minDurationMs: 0, maxDurationMs: 2000, model: "model-a", tool: "Read" };
+    request(filters);
+    await vi.waitFor(() => expect(workspaceOf(app)?.filterError).toContain("support"));
+    expect(location.search).toBe("");
+    const previous = stub.getMockImplementation()!;
+    stub.mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      if (connectPath(url).endsWith("/ListSessions")) {
+        const body = JSON.parse(new TextDecoder().decode(init?.body as Uint8Array));
+        return connectResponse({ sessions: [], page: {}, appliedConditions: body.conditions });
+      }
+      return previous(url, init);
+    });
+    request(filters);
+    await vi.waitFor(() => expect(location.search).toContain("tool=Read"));
+    expect(new URL(location.href).searchParams.get("source")).toBe("codex");
+    expect(new URL(location.href).searchParams.get("q")).toBe("test");
+    const appliedURL = location.href;
+    request({ ...filters, minDurationMs: 3000 });
+    await vi.waitFor(() => expect(workspaceOf(app)?.filterError).toContain("Minimum"));
+    expect(location.href).toBe(appliedURL);
+    history.back();
+    await vi.waitFor(() => expect(location.search).toBe(""));
+    expect(workspaceOf(app)?.conditions).toEqual({});
+  });
+
   it("shows normalized rework indicators in the selected conversation", async () => {
     const overview = {
       ...emptyOverview,
@@ -664,6 +732,20 @@ describe("Agentmetry app composition", () => {
     expect(table?.activities[0]?.agentId).toBe("reviewer");
     expect(workspaceRootOf(app)?.textContent).toContain("Filtered by");
 
+    table?.dispatchEvent(new CustomEvent("activity-selected", { detail: { activityId: "review-activity" }, bubbles: true, composed: true }));
+    workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='rework']")?.click();
+    await vi.waitFor(() => expect(history.state?.view?.purpose).toBe("rework"));
+    expect(history.state.view.selectedAgentId).toBe("reviewer");
+    expect(history.state.view.selectedActivityId).toBe("review-activity");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<HTMLElement>(".operations-panel")?.hidden).toBe(true));
+    workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='comparison']")?.click();
+    await vi.waitFor(() => expect(history.state?.view?.purpose).toBe("comparison"));
+    history.back();
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("[data-purpose='rework']")?.getAttribute("aria-pressed")).toBe("true"));
+    expect(history.state.view.selectedActivityId).toBe("review-activity");
+    workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='execution']")?.click();
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<HTMLElement>(".operations-panel")?.hidden).toBe(false));
+
     const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
     const scrollY = vi.spyOn(window, "scrollY", "get").mockReturnValue(420);
     workspaceOf(app)?.dispatchEvent(new CustomEvent("session-selected", {
@@ -788,6 +870,8 @@ describe("Agentmetry app composition", () => {
         case "GetSession": return connectResponse({ session: sessionSummary(overview.sessions[0] as TestSession), traceIds: [activity.traceId] });
         case "ListSessionActivities": return connectResponse(activitiesResponse(overview.sessions[0] as TestSession));
         case "GetTrace": return connectResponse(trace);
+        case "GetTraceOverview": return connectResponse(traceOverviewResponse(trace));
+        case "GetTraceWindow": return connectResponse(traceWindowResponse(trace));
         default: return connectResponse({});
       }
     });
@@ -798,13 +882,15 @@ describe("Agentmetry app composition", () => {
 
     const activityTable = workspaceRootOf(app)?.querySelector("am-activity-table");
     const traceLink = activityTable?.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace");
-    expect(traceLink?.getAttribute("href")).toBe("/traces/trace-123456789");
+    expect(traceLink?.getAttribute("href")).toBe("/traces/trace-123456789?spanId=span-1");
     traceLink?.click();
 
     await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetTrace"))).toBe(true));
     await vi.waitFor(() => expect(traceRootOf(app)?.textContent).toContain("Trace explorer"));
     await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-summary")).not.toBeNull());
     expect(traceRootOf(app)?.querySelector("am-trace-waterfall")).not.toBeNull();
+    expect(location.search).toBe("?spanId=span-1");
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-waterfall")?.shadowRoot?.querySelector('details[aria-current="location"]')?.textContent).toContain("root operation"));
     expect(location.pathname).toBe("/traces/trace-123456789");
 
     const closeLink = traceRootOf(app)?.querySelector<HTMLAnchorElement>("a.trace-close");
@@ -820,7 +906,7 @@ describe("Agentmetry app composition", () => {
     await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("Selected conversation"));
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("a.context-return")).not.toBeNull());
     const traceReturn = workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.context-return");
-    expect(traceReturn?.getAttribute("href")).toBe("/traces/trace-123456789");
+    expect(traceReturn?.getAttribute("href")).toBe("/traces/trace-123456789?spanId=span-1");
     expect(traceReturn?.textContent).toContain("Trace trace-123456789");
     traceReturn?.click();
     await vi.waitFor(() => expect(location.pathname).toBe("/traces/trace-123456789"));
@@ -834,8 +920,62 @@ describe("Agentmetry app composition", () => {
     expect(location.pathname).toBe("/conversations/claude/conversation-1");
     expect(location.search).toBe("?traceId=trace-123456789&spanId=span-1");
     expect(workspaceRootOf(app)?.querySelector(".workspace")?.getAttribute("data-view")).toBe("detail");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-activity-table")?.shadowRoot?.activeElement?.classList.contains("trace")).toBe(true));
     scrollTo.mockRestore();
     scrollY.mockRestore();
+  });
+
+  it("returns from the fourth episode to its source, agent, filters and focused link", async () => {
+    history.replaceState({ view: { selectedAgentId: "reviewer" } }, "", "/conversations/codex/origin?range=7d&source=codex&q=failed");
+    const conversation: TestSession = {
+      id: "origin", sourceId: "codex", sources: [], startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z",
+      activityCount: 1, tokens: emptyOverview.tokens,
+      agents: [{ agentId: "reviewer", activityCount: 1, tokens: emptyOverview.tokens }], activities: [],
+    };
+    const overview = { ...emptyOverview, sessions: [conversation] } as TestOverview;
+    const fetchOverview = overviewFetch(overview);
+    const report = reworkResponse(conversation);
+    const episodes = Array.from({ length: 5 }, (_, index) => ({ ...report.failureEpisodes[0], traceId: "trace-1", spanId: `span-${index + 1}`, failureAttempts: 10 - index }));
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      if (connectPath(url).endsWith("/GetSessionRework")) return connectResponse({ ...report, failureEpisodes: episodes });
+      if (connectPath(url).endsWith("/GetTrace")) return connectResponse({ traceId: "trace-1", startedAt: conversation.startedAt, endedAt: conversation.endedAt, activities: [{
+        source: "codex", signal: "trace", traceId: "trace-1", spanId: "span-4", name: "fourth failure", kind: "tool", runId: "origin", agentId: "reviewer", content: "fourth body", observedAt: conversation.startedAt,
+      }] });
+      if (connectPath(url).endsWith("/GetTraceOverview")) return connectResponse(traceOverviewResponse({ traceId: "trace-1", startedAt: conversation.startedAt, endedAt: conversation.endedAt, activities: [{
+        source: "codex", signal: "trace", traceId: "trace-1", spanId: "span-4", name: "fourth failure", kind: "tool", observedAt: conversation.startedAt,
+      }] }));
+      if (connectPath(url).endsWith("/GetTraceWindow")) return connectResponse(traceWindowResponse({ traceId: "trace-1", startedAt: conversation.startedAt, endedAt: conversation.endedAt, activities: [{
+        source: "codex", signal: "trace", traceId: "trace-1", spanId: "span-4", name: "fourth failure", kind: "tool", runId: "origin", agentId: "reviewer", content: "fourth body", observedAt: conversation.startedAt,
+      }] }));
+      return fetchOverview(url, init);
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.querySelector(".show-more")).toBeTruthy());
+    const summary = workspaceRootOf(app)?.querySelector("am-rework-summary");
+    summary?.shadowRoot?.querySelector<HTMLButtonElement>(".show-more")?.click();
+    await vi.waitFor(() => expect(summary?.shadowRoot?.querySelector('a[data-span-id="span-4"]')).toBeTruthy());
+    summary?.shadowRoot?.querySelector<HTMLAnchorElement>('a[data-span-id="span-4"]')?.click();
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-waterfall")?.shadowRoot?.textContent).toContain("fourth body"));
+    expect(location.search).toBe("?range=7d&source=codex&q=failed&spanId=span-4");
+    traceRootOf(app)?.querySelector<HTMLAnchorElement>("a.trace-close")?.click();
+    await vi.waitFor(() => expect(location.pathname).toBe("/conversations/codex/origin"));
+    expect(location.search).toBe("?range=7d&source=codex&q=failed");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.activeElement?.getAttribute("data-span-id")).toBe("span-4"));
+    expect(workspaceRootOf(app)?.textContent).toContain("Filtered by");
+    expect(workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.textContent).toContain("Partial evidence");
+  });
+
+  it("keeps the return action when exact evidence is unavailable", async () => {
+    history.replaceState({ origin: { kind: "conversation", href: "/conversations/codex/origin?range=7d", label: "Origin conversation" } }, "", "/traces/known-trace?range=7d&spanId=missing-span");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string) => connectResponse(
+      connectPath(url).endsWith("/GetTrace") ? { traceId: "known-trace", activities: [] } : {},
+    )));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector('[role="alert"]')?.textContent).toContain("missing-span"));
+    expect(traceRootOf(app)?.querySelector('details[aria-current="location"]')).toBeNull();
+    expect(traceRootOf(app)?.querySelector("a.trace-close")?.getAttribute("href")).toBe("/conversations/codex/origin?range=7d");
   });
 
   it("loads a trace from a reload-safe deep link", async () => {
@@ -864,6 +1004,8 @@ describe("Agentmetry app composition", () => {
         case "GetDashboard": return connectResponse(dashboardResponse(overview));
         case "ListSessions": return connectResponse(sessionsResponse(overview));
         case "GetTrace": return connectResponse(trace);
+        case "GetTraceOverview": return connectResponse(traceOverviewResponse(trace));
+        case "GetTraceWindow": return connectResponse(traceWindowResponse(trace));
         default: return connectResponse({});
       }
     });
@@ -871,7 +1013,8 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
-    await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetTrace"))).toBe(true));
+    await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetTraceOverview"))).toBe(true));
+    expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetTraceWindow"))).toBe(true);
     await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-summary")?.shadowRoot?.textContent).toContain("direct-trace"));
     expect(dashboardOf(app)).toBeNull();
     expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetDashboard"))).toBe(false);

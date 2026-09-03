@@ -24,12 +24,16 @@ service AgentmetryQueryService {
   // Returns server-calculated rework indicators for one source-qualified
   // session. Raw operation bodies and retained OTLP attributes are excluded.
   rpc GetSessionRework(GetSessionReworkRequest) returns (GetSessionReworkResponse);
+  // Compares diagnostic evidence from two explicitly selected conversations in one snapshot.
+  rpc CompareRework(CompareReworkRequest) returns (CompareReworkResponse);
 
   // Returns one bounded, cursor-addressed activity page for a session.
   rpc ListSessionActivities(ListSessionActivitiesRequest) returns (ListSessionActivitiesResponse);
 
   // Returns the bounded trace evidence for one trace ID.
   rpc GetTrace(GetTraceRequest) returns (GetTraceResponse);
+  rpc GetTraceOverview(GetTraceOverviewRequest) returns (GetTraceOverviewResponse);
+  rpc GetTraceWindow(GetTraceWindowRequest) returns (GetTraceWindowResponse);
 
   // Streams bounded invalidation windows for committed read-model changes.
   rpc WatchProjectionChanges(WatchProjectionChangesRequest) returns (stream WatchProjectionChangesResponse);
@@ -125,6 +129,25 @@ message Activity {
   string usage_id = 26;
   string related_trace_id = 27;
   string related_span_id = 28;
+  ContentEvidence content_evidence = 30;
+  // Present for native trace activities returned by GetTraceWindow. False
+  // means the parent was retained (or the activity is a root); absent means
+  // this relationship was not assessed by the endpoint.
+  optional bool missing_parent = 31;
+}
+
+// Bounded description of received projected content, never the original
+// attributes, body, reference value, or encrypted payload.
+message ContentEvidence {
+  string source = 1;
+  string activity_id = 2;
+  string signal = 3;
+  string kind = 4;
+  string evidence = 5;
+  string availability = 6;
+  repeated string fields = 7;
+  bool truncated = 8;
+  string redaction_reason = 9;
 }
 
 message AgentSummary {
@@ -189,11 +212,21 @@ message GetDashboardResponse {
 message ListSessionsRequest {
   TimeFilter filter = 1;
   PageRequest page = 2;
+  SessionConditions conditions = 3;
 }
 
 message ListSessionsResponse {
   repeated SessionSummary sessions = 1;
   PageInfo page = 2;
+  SessionConditions applied_conditions = 3;
+}
+
+message SessionConditions {
+  bool observed_failure = 1;
+  optional double min_duration_ms = 2;
+  optional double max_duration_ms = 3;
+  string model = 4;
+  string tool = 5;
 }
 
 message GetSessionRequest {
@@ -327,6 +360,52 @@ message GetSessionReworkResponse {
   TokenUsage session_tokens = 8;
 }
 
+message ReworkComparisonReference {
+  string source_id = 1;
+  string session_id = 2;
+}
+
+message CompareReworkRequest {
+  ReworkComparisonReference baseline = 1;
+  ReworkComparisonReference current = 2;
+}
+
+message ReworkComparisonSummary {
+  string source_id = 1;
+  string session_id = 2;
+  google.protobuf.Timestamp started_at = 3;
+  google.protobuf.Timestamp ended_at = 4;
+  ReworkCoverage coverage = 5;
+  string projection_coverage = 6;
+  HarnessContext harness_context = 7;
+}
+
+message ReworkComparisonValue {
+  string availability = 1;
+  string reason = 2;
+  optional double numerator = 3;
+  optional double denominator = 4;
+  optional double value = 5;
+}
+
+message ReworkComparisonRow {
+  string id = 1;
+  string unit = 2;
+  string availability = 3;
+  ReworkComparisonValue baseline = 4;
+  ReworkComparisonValue current = 5;
+  optional double delta = 6;
+}
+
+message CompareReworkResponse {
+  string status = 1;
+  string code = 2;
+  string reason = 3;
+  ReworkComparisonSummary baseline = 4;
+  ReworkComparisonSummary current = 5;
+  repeated ReworkComparisonRow rows = 6;
+}
+
 message ListSessionActivitiesRequest {
   string source_id = 1;
   string session_id = 2;
@@ -347,6 +426,8 @@ message GetTraceRequest {
   PageRequest page = 2;
   // Returns the newest bounded page for live convergence when no page token is supplied.
   bool live_tail = 3;
+  // Returns a bounded page containing this native span, ahead of page position and live_tail.
+  string anchor_span_id = 4;
 }
 
 message GetTraceResponse {
@@ -361,6 +442,50 @@ message GetTraceResponse {
   repeated Activity activities = 9;
   PageInfo page = 10;
   int64 total_activities = 11;
+}
+
+message TraceWindow {
+  google.protobuf.Timestamp started_at = 1;
+  google.protobuf.Timestamp ended_at = 2;
+  string kind = 3;
+  bool errors_only = 4;
+}
+
+message GetTraceWindowRequest {
+  string trace_id = 1;
+  TraceWindow window = 2;
+  PageRequest page = 3;
+}
+
+message GetTraceWindowResponse {
+  GetTraceResponse trace = 1;
+  int64 matching_activities = 2;
+}
+
+message GetTraceOverviewRequest { string trace_id = 1; }
+
+message TraceOverviewActivity {
+  string id = 1;
+  string source = 2;
+  string signal = 3;
+  string span_id = 4;
+  string parent_span_id = 5;
+  string name = 6;
+  string kind = 7;
+  string status = 8;
+  google.protobuf.Timestamp started_at = 9;
+  google.protobuf.Timestamp ended_at = 10;
+  bool missing_parent = 11;
+}
+
+message GetTraceOverviewResponse {
+  string trace_id = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp ended_at = 3;
+  int64 total_activities = 4;
+  int64 returned_activities = 5;
+  string coverage = 6;
+  repeated TraceOverviewActivity activities = 7;
 }
 
 enum ProjectionTargetKind {

@@ -1,22 +1,29 @@
 import { LitElement, css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/telemetry";
+import type { TraceOverview } from "../model/trace-investigation";
 import { conversationHref, type ConversationTarget, tokenEvidence } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
 import "./token-breakdown";
+import { readableActivityContent, contentAvailabilityLabel } from "./content-evidence";
 
 type TraceRow = Readonly<{
   activity: Activity;
   offsetPercent: number;
   widthPercent: number;
   depth: number;
-  missingParent: boolean;
+  missingParent?: boolean;
 }>;
 
 @customElement("am-trace-waterfall")
 export class TraceWaterfall extends LitElement {
   @property({ attribute: false }) trace?: Trace;
+  @property({ attribute: false }) overview?: TraceOverview;
+  @property() selectedSpanId = "";
+  @property({ attribute: false }) selectedActivity?: Activity;
+  @property() selectedAvailability: "loaded" | "outside_filters" | "not_loaded" = "loaded";
+  private focusedTarget = "";
   @property({ type: Boolean }) hasMore = false;
   @property({ type: Boolean }) loading = false;
   @property({ attribute: false }) onLoadMore?: () => void;
@@ -28,6 +35,8 @@ export class TraceWaterfall extends LitElement {
     :host { display: block; overflow: auto; }
     .rows { min-width: 900px; display: grid; gap: 1px; }
     .row { border-bottom: 1px solid var(--am-border); transition: background .18s ease; }
+    .row[aria-current="location"] { border-left: 3px solid var(--am-accent); background: var(--am-accent-soft); }
+    summary:focus-visible { outline: 2px solid var(--am-accent); outline-offset: -2px; }
     .row:hover { background: rgba(255, 255, 255, .015); }
     summary { position: relative; display: grid; grid-template-columns: minmax(280px, 36%) minmax(120px, 15%) minmax(360px, 1fr); gap: 10px; align-items: center; min-height: 54px; padding-left: 14px; cursor: pointer; list-style: none; }
     summary::-webkit-details-marker { display: none; }
@@ -55,6 +64,20 @@ export class TraceWaterfall extends LitElement {
     .load-status { min-height: 24px; padding: 12px 0 4px; color: var(--am-muted); text-align: center; font-size: .76rem; }
     .window-nav { display: flex; justify-content: center; gap: 8px; padding: 10px; }
     .window-nav button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
+    .selection-state { margin: 0 0 12px; padding: 12px; border: 1px solid var(--am-border-strong); border-radius: 8px; background: var(--am-accent-soft); }
+    .selection-state p { margin: 0 0 8px; overflow-wrap: anywhere; }
+    .selection-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .selection-actions button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 12px; cursor: pointer; }
+    .selection-actions button:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 2px; }
+    @media (max-width: 700px) {
+      :host { overflow: visible; }
+      .rows { min-width: 0; }
+      summary { grid-template-columns: 1fr; padding: 10px 8px 10px 18px; }
+      .track { width: 100%; }
+      dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .evidence { margin-left: 0; }
+    }
+    @media (max-width: 430px) { dl { grid-template-columns: 1fr; } }
   `;
 
   render() {
@@ -62,15 +85,20 @@ export class TraceWaterfall extends LitElement {
     if (!trace) return null;
     const hasPreviousWindow = this.renderOffset > 0;
     const hasNextWindow = this.renderOffset + 200 < trace.activities.length;
-    return html`${hasPreviousWindow ? this.windowNavigation("previous") : null}<div class="rows" role="list" aria-label="Trace timeline">${traceRows(trace, this.renderOffset).map((row) => {
+    const selectedVisible = Boolean(this.selectedSpanId && trace.activities.some((activity) => activity.signal === "trace" && activity.spanId === this.selectedSpanId));
+    const selectedState = this.selectedSpanId && !selectedVisible ? this.selectedState() : null;
+    return html`${selectedState}${hasPreviousWindow ? this.windowNavigation("previous") : null}<div class="rows" role="list" aria-label="Trace timeline">${traceRows(trace, this.renderOffset, this.overview).map((row) => {
       const activity = withAgentEvidence(trace, row.activity);
+      const selected = activity.signal === "trace" && activity.traceId === trace.traceId && activity.spanId === this.selectedSpanId;
       return html`
-      <details class="row" role="listitem" style=${`--depth:${row.depth}`} .open=${activity.status?.toLowerCase() === "error"}>
-        <summary>
-        <div class="label"><small>${activity.signal} · ${activity.source}</small><small class="agent">${agentLabel(activity)}</small><strong>${operationName(activity)}</strong>${activity.toolName && activity.toolName !== activity.name ? html`<small>${activity.name}</small>` : null}
-          ${row.missingParent ? html`<small class="missing">Missing parent ${row.activity.parentSpanId}</small>` : null}
+      <details class="row" role="listitem" aria-current=${selected ? "location" : "false"} style=${`--depth:${row.depth}`} .open=${selected || activity.status?.toLowerCase() === "error"}>
+        <summary @click=${() => this.evidenceSelected(activity)}>
+        <div class="label">${selected ? html`<small>Selected evidence</small>` : null}<small>${activity.signal} · ${activity.source}</small><small class="agent">${agentLabel(activity)}</small><strong>${operationName(activity)}</strong>${activity.toolName && activity.toolName !== activity.name ? html`<small>${activity.name}</small>` : null}
+          ${row.missingParent === true ? html`<small class="missing">Missing parent ${row.activity.parentSpanId}</small>`
+            : row.missingParent === undefined && row.activity.signal === "trace" && row.activity.parentSpanId
+              ? html`<small>Parent availability unknown ${row.activity.parentSpanId}</small>` : null}
         </div>
-        <div class="usage"><strong>${tokenTotal(activity)}</strong><small>${activity.status || activity.kind}</small><small>${durationLabel(activity)}</small></div>
+        <div class="usage"><strong>${tokenTotal(activity)}</strong><small>${activityStatusLabel(activity.status) || activity.kind}</small><small>${durationLabel(activity)}</small></div>
         <div class="track" aria-label=${timingLabel(activity)}>${activity.signal === "trace"
           ? html`<span class=${`bar ${activity.status?.toLowerCase() === "error" ? "error" : ""}`} style=${`left:${row.offsetPercent}%;width:${row.widthPercent}%`}></span>`
           : html`<span class="event" style=${`left:${row.offsetPercent}%`}></span>`}
@@ -82,16 +110,31 @@ export class TraceWaterfall extends LitElement {
   }
 
   protected willUpdate(changed: PropertyValues<this>) {
-    if (!changed.has("trace")) return;
+    if (!changed.has("trace") && !changed.has("selectedSpanId")) return;
     const previous = changed.get("trace") as Trace | undefined;
     if (previous?.traceId !== this.trace?.traceId) this.renderOffset = 0;
+    const targetKey = `${this.trace?.traceId ?? ""}:${this.selectedSpanId}`;
+    if (this.selectedSpanId && targetKey !== this.focusedTarget) {
+      const index = this.trace?.activities.findIndex((activity) => activity.signal === "trace" && activity.traceId === this.trace?.traceId && activity.spanId === this.selectedSpanId) ?? -1;
+      if (index >= 0) this.renderOffset = Math.floor(index / 200) * 200;
+    }
     if (this.trace && this.renderOffset >= this.trace.activities.length) {
       this.renderOffset = Math.max(0, this.trace.activities.length - 200);
     }
   }
 
   protected updated(changed: Map<string, unknown>) {
+    const key = `${this.trace?.traceId ?? ""}:${this.selectedSpanId}`;
+    if (this.selectedSpanId && key !== this.focusedTarget && this.focusSelectedEvidence()) this.focusedTarget = key;
     if (changed.has("trace") || changed.has("hasMore") || changed.has("loading")) this.observeLoadMoreSentinel();
+  }
+
+  focusSelectedEvidence(): boolean {
+    const summary = this.renderRoot.querySelector<HTMLElement>('details[aria-current="location"] summary');
+    if (!summary) return false;
+    summary.focus({ preventScroll: true });
+    summary.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    return true;
   }
 
   disconnectedCallback() {
@@ -132,6 +175,26 @@ export class TraceWaterfall extends LitElement {
     this.dispatchEvent(new CustomEvent("trace-activities-needed", { bubbles: true, composed: true }));
   }
 
+  private selectedState() {
+    const message = this.selectedAvailability === "outside_filters"
+      ? "Selected evidence is outside the current filters."
+      : "Selected evidence is not in the loaded trace window.";
+    const selected = this.selectedActivity && withAgentEvidence(this.trace!, this.selectedActivity);
+    return html`<aside class="selection-state" aria-live="polite">
+      <p>${message}</p>
+      <div class="selection-actions"><button type="button" @click=${this.clearSelection}>Clear selection</button><button type="button" @click=${this.showSelection}>Show selected evidence</button></div>
+      ${selected ? activityEvidence(selected) : null}
+    </aside>`;
+  }
+
+  private evidenceSelected(activity: Activity) {
+    if (activity.signal !== "trace" || !activity.spanId) return;
+    this.dispatchEvent(new CustomEvent("trace-evidence-selected", { detail: { spanId: activity.spanId }, bubbles: true, composed: true }));
+  }
+
+  private clearSelection = () => this.dispatchEvent(new CustomEvent("trace-selection-cleared", { bubbles: true, composed: true }));
+  private showSelection = () => this.dispatchEvent(new CustomEvent("trace-selection-show-requested", { bubbles: true, composed: true }));
+
   private activityEvidence(activity: Activity) {
     const target = conversationTarget(activity);
     const href = target && this.locationForConversation
@@ -158,11 +221,15 @@ export class TraceWaterfall extends LitElement {
   }
 }
 
-export const traceRows = (trace: Trace, offset = 0): readonly TraceRow[] => {
+export const traceRows = (trace: Trace, offset = 0, overview?: TraceOverview): readonly TraceRow[] => {
   const start = new Date(trace.startedAt).getTime();
   const total = Math.max(1, new Date(trace.endedAt).getTime() - start);
-  const spans = new Map(trace.activities.filter(({ signal, spanId }) => signal === "trace" && spanId).map((activity) => [activity.spanId!, activity]));
-  const depthOf = (activity: Activity, seen = new Set<string>()): number => {
+  const spans = new Map<string, Readonly<{ parentSpanId?: string }>>();
+  for (const activity of overview?.activities ?? []) if (activity.signal === "trace" && activity.spanId) spans.set(activity.spanId, activity);
+  for (const activity of trace.activities) if (activity.signal === "trace" && activity.spanId && !spans.has(activity.spanId)) spans.set(activity.spanId, activity);
+  const overviewByID = new Map(overview?.activities.map((activity) => [activity.id, activity]) ?? []);
+  const overviewBySpan = new Map(overview?.activities.filter((activity) => activity.signal === "trace" && activity.spanId).map((activity) => [`${activity.source}\u0000${activity.spanId}`, activity]) ?? []);
+  const depthOf = (activity: Readonly<{ parentSpanId?: string }>, seen = new Set<string>()): number => {
     const parentID = activity.parentSpanId;
     if (!parentID || seen.has(parentID)) return 0;
     const parent = spans.get(parentID);
@@ -173,7 +240,8 @@ export const traceRows = (trace: Trace, offset = 0): readonly TraceRow[] => {
   return trace.activities.slice(offset, offset + 200).map((activity) => {
     const activityStart = new Date(activity.startedAt ?? activity.observedAt).getTime();
     const activityEnd = new Date(activity.endedAt ?? activity.observedAt).getTime();
-    const missingParent = activity.signal === "trace" && Boolean(activity.parentSpanId) && !spans.has(activity.parentSpanId!);
+    const overviewActivity = (activity.id ? overviewByID.get(activity.id) : undefined) ?? (activity.spanId ? overviewBySpan.get(`${activity.source}\u0000${activity.spanId}`) : undefined);
+    const missingParent = activity.signal === "trace" ? activity.missingParent ?? overviewActivity?.missingParent : undefined;
     return {
       activity,
       offsetPercent: clamp(((activityStart - start) / total) * 100),
@@ -185,6 +253,7 @@ export const traceRows = (trace: Trace, offset = 0): readonly TraceRow[] => {
 };
 
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
+const activityStatusLabel = (value?: string) => value?.toLowerCase() === "error" ? "Error" : value;
 const agentLabel = (activity: Activity) => {
   const source = agentDisplayLabel(activity);
   const target = activity.targetAgentId || activity.targetAgentType;
@@ -214,7 +283,7 @@ const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => 
     ["Kind", activity.kind],
     ["Tool name", activity.toolName || NOT_APPLICABLE],
     ["Telemetry name", activity.name],
-    ["Status", activity.status || NOT_REPORTED],
+    ["Status", activityStatusLabel(activity.status) || NOT_REPORTED],
     ["Source", activity.source || NOT_REPORTED],
     ["Conversation", activity.runId || NOT_APPLICABLE],
     ["Agent", agentDisplayLabel(activity)],
@@ -235,7 +304,8 @@ const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => 
     ["Rollup", rollupLabel(activity)],
   ];
   return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>Token breakdown</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
-    <pre class="message">${activity.content || NOT_APPLICABLE}</pre>
+    <am-content-evidence .evidence=${activity.contentEvidence} .activityContent=${activity.content ?? ""}></am-content-evidence>
+    <pre class="message">${readableActivityContent(activity.contentEvidence, activity.content) || contentAvailabilityLabel(activity.contentEvidence, activity.content)}</pre>
     ${href ? html`<a class="conversation" href=${href} @click=${navigate}>Open ${activity.spanId ? "span in" : ""} conversation</a>` : null}
   </div>`;
 };
