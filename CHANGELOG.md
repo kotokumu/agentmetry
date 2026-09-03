@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.2](https://github.com/kotokumu/agentmetry/compare/v1.11.1...v1.11.2) (2026-09-03)
+
+
+### Bug Fixes
+
+* **web:** keep operation details in view ([bfa7fa4](https://github.com/kotokumu/agentmetry/commit/bfa7fa4ce5d13f1c540580cb4f9fe7901b26ebf2))
+* **web:** keep operation details in view ([f0a11b7](https://github.com/kotokumu/agentmetry/commit/f0a11b7768450e63e9d41af8d622a1822847e020))
+
 ## [1.11.1](https://github.com/kotokumu/agentmetry/compare/v1.11.0...v1.11.1) (2026-09-03)
 
 
