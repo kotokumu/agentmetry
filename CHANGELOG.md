@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.0](https://github.com/kotokumu/agentmetry/compare/v1.10.4...v1.11.0) (2026-09-03)
+
+
+### Features
+
+* **investigation:** improve OTLP telemetry analysis ([f013833](https://github.com/kotokumu/agentmetry/commit/f013833359bcb3901847d40d265faa33a0ed684d))
+* **investigation:** improve OTLP telemetry analysis ([01f5162](https://github.com/kotokumu/agentmetry/commit/01f516291c09b3088427beb03336e7dae0a78333))
+
 ## [1.10.4](https://github.com/kotokumu/agentmetry/compare/v1.10.3...v1.10.4) (2026-08-18)
 
 
