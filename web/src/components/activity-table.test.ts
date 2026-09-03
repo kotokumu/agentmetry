@@ -46,6 +46,27 @@ describe("activity reading", () => {
     expect(detail?.textContent).not.toContain("Other body");
   });
 
+  it("shows each newly selected activity from the top of the detail pane", async () => {
+    const table = new ActivityTable();
+    table.activities = [
+      activity({ id: "activity-a", content: "First body" }),
+      activity({ id: "activity-b", spanId: "span-b", content: "Second body" }),
+    ];
+    document.body.append(table);
+    await table.updateComplete;
+
+    const detail = table.shadowRoot?.querySelector<HTMLElement>("#activity-detail");
+    expect(detail).not.toBeNull();
+    detail!.scrollTop = 240;
+
+    table.shadowRoot?.querySelector<HTMLButtonElement>('tr[data-activity-id="activity-b"] button.select-activity')?.click();
+    await table.updateComplete;
+
+    expect(detail?.scrollTop).toBe(0);
+    expect(table.shadowRoot?.activeElement).toBe(detail);
+    expect(detail?.querySelector("pre")?.textContent).toBe("Second body");
+  });
+
   it("restores an offscreen selection and keeps its body selected during live arrivals", async () => {
     const table = new ActivityTable();
     table.selectionContext = "codex/conversation-a";
