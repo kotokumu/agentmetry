@@ -32,6 +32,7 @@ export function sessionConditions(value: SessionConditions): SessionConditions {
   };
 }
 export const conditionsKey = (value: SessionConditions) => JSON.stringify(sessionConditions(value));
+export const investigationFiltersKey = (value: InvestigationFilters) => `${value.range}\u0000${value.sourceId}\u0000${value.search}\u0000${conditionsKey(value)}`;
 export const hasSessionConditions = (value: SessionConditions) => conditionsKey(value) !== "{}";
 
 export function conditionParameters(value: InvestigationFilters): URLSearchParams {
