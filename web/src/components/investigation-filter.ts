@@ -1,4 +1,4 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
   conditionsKey,
@@ -13,9 +13,11 @@ import {
   saveFilter,
   type SavedFilter,
 } from "../model/saved-filters";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-investigation-filter")
-export class InvestigationFilter extends LitElement {
+export class InvestigationFilter extends LocalizedElement {
   @property({ attribute: false }) filters: InvestigationFilters = {
     range: "24h",
     sourceId: "",
@@ -58,7 +60,6 @@ export class InvestigationFilter extends LitElement {
     [role="status"] { color: var(--am-muted); }
     input:focus-visible, select:focus-visible, button:focus-visible, summary:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 2px; }
   `;
-
   connectedCallback() {
     super.connectedCallback();
     this.reloadSaved();
@@ -85,40 +86,40 @@ export class InvestigationFilter extends LitElement {
 
   render() {
     return html`<section aria-labelledby="investigation-filters-heading">
-        <h3 id="investigation-filters-heading">Investigation filters</h3>
-        <p class="applied">Applied: ${describeFilters(this.filters)}</p>
-        <label>Saved filter
+        <h3 id="investigation-filters-heading">${localization.t("investigation.title")}</h3>
+        <p class="applied">${localization.t("investigation.applied")}: ${describeFilters(this.filters)}</p>
+        <label>${localization.t("saved.filter")}
           <select name="saved-filter" .value=${this.selectedName} ?disabled=${this.pending} @change=${this.selectSaved}>
-            <option value="">Choose a saved filter…</option>
+            <option value="">${localization.t("saved.chooseOne")}</option>
             ${this.saved.map((item) => html`<option value=${item.name}>${item.name}</option>`)}
           </select>
         </label>
         ${this.selectedName ? html`<div class="actions">
-          <button type="button" data-action="update-saved" ?disabled=${!this.selectedApplied || !this.confirmed || this.pending} @click=${this.updateSaved}>Update saved filter</button>
-          <button class="quiet" type="button" data-action="delete-saved" ?disabled=${this.pending} @click=${this.deleteSaved}>Delete</button>
+          <button type="button" data-action="update-saved" ?disabled=${!this.selectedApplied || !this.confirmed || this.pending} @click=${this.updateSaved}>${localization.t("saved.update")}</button>
+          <button class="quiet" type="button" data-action="delete-saved" ?disabled=${this.pending} @click=${this.deleteSaved}>${localization.t("saved.delete")}</button>
         </div>` : null}
-        <button type="button" data-action="save-as" ?disabled=${!this.confirmed || this.pending} @click=${this.beginNaming}>Save current filters as…</button>
+        <button type="button" data-action="save-as" ?disabled=${!this.confirmed || this.pending} @click=${this.beginNaming}>${localization.t("saved.saveAs")}</button>
         ${this.naming ? html`<form class="naming" @submit=${this.save}>
-          <label>Filter name<input name="filter-name" maxlength="80" .value=${this.saveName} @input=${this.changeSaveName}></label>
+          <label>${localization.t("saved.filterName")}<input name="filter-name" maxlength="80" .value=${this.saveName} @input=${this.changeSaveName}></label>
           <div class="actions">
-            <button class="primary" type="submit" data-action="save" ?disabled=${!this.confirmed || this.pending}>Save</button>
-            <button class="quiet" type="button" @click=${this.cancelNaming}>Cancel</button>
+            <button class="primary" type="submit" data-action="save" ?disabled=${!this.confirmed || this.pending}>${localization.t("common.save")}</button>
+            <button class="quiet" type="button" @click=${this.cancelNaming}>${localization.t("common.cancel")}</button>
           </div>
         </form>` : null}
         <details class="editor">
-          <summary>Edit conditions</summary>
+          <summary>${localization.t("investigation.editConditions")}</summary>
           <form @submit=${this.applyDraft}>
-            <label><span><input type="checkbox" name="observedFailure"> Observed failure</span></label>
-            <label>Minimum elapsed time (ms)<input type="number" name="minDurationMs" min="0" step="any"></label>
-            <label>Maximum elapsed time (ms)<input type="number" name="maxDurationMs" min="0" step="any"></label>
-            <label>Model (exact)<input name="model" maxlength="200"></label>
-            <label>Tool (exact)<input name="tool" maxlength="200"></label>
-            <button class="primary" type="submit" data-action="apply-draft" ?disabled=${this.pending}>${this.pending ? "Applying…" : "Apply filters"}</button>
+            <label><span><input type="checkbox" name="observedFailure"> ${localization.t("investigation.observedFailure")}</span></label>
+            <label>${localization.t("investigation.minElapsed")}<input type="number" name="minDurationMs" min="0" step="any"></label>
+            <label>${localization.t("investigation.maxElapsed")}<input type="number" name="maxDurationMs" min="0" step="any"></label>
+            <label>${localization.t("investigation.modelExact")}<input name="model" maxlength="200"></label>
+            <label>${localization.t("investigation.toolExact")}<input name="tool" maxlength="200"></label>
+            <button class="primary" type="submit" data-action="apply-draft" ?disabled=${this.pending}>${localization.t(this.pending ? "investigation.applying" : "investigation.apply")}</button>
           </form>
         </details>
-        ${this.draftError ? html`<p role="alert">Not applied: ${this.draftError}</p>` : null}
-        ${this.error ? html`<p role="alert">Not applied: ${this.error}</p>` : null}
-        ${this.savedError ? html`<p role="alert">${this.savedError}</p><button type="button" data-action="reload-saved" @click=${this.reloadSaved}>Retry saved filters</button>` : null}
+        ${this.draftError ? html`<p role="alert">${localization.t("investigation.notApplied", { reason: this.draftError })}</p>` : null}
+        ${this.error ? html`<p role="alert">${localization.t("investigation.notApplied", { reason: this.error })}</p>` : null}
+        ${this.savedError ? html`<p role="alert">${this.savedError}</p><button type="button" data-action="reload-saved" @click=${this.reloadSaved}>${localization.t("saved.retry")}</button>` : null}
         ${this.status ? html`<p role="status">${this.status}</p>` : null}
     </section>`;
   }
@@ -158,7 +159,7 @@ export class InvestigationFilter extends LitElement {
       this.draftError = "";
       this.requestFilters(filters);
     } catch (error) {
-      this.draftError = error instanceof Error ? error.message : "Invalid conditions.";
+      this.draftError = error instanceof Error ? error.message : localization.t("investigation.invalid");
     }
   }
 
@@ -185,7 +186,7 @@ export class InvestigationFilter extends LitElement {
         });
       }
     } catch (error) {
-      this.savedError = error instanceof Error ? error.message : "Saved filters are unavailable.";
+      this.savedError = error instanceof Error ? error.message : localization.t("saved.unavailable");
     }
   }
 
@@ -198,11 +199,11 @@ export class InvestigationFilter extends LitElement {
     if (!this.selectedName || this.pending) return;
     try {
       const selected = loadSavedFilters(window.localStorage).find((item) => item.name === this.selectedName);
-      if (!selected) throw new Error("The saved filter no longer exists.");
+      if (!selected) throw new Error(localization.t("saved.noLongerExists"));
       this.selectedRequest = { name: selected.name, filters: selected.filters, sawPending: false };
       this.requestFilters(selected.filters);
     } catch (error) {
-      this.savedError = error instanceof Error ? error.message : "The saved filter could not be loaded.";
+      this.savedError = error instanceof Error ? error.message : localization.t("saved.loadFailed");
     }
   }
 
@@ -233,7 +234,7 @@ export class InvestigationFilter extends LitElement {
     if (!this.confirmed || this.pending) return;
     const saved = this.persist(
       () => saveFilter(window.localStorage, this.saveName, this.filters),
-      `Saved “${this.saveName.trim()}”.`,
+      localization.t("saved.saved", { name: this.saveName.trim() }),
       this.saveName.trim(),
     );
     if (saved) {
@@ -246,7 +247,7 @@ export class InvestigationFilter extends LitElement {
     if (!this.selectedName || !this.selectedApplied || !this.confirmed || this.pending) return;
     this.persist(
       () => replaceFilter(window.localStorage, this.selectedName, this.filters),
-      `Updated “${this.selectedName}”.`,
+      localization.t("saved.updated", { name: this.selectedName }),
       this.selectedName,
     );
   }
@@ -255,7 +256,7 @@ export class InvestigationFilter extends LitElement {
     if (!this.selectedName || this.pending) return;
     const deleted = this.persist(
       () => deleteFilter(window.localStorage, this.selectedName),
-      `Deleted “${this.selectedName}”.`,
+      localization.t("saved.deleted", { name: this.selectedName }),
       "",
     );
     if (deleted) {
@@ -275,7 +276,7 @@ export class InvestigationFilter extends LitElement {
       this.status = success;
       return true;
     } catch (error) {
-      this.savedError = error instanceof Error ? error.message : "The saved filter change could not be persisted.";
+      this.savedError = error instanceof Error ? error.message : localization.t("saved.persistFailed");
       return false;
     }
   }
@@ -284,13 +285,13 @@ export class InvestigationFilter extends LitElement {
 function describeFilters(value: InvestigationFilters) {
   return [
     value.range,
-    value.sourceId || "all sources",
-    value.search ? `search ${value.search}` : "",
-    value.observedFailure ? "observed failure" : "",
-    value.minDurationMs !== undefined ? `at least ${value.minDurationMs} ms` : "",
-    value.maxDurationMs !== undefined ? `at most ${value.maxDurationMs} ms` : "",
-    value.model ? `model ${value.model}` : "",
-    value.tool ? `tool ${value.tool}` : "",
+    value.sourceId || localization.t("investigation.allSources"),
+    value.search ? localization.t("investigation.search", { value: value.search }) : "",
+    value.observedFailure ? localization.t("investigation.failure") : "",
+    value.minDurationMs !== undefined ? localization.t("investigation.atLeast", { value: value.minDurationMs }) : "",
+    value.maxDurationMs !== undefined ? localization.t("investigation.atMost", { value: value.maxDurationMs }) : "",
+    value.model ? localization.t("investigation.model", { value: value.model }) : "",
+    value.tool ? localization.t("investigation.tool", { value: value.tool }) : "",
   ].filter(Boolean).join(" · ");
 }
 

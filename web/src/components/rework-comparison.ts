@@ -1,4 +1,4 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import {
   COMPARISON_DISPLAY_DECIMALS,
@@ -11,13 +11,16 @@ import {
   type ReworkComparisonRow,
   type ReworkComparisonViewState,
 } from "../model/rework-comparison";
-import { NOT_REPORTED } from "../presentation/missing-data";
+import { notReported, unavailable } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
+import type { MessageKey } from "../localization/messages";
 
 export type ComparisonBaselineSelectedDetail = Readonly<{ sessionId: string }>;
 
 @customElement("am-rework-comparison")
-export class ReworkComparison extends LitElement {
+export class ReworkComparison extends LocalizedElement {
   @property({ attribute: false }) state: ReworkComparisonViewState = { status: "empty" };
 
   static styles = [featurePanelStyles, css`
@@ -67,62 +70,62 @@ export class ReworkComparison extends LitElement {
   render() {
     return html`<section class="panel">
       <div class="heading">
-        <div><h2>Before / After diagnostics</h2><p>Compare normalized diagnostic signals between two same-source conversations.</p></div>
-        ${this.state.status !== "empty" ? html`<label class="baseline-control">Baseline conversation
+        <div><h2>${localization.t("comparison.title")}</h2><p>${localization.t("comparison.subtitle")}</p></div>
+        ${this.state.status !== "empty" ? html`<label class="baseline-control">${localization.t("comparison.baselineConversation")}
           <select .value=${this.state.selectedBaselineId} @change=${this.baselineSelected}>
-            ${this.state.options.map((option) => html`<option value=${option.sessionId} title=${option.sessionId}>${shortId(option.sessionId)} · ended ${formatTimestamp(option.endedAt)}</option>`)}
+            ${this.state.options.map((option) => html`<option value=${option.sessionId} title=${option.sessionId}>${shortId(option.sessionId)} · ${localization.t("comparison.ended", { time: formatTimestamp(option.endedAt) })}</option>`)}
           </select>
         </label>` : null}
       </div>
       ${this.renderBody()}
-      <p class="scope">Baseline candidates are limited to non-overlapping conversations in the current filtered list.</p>
+      <p class="scope">${localization.t("comparison.scope")}</p>
     </section>`;
   }
 
   private renderBody() {
     switch (this.state.status) {
       case "empty":
-        return html`<div class="state"><strong>No non-overlapping baseline in the current conversation list</strong><p>Broaden the time range or filters, or collect another completed conversation from this source.</p></div>`;
+        return html`<div class="state"><strong>${localization.t("comparison.noBaseline")}</strong><p>${localization.t("comparison.noBaselineHelp")}</p></div>`;
       case "loading":
-        return html`<div class="state" role="status"><strong>Loading baseline diagnostics</strong><p>Reading both conversations in one diagnostic snapshot.</p></div>`;
+        return html`<div class="state" role="status"><strong>${localization.t("comparison.loading")}</strong><p>${localization.t("comparison.loadingHelp")}</p></div>`;
       case "failed":
-        return html`<div class="state" role="alert"><strong>Comparison unavailable</strong><p>${this.state.message}</p><button class="retry" type="button" @click=${this.retry}>Retry comparison</button></div>`;
+        return html`<div class="state" role="alert"><strong>${localization.t("comparison.unavailable")}</strong><p>${this.state.message}</p><button class="retry" type="button" @click=${this.retry}>${localization.t("comparison.retry")}</button></div>`;
       case "waiting":
-        return html`<div class="state" role="status"><strong>Waiting for comparable diagnostics</strong><p>${this.state.message}</p></div>`;
+        return html`<div class="state" role="status"><strong>${localization.t("comparison.waiting")}</strong><p>${this.state.message}</p></div>`;
       case "invalid":
         return html`<div class="state" role="alert"><strong>${invalidTitle(this.state.code)}</strong><p>${this.state.reason}</p></div>`;
       case "ready":
         return html`
           ${this.renderHarness(this.state.harness)}
           <div class="table-wrap"><table>
-            <caption>Normalized diagnostic comparison between baseline and current conversations</caption>
-            <thead><tr><th scope="col">Diagnostic</th><th scope="col">Baseline</th><th scope="col">Current</th><th scope="col">Change</th></tr></thead>
+            <caption>${localization.t("comparison.caption")}</caption>
+            <thead><tr><th scope="col">${localization.t("comparison.diagnostic")}</th><th scope="col">${localization.t("comparison.baseline")}</th><th scope="col">${localization.t("comparison.current")}</th><th scope="col">${localization.t("comparison.change")}</th></tr></thead>
             <tbody>${this.state.rows.map((row) => this.renderRow(row))}</tbody>
           </table></div>
           ${this.state.warnings.length ? html`<p class="warnings">${this.state.warnings.join(" ")}</p>` : null}
-          <p class="qualification">Observed differences are diagnostic signals, not causal evidence or a productivity score.</p>
+          <p class="qualification">${localization.t("comparison.qualification")}</p>
         `;
     }
   }
 
   private renderHarness(relationship: HarnessRelationship) {
     const title = relationship.status === "reported_changed"
-      ? "Reported harness fingerprint changed"
+      ? localization.t("comparison.harnessChanged")
       : relationship.status === "reported_same"
-        ? "Reported harness fingerprint is the same"
-        : "Reported harness fingerprint is not comparable";
+        ? localization.t("comparison.harnessSame")
+        : localization.t("comparison.harnessNotComparable");
     const issues = relationship.status === "not_comparable"
       ? [
-        relationship.baselineIssue ? `Baseline: ${harnessIssueLabel(relationship.baselineIssue)}` : "",
-        relationship.currentIssue ? `Current: ${harnessIssueLabel(relationship.currentIssue)}` : "",
-        relationship.relationshipIssue === "scope_mismatch" ? "The reported comparison scopes differ." : "",
+        relationship.baselineIssue ? localization.t("comparison.baselineIssue", { issue: harnessIssueLabel(relationship.baselineIssue) }) : "",
+        relationship.currentIssue ? localization.t("comparison.currentIssue", { issue: harnessIssueLabel(relationship.currentIssue) }) : "",
+        relationship.relationshipIssue === "scope_mismatch" ? localization.t("comparison.scopeMismatch") : "",
       ].filter(Boolean).join(" ")
       : "";
     return html`<div class="harness-context">
-      <div class="harness-heading">${title}<details class="metric-help"><summary aria-label="About reported harness fingerprints" @click=${this.toggleHelp}>?</summary><p>A fingerprint covers only the files selected when it was generated. This pairwise association does not prove effective configuration equality or that a harness change caused a metric change.</p></details></div>
+      <div class="harness-heading">${title}<details class="metric-help"><summary aria-label=${localization.t("comparison.aboutHarness")} @click=${this.toggleHelp}>?</summary><p>${localization.t("comparison.harnessHelp")}</p></details></div>
       <div class="harness-pair">
-        ${renderHarnessSide("Baseline", relationship.baseline)}
-        ${renderHarnessSide("Current", relationship.current)}
+        ${renderHarnessSide(localization.t("comparison.baseline"), relationship.baseline)}
+        ${renderHarnessSide(localization.t("comparison.current"), relationship.current)}
       </div>
       ${issues ? html`<p class="harness-reason">${issues}</p>` : null}
     </div>`;
@@ -130,11 +133,12 @@ export class ReworkComparison extends LitElement {
 
   private renderRow(row: ReworkComparisonRow) {
     const descriptor = descriptors[row.id];
+    const label = localization.t(descriptor.label);
     const direction = row.availability === "comparable" ? row.direction : "unavailable";
     return html`<tr>
-      <th scope="row"><span class="metric-label">${descriptor.label}<details class="metric-help"><summary aria-label=${`About ${descriptor.label}`} @click=${this.toggleHelp}>?</summary><p>${descriptor.description}</p></details></span></th>
-      <td>${renderValue(row.baseline, row.unit, descriptor.evidence)}</td>
-      <td>${renderValue(row.current, row.unit, descriptor.evidence)}</td>
+      <th scope="row"><span class="metric-label">${label}<details class="metric-help"><summary aria-label=${localization.t("comparison.aboutMetric", { label })} @click=${this.toggleHelp}>?</summary><p>${localization.t(descriptor.description)}</p></details></span></th>
+      <td>${renderValue(row.baseline, row.unit, localization.t(descriptor.evidence))}</td>
+      <td>${renderValue(row.current, row.unit, localization.t(descriptor.evidence))}</td>
       <td><span class=${`change ${direction}`}>${formatDelta(row)}<span class="direction">${directionLabel(direction)}</span></span></td>
     </tr>`;
   }
@@ -151,54 +155,54 @@ export class ReworkComparison extends LitElement {
   };
 }
 
-const descriptors: Record<ComparisonMetricID, Readonly<{ label: string; description: string; evidence: string }>> = {
-  initial_validation_success_proxy: { label: "Initial validation success proxy", description: "First observed outcome for each same-agent operation, normalized command, and working-directory identity. It is not task- or change-level first-pass success.", evidence: "eligible identities" },
-  rework_token_share: { label: "Rework token share", description: "Tokens attributed to detected closed failure/edit/retry windows divided by all observed session tokens. Lower is generally preferable when coverage is comparable.", evidence: "session tokens" },
-  retry_cycle_effort_share: { label: "Detected retry-cycle effort share", description: "Agent-active duration intersecting detected closed retry-cycle windows divided by total observed agent-active duration.", evidence: "ms observed agent-active time" },
-  tool_failure_rate: { label: "Tool failure rate", description: "Observed failed tool attempts divided by tool attempts with a known outcome. Missing outcomes are excluded from both sides.", evidence: "outcome-known tool attempts" },
-  recurring_loops_per_100_validations: { label: "Recurring failure loops / 100 validations", description: "Confirmed same-command and same-error recurring episodes per 100 logical validation attempts with known outcomes.", evidence: "outcome-known validations" },
+const descriptors: Record<ComparisonMetricID, Readonly<{ label: MessageKey; description: MessageKey; evidence: MessageKey }>> = {
+  initial_validation_success_proxy: { label: "comparison.initialLabel", description: "comparison.initialDescription", evidence: "comparison.initialEvidence" },
+  rework_token_share: { label: "comparison.tokenLabel", description: "comparison.tokenDescription", evidence: "comparison.tokenEvidence" },
+  retry_cycle_effort_share: { label: "comparison.effortLabel", description: "comparison.effortDescription", evidence: "comparison.effortEvidence" },
+  tool_failure_rate: { label: "comparison.toolLabel", description: "comparison.toolDescription", evidence: "comparison.toolEvidence" },
+  recurring_loops_per_100_validations: { label: "comparison.loopLabel", description: "comparison.loopDescription", evidence: "comparison.loopEvidence" },
 };
 
 const renderValue = (value: ComparisonValue, unit: ComparisonUnit, evidence: string) => html`
-  <span class="value">${value.availability === "unavailable" ? NOT_REPORTED : unit === "percent" ? `${value.displayValue.toFixed(COMPARISON_DISPLAY_DECIMALS)}%` : value.displayValue.toFixed(COMPARISON_DISPLAY_DECIMALS)}</span>
-  <span class="evidence">${value.availability === "unavailable" ? value.reason : `${value.numerator.toLocaleString()} / ${value.denominator.toLocaleString()} ${evidence}`}</span>
+  <span class="value">${value.availability === "unavailable" ? notReported() : unit === "percent" ? `${localization.number(value.displayValue, { minimumFractionDigits: COMPARISON_DISPLAY_DECIMALS, maximumFractionDigits: COMPARISON_DISPLAY_DECIMALS })}%` : localization.number(value.displayValue, { minimumFractionDigits: COMPARISON_DISPLAY_DECIMALS, maximumFractionDigits: COMPARISON_DISPLAY_DECIMALS })}</span>
+  <span class="evidence">${value.availability === "unavailable" ? value.reason : `${localization.number(value.numerator)} / ${localization.number(value.denominator)} ${evidence}`}</span>
 `;
 const formatDelta = (row: ReworkComparisonRow) => {
-  if (row.availability === "unavailable") return NOT_REPORTED;
+  if (row.availability === "unavailable") return notReported();
   const displayed = roundComparisonDisplay(row.delta);
   const sign = displayed > 0 ? "+" : "";
-  return `${sign}${displayed.toFixed(COMPARISON_DISPLAY_DECIMALS)} ${row.unit === "percent" ? "pp" : "per 100"}`;
+  return `${sign}${localization.number(displayed, { minimumFractionDigits: COMPARISON_DISPLAY_DECIMALS, maximumFractionDigits: COMPARISON_DISPLAY_DECIMALS })} ${row.unit === "percent" ? "pp" : localization.t("comparison.per100")}`;
 };
-const directionLabel = (direction: "improved" | "regressed" | "unchanged" | "unavailable") => ({ improved: "Improved", regressed: "Regressed", unchanged: "No change", unavailable: "Not comparable" })[direction];
+const directionLabel = (direction: "improved" | "regressed" | "unchanged" | "unavailable") => localization.t(({ improved: "comparison.improved", regressed: "comparison.regressed", unchanged: "comparison.noChange", unavailable: "comparison.notComparable" } as const)[direction]);
 const invalidTitle = (code: "identity_mismatch" | "invalid_time" | "baseline_ineligible") => ({
-  identity_mismatch: "Comparison identities do not match",
-  invalid_time: "Conversation times are invalid",
-  baseline_ineligible: "Baseline is no longer eligible",
+  identity_mismatch: localization.t("comparison.identityMismatch"),
+  invalid_time: localization.t("comparison.invalidTime"),
+  baseline_ineligible: localization.t("comparison.baselineIneligible"),
 })[code];
 const shortId = (value: string) => value.length > 16 ? `${value.slice(0, 16)}…` : value;
 const formatTimestamp = (value: string) => {
   const date = new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toLocaleString() : value;
+  return Number.isFinite(date.getTime()) ? localization.dateTime(date, { dateStyle: "short", timeStyle: "medium" }) : value;
 };
-const renderHarnessSide = (side: "Baseline" | "Current", context: HarnessRelationship["baseline"]) => {
+const renderHarnessSide = (side: string, context: HarnessRelationship["baseline"]) => {
   if (context.availability === "unavailable") {
-    return html`<div class="harness-side"><span>${side}</span><strong>Unavailable</strong><span>${harnessIssueLabel(context.reason)}</span></div>`;
+    return html`<div class="harness-side"><span>${side}</span><strong>${unavailable()}</strong><span>${harnessIssueLabel(context.reason)}</span></div>`;
   }
-  const counts = `${context.counts.reportedRecords.toLocaleString()} / ${context.counts.eligibleRecords.toLocaleString()} reported records`;
+  const counts = localization.t("comparison.reportedRecords", { reported: localization.number(context.counts.reportedRecords), eligible: localization.number(context.counts.eligibleRecords) });
   if (context.state !== "uniform") {
     return html`<div class="harness-side"><span>${side}</span><strong>${harnessIssueLabel(context.state)}</strong><span>${counts}</span></div>`;
   }
   const name = context.identity.label || shortFingerprint(context.identity.fingerprint);
-  return html`<div class="harness-side"><span>${side}</span><strong title=${context.identity.fingerprint}>${name}</strong><span>${counts} · scope ${context.identity.scope}</span></div>`;
+  return html`<div class="harness-side"><span>${side}</span><strong title=${context.identity.fingerprint}>${name}</strong><span>${counts} · ${localization.t("comparison.scopeValue", { scope: context.identity.scope })}</span></div>`;
 };
 const harnessIssueLabel = (issue: HarnessComparisonIssue) => ({
-  server_unsupported: "Server does not provide harness evidence",
-  invalid_server_payload: "Invalid harness evidence response",
-  no_eligible_records: "No eligible records",
-  unreported: "Harness fingerprint was not reported",
-  mixed: "Multiple fingerprints were reported",
-  incomplete: "Fingerprint reporting was incomplete",
-  invalid: "Invalid fingerprint metadata was observed",
+  server_unsupported: localization.t("comparison.serverUnsupported"),
+  invalid_server_payload: localization.t("comparison.invalidPayload"),
+  no_eligible_records: localization.t("comparison.noEligibleRecords"),
+  unreported: localization.t("comparison.unreportedHarness"),
+  mixed: localization.t("comparison.mixedHarness"),
+  incomplete: localization.t("comparison.incompleteHarness"),
+  invalid: localization.t("comparison.invalidHarness"),
 })[issue];
 const shortFingerprint = (value: string) => value.length > 19 ? `${value.slice(0, 19)}…` : value;
 

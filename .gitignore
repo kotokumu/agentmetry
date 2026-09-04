@@ -4,6 +4,7 @@
 /web/*.tsbuildinfo
 /web/dist/*
 !/web/dist/.gitkeep
+/web/src/localization/generated/
 /node_modules/
 /src-tauri/target/
 /src-tauri/icons/

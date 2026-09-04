@@ -1,12 +1,14 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { AgentSession } from "../model/telemetry";
 import { agentDisplayLabel } from "../model/agent-label";
-import { NOT_REPORTED } from "../presentation/missing-data";
+import { notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 import "./token-breakdown";
 
 @customElement("am-agent-tree")
-export class AgentTree extends LitElement {
+export class AgentTree extends LocalizedElement {
   @property({ attribute: false }) agents: readonly AgentSession[] = [];
   @property() selectedAgentId = "";
   @state() private nodeHeights: ReadonlyMap<string, number> = new Map();
@@ -35,9 +37,9 @@ export class AgentTree extends LitElement {
 
   render() {
     const layout = layoutAgentTree(buildAgentTree(this.agents), this.nodeHeights);
-    if (layout.nodes.length === 0) return html`<p class="empty">No agent relationships reported.</p>`;
+    if (layout.nodes.length === 0) return html`<p class="empty">${localization.t("agentTree.empty")}</p>`;
     const nodesByID = new Map(layout.nodes.map((node) => [node.node.agent.agentId, node]));
-    return html`<div class="viewport" role="tree" aria-label="Agent delegation topology"><div class="graph" style=${`width:${layout.width}px;height:${layout.height}px`}>
+    return html`<div class="viewport" role="tree" aria-label=${localization.t("agentTree.aria")}><div class="graph" style=${`width:${layout.width}px;height:${layout.height}px`}>
       ${layout.nodes.filter((node) => node.parentID).map((node) => {
         const parent = nodesByID.get(node.parentID!);
         if (!parent) return null;
@@ -211,11 +213,11 @@ const renderGraphNode = (
   @click=${select}
   @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(event); } }}
 >
-  <div class="node-title"><span class="role">${layout.depth === 0 ? "Root" : "Child"}</span><strong title=${agentDisplayLabel(layout.node.agent)}>${agentDisplayLabel(layout.node.agent)}</strong></div>
-  <code>Runtime ID: ${layout.node.agent.agentId || NOT_REPORTED}</code>
-  <div class="meta">${[layout.node.agent.agentType, layout.node.agent.model].filter(Boolean).join(" · ") || NOT_REPORTED}</div>
+  <div class="node-title"><span class="role">${localization.t(layout.depth === 0 ? "agentTree.root" : "agentTree.child")}</span><strong title=${agentDisplayLabel(layout.node.agent)}>${agentDisplayLabel(layout.node.agent)}</strong></div>
+  <code>${localization.t("agentTree.runtimeId", { id: layout.node.agent.agentId || notReported() })}</code>
+  <div class="meta">${[layout.node.agent.agentType, layout.node.agent.model].filter(Boolean).join(" · ") || notReported()}</div>
   <div class="usage">
-    <p>${layout.node.agent.activityCount} activities</p>
+    <p>${localization.t("participants.activityCount", { count: localization.number(layout.node.agent.activityCount) })}</p>
     <am-token-breakdown .usage=${layout.node.agent.tokens} .compact=${true} @click=${(event: MouseEvent) => event.stopPropagation()} @token-breakdown-toggle=${tokenBreakdownToggled}></am-token-breakdown>
   </div>
 </div>`;

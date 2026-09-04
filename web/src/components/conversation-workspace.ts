@@ -1,4 +1,4 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import "./activity-table";
 import { activityIdentity, type ActivityTable } from "./activity-table";
@@ -20,7 +20,9 @@ import { SessionComparisonController } from "../controllers/session-comparison-c
 import { agentDisplayLabel } from "../model/agent-label";
 import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../model/telemetry";
-import { NOT_REPORTED } from "../presentation/missing-data";
+import { notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 import { featurePanelStyles } from "./feature-styles";
 import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
@@ -31,7 +33,7 @@ export type ConversationSummaryDetail = Readonly<{
 }>;
 
 @customElement("am-conversation-workspace")
-export class ConversationWorkspace extends LitElement {
+export class ConversationWorkspace extends LocalizedElement {
   @property() range: TimeRange = "24h";
   @property() sourceId = "";
   @property() search = "";
@@ -180,11 +182,11 @@ export class ConversationWorkspace extends LitElement {
         : selected.activities
       : [];
     return html`<section class="workspace" data-view=${this.requestedConversation ? "detail" : "list"}>
-      <aside class="panel"><h2 class="list-heading" tabindex="-1">Conversations</h2><am-session-filter
+      <aside class="panel"><h2 class="list-heading" tabindex="-1">${localization.t("app.conversations")}</h2><am-session-filter
         .sources=${this.sources.length ? this.sources : this.conversations.sources}
         .selectedSource=${this.sourceId}
         .search=${this.search}
-      ></am-session-filter><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? "Conversation query unavailable") : "")}></am-investigation-filter><am-session-list
+      ></am-session-filter><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? localization.t("workspace.queryUnavailable")) : "")}></am-investigation-filter><am-session-list
         .sessions=${sessions}
         .loading=${this.conversations.loadingList}
         .unavailable=${this.conversations.listFailed}
@@ -194,11 +196,11 @@ export class ConversationWorkspace extends LitElement {
         .locationForSession=${this.locationForSession}
       ></am-session-list></aside>
       <div class="detail">${selected ? this.renderSelected(selected, selectedAgentId, visibleActivities)
-        : this.conversations.loadingList ? html`<section class="panel empty" role="status"><div><h2>Loading conversations</h2><p>Reading the latest bounded conversation list.</p></div></section>`
-        : this.conversations.loadingConversation ? html`<section class="panel empty" role="status"><div><h2>Loading requested conversation</h2><p>Resolving the source-qualified conversation and span.</p></div></section>`
-        : this.conversations.conversationFailed ? html`<section class="panel empty error" role="alert"><div><h2>Conversation unavailable</h2><p>${String(this.conversations.conversationError ?? "Conversation unavailable")}</p><button class="retry" type="button" @click=${this.retryConversation}>Retry</button></div></section>`
-        : this.conversations.listFailed ? html`<section class="panel empty error" role="alert"><div><h2>Conversations unavailable</h2><p>Conversation data could not be loaded.</p></div></section>`
-        : html`<section class="panel empty"><div><h2>Waiting for agent telemetry</h2><p>Point an OTLP exporter at this process, then start a conversation.</p></div></section>`}</div>
+        : this.conversations.loadingList ? html`<section class="panel empty" role="status"><div><h2>${localization.t("workspace.loadingListTitle")}</h2><p>${localization.t("workspace.loadingListBody")}</p></div></section>`
+        : this.conversations.loadingConversation ? html`<section class="panel empty" role="status"><div><h2>${localization.t("workspace.loadingConversationTitle")}</h2><p>${localization.t("workspace.loadingConversationBody")}</p></div></section>`
+        : this.conversations.conversationFailed ? html`<section class="panel empty error" role="alert"><div><h2>${localization.t("workspace.conversationUnavailable")}</h2><p>${String(this.conversations.conversationError ?? localization.t("workspace.conversationUnavailable"))}</p><button class="retry" type="button" @click=${this.retryConversation}>${localization.t("workspace.retry")}</button></div></section>`
+        : this.conversations.listFailed ? html`<section class="panel empty error" role="alert"><div><h2>${localization.t("workspace.listUnavailable")}</h2><p>${localization.t("workspace.listUnavailableBody")}</p></div></section>`
+        : html`<section class="panel empty"><div><h2>${localization.t("workspace.waitingTitle")}</h2><p>${localization.t("workspace.waitingBody")}</p></div></section>`}</div>
     </section>`;
   }
 
@@ -234,20 +236,20 @@ export class ConversationWorkspace extends LitElement {
 
   private renderSelected(selected: Session, selectedAgentId: string, activities: Session["activities"]) {
     return html`
-      <section class="panel session-head-panel">${this.returnHref ? html`<a class="context-return" href=${this.returnHref} @click=${this.returnToOrigin}>← ${this.returnLabel}</a>` : null}<a class="list-return" href=${this.listHref} @click=${this.returnToList}>← Conversations</a><div class="session-head"><div><p class="eyebrow">Selected conversation</p><h2 class="session-id" tabindex="-1">${selected.id}</h2></div></div><div class="session-metrics" aria-label="Selected conversation usage">
-        <am-kpi-card label="Total tokens" .value=${formatOptionalNumber(selected.tokens.total)} hint="Input + output"></am-kpi-card>
-        <am-kpi-card label="Input tokens" .value=${formatOptionalNumber(selected.tokens.input)} hint="Reported by model calls"></am-kpi-card>
-        <am-kpi-card label="Output tokens" .value=${formatOptionalNumber(selected.tokens.output)} hint="Reported by model calls"></am-kpi-card>
-        <am-kpi-card label="Estimated cost" .value=${formatCost(selected.costUsd)} .hint=${selected.costUsd === undefined ? "Not reported" : "Observed telemetry"}></am-kpi-card>
-      </div><p class="coverage-note">Analysis coverage: ${this.conversations.rework?.coverage.activityCoverage === "observed_projection_complete" ? "all retained projected activities" : this.conversations.rework ? "partial projected evidence" : "not yet available"}. This does not establish that every input or body was reported.</p></section>
-      <nav class="purpose-nav" aria-label="Investigation view">${([ ["execution", "Execution"], ["rework", "Rework"], ["comparison", "Comparison"] ] as const).map(([purpose, label]) => html`<button type="button" data-purpose=${purpose} aria-pressed=${String(this.purpose === purpose)} @click=${() => this.selectPurpose(purpose)}>${label}</button>`)}</nav>
+      <section class="panel session-head-panel">${this.returnHref ? html`<a class="context-return" href=${this.returnHref} @click=${this.returnToOrigin}>← ${this.returnLabel}</a>` : null}<a class="list-return" href=${this.listHref} @click=${this.returnToList}>← ${localization.t("app.conversations")}</a><div class="session-head"><div><p class="eyebrow">${localization.t("workspace.selected")}</p><h2 class="session-id" tabindex="-1">${selected.id}</h2></div></div><div class="session-metrics" aria-label=${localization.t("workspace.usageAria")}>
+        <am-kpi-card .label=${localization.t("workspace.totalTokens")} .value=${formatOptionalNumber(selected.tokens.total)} .hint=${localization.t("workspace.inputOutput")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("workspace.inputTokens")} .value=${formatOptionalNumber(selected.tokens.input)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("workspace.outputTokens")} .value=${formatOptionalNumber(selected.tokens.output)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("workspace.estimatedCost")} .value=${formatCost(selected.costUsd)} .hint=${selected.costUsd === undefined ? notReported() : localization.t("workspace.observedTelemetry")}></am-kpi-card>
+      </div><p class="coverage-note">${localization.t("workspace.coverage", { state: localization.t(this.conversations.rework?.coverage.activityCoverage === "observed_projection_complete" ? "workspace.coverageComplete" : this.conversations.rework ? "workspace.coveragePartial" : "workspace.coverageUnavailable") })}</p></section>
+      <nav class="purpose-nav" aria-label=${localization.t("workspace.investigationAria")}>${([ ["execution", "workspace.execution"], ["rework", "workspace.rework"], ["comparison", "workspace.comparison"] ] as const).map(([purpose, label]) => html`<button type="button" data-purpose=${purpose} aria-pressed=${String(this.purpose === purpose)} @click=${() => this.selectPurpose(purpose)}>${localization.t(label)}</button>`)}</nav>
       <am-rework-summary
         ?hidden=${this.purpose !== "rework"}
         .analysis=${this.conversations.rework}
         .locationForTrace=${this.locationForTrace}
         .legacySessionTotalTokens=${selected.tokens.total}
         .loading=${this.conversations.loadingRework}
-        .error=${this.conversations.reworkFailed ? String(this.conversations.reworkError ?? "Rework analysis unavailable") : ""}
+        .error=${this.conversations.reworkFailed ? String(this.conversations.reworkError ?? localization.t("workspace.reworkUnavailable")) : ""}
         @rework-retry-requested=${this.retryRework}
       ></am-rework-summary>
       <am-rework-comparison
@@ -256,8 +258,8 @@ export class ConversationWorkspace extends LitElement {
         @comparison-baseline-selected=${this.comparisonBaselineSelected}
         @comparison-retry-requested=${this.retryComparison}
       ></am-rework-comparison>
-      <section class="panel traffic-panel" ?hidden=${this.purpose !== "execution"}><h2>Observed model traffic</h2><am-token-chart .usage=${selected.tokens}></am-token-chart></section>
-      <section class="panel topology-panel" ?hidden=${this.purpose !== "execution"}><h2>Agent topology</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section>
+      <section class="panel traffic-panel" ?hidden=${this.purpose !== "execution"}><h2>${localization.t("workspace.modelTraffic")}</h2><am-token-chart .usage=${selected.tokens}></am-token-chart></section>
+      <section class="panel topology-panel" ?hidden=${this.purpose !== "execution"}><h2>${localization.t("workspace.agentTopology")}</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section>
       ${this.renderOperations(selected, selectedAgentId, activities)}
     `;
   }
@@ -269,7 +271,7 @@ export class ConversationWorkspace extends LitElement {
     const retainedSelectedActivity = selected.activities.find((activity) => activityIdentity(activity) === this.selectedActivityId);
     const selectedVisibility = selectedAgentId && retainedSelectedActivity && retainedSelectedActivity.agentId !== selectedAgentId
       ? "outside_agent_filter" : "not_loaded";
-    return html`<section class="panel operations-panel" ?hidden=${this.purpose !== "execution"}><div class="operations-heading"><h2>Operations & messages</h2>${selectedAgent ? html`<div class="agent-filter"><span>Filtered by</span><strong>${agentDisplayLabel(selectedAgent)}</strong><button type="button" @click=${this.clearAgentSelection}>All agents</button></div>` : null}</div><am-activity-table
+    return html`<section class="panel operations-panel" ?hidden=${this.purpose !== "execution"}><div class="operations-heading"><h2>${localization.t("workspace.operations")}</h2>${selectedAgent ? html`<div class="agent-filter"><span>${localization.t("workspace.filteredBy")}</span><strong>${agentDisplayLabel(selectedAgent)}</strong><button type="button" @click=${this.clearAgentSelection}>${localization.t("workspace.allAgents")}</button></div>` : null}</div><am-activity-table
       .selectedActivityId=${this.selectedActivityId}
       .retainedSelectedActivity=${retainedSelectedActivity}
       .selectedVisibility=${selectedVisibility}
@@ -375,7 +377,7 @@ export class ConversationWorkspace extends LitElement {
   }
 }
 
-const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? NOT_REPORTED : value.toLocaleString();
-const formatCost = (value?: number) => value === undefined ? NOT_REPORTED : new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value);
+const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? notReported() : localization.number(value);
+const formatCost = (value?: number) => value === undefined ? notReported() : localization.number(value, { style: "currency", currency: "USD", maximumFractionDigits: 4 });
 
 declare global { interface HTMLElementTagNameMap { "am-conversation-workspace": ConversationWorkspace } }

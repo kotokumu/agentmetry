@@ -1,7 +1,10 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { TokenUsage } from "../model/telemetry";
-import { NOT_REPORTED } from "../presentation/missing-data";
+import { notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
+import type { MessageKey } from "../localization/messages";
 
 const emptyUsage: TokenUsage = {
   input: null,
@@ -13,7 +16,7 @@ const emptyUsage: TokenUsage = {
 };
 
 @customElement("am-token-chart")
-export class TokenChart extends LitElement {
+export class TokenChart extends LocalizedElement {
   @property({ attribute: false }) usage: TokenUsage = emptyUsage;
 
   static styles = css`
@@ -33,34 +36,34 @@ export class TokenChart extends LitElement {
   `;
 
   render() {
-    const rows: readonly (readonly [string, number | null])[] = [
-      ["Input", this.usage.input],
-      ["Output", this.usage.output],
-      ["Cache read", this.usage.cacheRead],
-      ["Reasoning", this.usage.reasoning],
-      ["Cache write", this.usage.cacheWrite],
+    const rows: readonly (readonly [MessageKey, number | null])[] = [
+      ["common.input", this.usage.input],
+      ["common.output", this.usage.output],
+      ["common.cacheRead", this.usage.cacheRead],
+      ["common.reasoning", this.usage.reasoning],
+      ["common.cacheWrite", this.usage.cacheWrite],
     ] as const;
     const maximum = Math.max(1, ...rows.map(([, value]) => value ?? 0));
-    const total = this.usage.total === null ? NOT_REPORTED : this.usage.total.toLocaleString();
-    return html`<div class="chart" aria-label="Token usage by type">
-      <div class="total"><span>Observed total</span><strong>${total}</strong></div>
-      <div class="group">Primary usage</div>
+    const total = this.usage.total === null ? notReported() : localization.number(this.usage.total);
+    return html`<div class="chart" aria-label=${localization.t("tokens.chartAria")}>
+      <div class="total"><span>${localization.t("tokens.observedTotal")}</span><strong>${total}</strong></div>
+      <div class="group">${localization.t("tokens.primaryUsage")}</div>
       ${rows.slice(0, 2).map(([label, value]) => html`
         <div class="row">
-          <span class="label">${label}</span>
+          <span class="label">${localization.t(label)}</span>
           <div class="track"><div class="bar" style=${`width:${((value ?? 0) / maximum) * 100}%`}></div></div>
-          <span class="value">${value === null ? NOT_REPORTED : value.toLocaleString()}</span>
+          <span class="value">${value === null ? notReported() : localization.number(value)}</span>
         </div>
       `)}
-      <div class="group">Modifiers and additional evidence</div>
+      <div class="group">${localization.t("tokens.additionalEvidence")}</div>
       ${rows.slice(2).map(([label, value]) => html`
         <div class="row">
-          <span class="label modifier">${label}</span>
+          <span class="label modifier">${localization.t(label)}</span>
           <div class="track"><div class="bar" style=${`width:${((value ?? 0) / maximum) * 100}%`}></div></div>
-          <span class="value">${value === null ? NOT_REPORTED : value.toLocaleString()}</span>
+          <span class="value">${value === null ? notReported() : localization.number(value)}</span>
         </div>
       `)}
-      <small>Categories are source-reported. Cache and reasoning values may overlap their parent totals.</small>
+      <small>${localization.t("tokens.sourceNote")}</small>
     </div>`;
   }
 }

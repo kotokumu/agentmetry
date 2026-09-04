@@ -1,14 +1,16 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { Activity, ActivityDirection } from "../model/telemetry";
 import { agentDisplayLabel } from "../model/agent-label";
-import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
+import { NOT_APPLICABLE, notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 import { contentAvailabilityLabel, readableActivityContent } from "./content-evidence";
 import "./token-breakdown";
 
 @customElement("am-activity-table")
-export class ActivityTable extends LitElement {
+export class ActivityTable extends LocalizedElement {
   @property({ attribute: false }) activities: readonly Activity[] = [];
   @property({ type: Boolean }) hasMore = false;
   @property({ type: Boolean }) hasEarlier = false;
@@ -161,7 +163,7 @@ export class ActivityTable extends LitElement {
       : selected && this.agentFilterId && selected.agentId !== this.agentFilterId ? "outside_agent_filter"
         : this.selectedVisibility;
     return html`<div class="reading-layout"><div class="activity-list">${this.continuation("newer")}<div class="table-scroll"><table>
-      <thead><tr><th>Time</th><th>Activity</th><th>Agent</th><th>Trace</th></tr></thead>
+      <thead><tr><th>${localization.t("activity.time")}</th><th>${localization.t("activity.activity")}</th><th>${localization.t("activity.agent")}</th><th>${localization.t("activity.trace")}</th></tr></thead>
 	  <tbody>${repeat(visibleActivities, activityIdentity, (activity, index) => {
         const highlighted = Boolean(this.highlightedTraceId && this.highlightedSpanId)
           && activity.signal === "trace"
@@ -171,8 +173,8 @@ export class ActivityTable extends LitElement {
 	    const content = readableActivityContent(activity.contentEvidence, activity.content);
 	    return html`<tr data-activity-id=${activityIdentity(activity)} data-activity-index=${this.renderOffset + index} data-highlighted=${String(highlighted)} data-selected=${String(isSelected)} aria-current=${highlighted ? "location" : "false"}>
         <td>${formatTime(activity.observedAt)}</td>
-        <td><button type="button" class="select-activity" aria-controls="activity-detail" aria-pressed=${String(isSelected)} @click=${() => this.selectActivity(activity)}><strong>${operationLabel(activity)}</strong><span class="preview">${content ? `${content.slice(0, 120)}${content.length > 120 ? "…" : ""}` : contentAvailabilityLabel(activity.contentEvidence, activity.content)}</span>${isSelected ? html`<span class="selected-label">Selected</span>` : null}</button><br><span class="kind">${activity.kind}</span>${activity.status ? html`<span class="status">${activityStatusLabel(activity.status)}</span>` : null}${correlationView(activity)}</td>
-        <td><strong>${agentDisplayLabel(activity)}</strong><br><small>Runtime ID: <code>${activity.agentId || "main"}</code></small></td>
+        <td><button type="button" class="select-activity" aria-controls="activity-detail" aria-pressed=${String(isSelected)} @click=${() => this.selectActivity(activity)}><strong>${operationLabel(activity)}</strong><span class="preview">${content ? `${content.slice(0, 120)}${content.length > 120 ? "…" : ""}` : contentAvailabilityLabel(activity.contentEvidence, activity.content)}</span>${isSelected ? html`<span class="selected-label">${localization.t("activity.selected")}</span>` : null}</button><br><span class="kind">${activity.kind}</span>${activity.status ? html`<span class="status">${activityStatusLabel(activity.status)}</span>` : null}${correlationView(activity)}</td>
+        <td><strong>${agentDisplayLabel(activity)}</strong><br><small>${localization.t("agentTree.runtimeId", { id: activity.agentId || "main" })}</small></td>
         <td>${this.traceView(activity)}</td>
       </tr>`;})}</tbody>
     </table></div>${this.continuation("older")}</div>${this.detailView(selected, selectedVisibility)}</div>`;
@@ -207,30 +209,30 @@ export class ActivityTable extends LitElement {
   private detailView(activity?: Activity, visibility: "loaded" | "not_loaded" | "outside_agent_filter" = "loaded") {
     const content = activity ? readableActivityContent(activity.contentEvidence, activity.content) : "";
     return html`<section class="activity-detail" id="activity-detail" tabindex="-1" aria-labelledby="activity-detail-heading">
-      <h3 id="activity-detail-heading">${activity ? operationLabel(activity) : "Activity detail"}</h3>
-      ${visibility === "outside_agent_filter" ? html`<p class="empty-detail" role="status">Outside current agent filter. The selected activity remains available from the conversation evidence.</p>` : visibility === "not_loaded" && activity ? html`<p class="empty-detail" role="status">Selected activity is not in the loaded activity page. Its retained body and metadata are shown below.</p>` : null}
-      ${activity ? html`${visibility === "loaded" ? html`<button type="button" class="return-to-activity" @click=${this.returnToActivity}>Back to activity</button>` : null}<h4>${activity.contentEvidence?.kind === "reference" ? "Received reference" : "Received body"}</h4>${content ? html`<pre>${content}</pre>` : html`<p class="empty-detail">${!activity.contentEvidence || activity.contentEvidence.availability === "not_reported" ? "No body was reported for this activity." : "No readable body is available."}</p>`}
+      <h3 id="activity-detail-heading">${activity ? operationLabel(activity) : localization.t("activity.detail")}</h3>
+      ${visibility === "outside_agent_filter" ? html`<p class="empty-detail" role="status">${localization.t("activity.outsideFilter")}</p>` : visibility === "not_loaded" && activity ? html`<p class="empty-detail" role="status">${localization.t("activity.notLoadedRetained")}</p>` : null}
+      ${activity ? html`${visibility === "loaded" ? html`<button type="button" class="return-to-activity" @click=${this.returnToActivity}>${localization.t("activity.back")}</button>` : null}<h4>${localization.t(activity.contentEvidence?.kind === "reference" ? "activity.receivedReference" : "activity.receivedBody")}</h4>${content ? html`<pre>${content}</pre>` : html`<p class="empty-detail">${localization.t(!activity.contentEvidence || activity.contentEvidence.availability === "not_reported" ? "activity.noBodyReported" : "activity.noReadableBody")}</p>`}
         <am-content-evidence .evidence=${activity.contentEvidence} .activityContent=${activity.content ?? ""}></am-content-evidence>
-        <h4>Metadata</h4><dl>
-          <dt>Activity</dt><dd>${activityIdentity(activity)}</dd>
-          <dt>Source</dt><dd>${activity.source || NOT_REPORTED}</dd>
-          <dt>Conversation</dt><dd>${activity.runId || NOT_REPORTED}</dd>
-          <dt>Signal</dt><dd>${activity.signal}</dd>
-          <dt>Event</dt><dd>${activity.name}</dd>
-          <dt>Agent</dt><dd>${agentDisplayLabel(activity)} · ${activity.agentId || "main"}</dd>
-          <dt>Agent type</dt><dd>${activity.agentType || NOT_REPORTED}</dd>
-          <dt>Model</dt><dd>${activity.model || NOT_APPLICABLE}</dd>
-          <dt>Status</dt><dd>${activityStatusLabel(activity.status)}</dd>
-          <dt>Observed</dt><dd>${activity.observedAt}</dd>
-          <dt>Trace</dt><dd>${activity.traceId || activity.relatedTraceId || NOT_APPLICABLE}</dd>
-          <dt>Span</dt><dd>${activity.spanId || activity.relatedSpanId || NOT_APPLICABLE}</dd>
-          <dt>Tokens</dt><dd>${tokenView(activity)}</dd>
-          ${activity.targetAgentId || activity.targetAgentType ? html`<dt>Target agent</dt><dd>${activity.targetAgentId || NOT_REPORTED} · ${activity.targetAgentType || NOT_REPORTED}</dd>` : null}
-          ${activity.promptId ? html`<dt>Prompt</dt><dd>${activity.promptId}</dd>` : null}
-          ${activity.usageId ? html`<dt>Usage</dt><dd>${activity.usageId}</dd>` : null}
+        <h4>${localization.t("activity.metadata")}</h4><dl>
+          <dt>${localization.t("activity.activity")}</dt><dd>${activityIdentity(activity)}</dd>
+          <dt>${localization.t("activity.source")}</dt><dd>${activity.source || notReported()}</dd>
+          <dt>${localization.t("activity.conversation")}</dt><dd>${activity.runId || notReported()}</dd>
+          <dt>${localization.t("activity.signal")}</dt><dd>${activity.signal}</dd>
+          <dt>${localization.t("activity.event")}</dt><dd>${activity.name}</dd>
+          <dt>${localization.t("activity.agent")}</dt><dd>${agentDisplayLabel(activity)} · ${activity.agentId || "main"}</dd>
+          <dt>${localization.t("activity.agentType")}</dt><dd>${activity.agentType || notReported()}</dd>
+          <dt>${localization.t("activity.model")}</dt><dd>${activity.model || NOT_APPLICABLE}</dd>
+          <dt>${localization.t("activity.status")}</dt><dd>${activityStatusLabel(activity.status)}</dd>
+          <dt>${localization.t("activity.observed")}</dt><dd>${activity.observedAt}</dd>
+          <dt>${localization.t("activity.trace")}</dt><dd>${activity.traceId || activity.relatedTraceId || NOT_APPLICABLE}</dd>
+          <dt>${localization.t("activity.span")}</dt><dd>${activity.spanId || activity.relatedSpanId || NOT_APPLICABLE}</dd>
+          <dt>${localization.t("activity.tokens")}</dt><dd>${tokenView(activity)}</dd>
+          ${activity.targetAgentId || activity.targetAgentType ? html`<dt>${localization.t("activity.targetAgent")}</dt><dd>${activity.targetAgentId || notReported()} · ${activity.targetAgentType || notReported()}</dd>` : null}
+          ${activity.promptId ? html`<dt>${localization.t("activity.prompt")}</dt><dd>${activity.promptId}</dd>` : null}
+          ${activity.usageId ? html`<dt>${localization.t("activity.usage")}</dt><dd>${activity.usageId}</dd>` : null}
         </dl>` : this.selectedActivityId
-          ? html`<p class="empty-detail" role="status">Selected activity is not in the loaded activities. Its body is unavailable here.</p><code>${this.selectedActivityId}</code>`
-          : html`<p class="empty-detail">Select an activity to read its received body and metadata.</p>`}
+          ? html`<p class="empty-detail" role="status">${localization.t("activity.selectedUnavailable")}</p><code>${this.selectedActivityId}</code>`
+          : html`<p class="empty-detail">${localization.t("activity.selectPrompt")}</p>`}
     </section>`;
   }
 
@@ -340,16 +342,17 @@ export class ActivityTable extends LitElement {
 	const available = buffered || (direction === "newer" ? this.hasEarlier : this.hasMore);
     const current = this.pageDirection === direction;
     if (!available && !(current && (this.loading || this.loadError))) return null;
-    if (current && this.loading) return html`<div class="loading" data-paging=${direction} role="status">Loading ${direction} observations…</div>`;
-    if (current && this.loadError) return html`<div class="continuation" data-paging=${direction}><span role="alert">${this.loadError}</span><button type="button" data-direction=${direction} @click=${() => this.requestMore(direction)}>Retry loading</button></div>`;
-	if (buffered) return html`<div class="continuation" data-paging=${direction}><button type="button" @click=${() => this.requestMore(direction)}>Show ${direction} loaded activities</button></div>`;
+    const localizedDirection = localization.t(direction === "newer" ? "activity.newer" : "activity.older");
+    if (current && this.loading) return html`<div class="loading" data-paging=${direction} role="status">${localization.t("activity.loadingDirection", { direction: localizedDirection })}</div>`;
+    if (current && this.loadError) return html`<div class="continuation" data-paging=${direction}><span role="alert">${this.loadError}</span><button type="button" data-direction=${direction} @click=${() => this.requestMore(direction)}>${localization.t("activity.retryLoading")}</button></div>`;
+	if (buffered) return html`<div class="continuation" data-paging=${direction}><button type="button" @click=${() => this.requestMore(direction)}>${localization.t("activity.showDirection", { direction: localizedDirection })}</button></div>`;
 	return html`<div class="continuation" data-paging=${direction} aria-hidden="true"></div>`;
   }
 
   private traceView(activity: Activity) {
     const traceId = activity.traceId || activity.relatedTraceId;
     return traceId
-      ? html`<a class="trace" href=${this.locationForTrace(traceId, traceAnchorSpan(activity))} aria-label=${`Open trace ${traceId}`} @click=${(event: MouseEvent) => this.traceSelected(event, activity, traceId)}>${activity.traceId ? shortId(traceId) : html`Linked ${shortId(traceId)}`}</a>`
+      ? html`<a class="trace" href=${this.locationForTrace(traceId, traceAnchorSpan(activity))} aria-label=${localization.t("activity.openTrace", { id: traceId })} @click=${(event: MouseEvent) => this.traceSelected(event, activity, traceId)}>${activity.traceId ? shortId(traceId) : localization.t("activity.linked", { id: shortId(traceId) })}</a>`
       : html`${NOT_APPLICABLE}`;
   }
 
@@ -369,31 +372,31 @@ export class ActivityTable extends LitElement {
   }
 }
 
-const formatTime = (value: string) => new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(value));
+const formatTime = (value: string) => localization.dateTime(new Date(value), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 const shortId = (value?: string) => value ? `${value.slice(0, 8)}…` : NOT_APPLICABLE;
 const shortValue = (value: string) => value.length > 18 ? `${value.slice(0, 14)}…` : value;
-const activityStatusLabel = (value?: string) => value?.toLowerCase() === "error" ? "Error" : value || NOT_REPORTED;
+const activityStatusLabel = (value?: string) => value?.toLowerCase() === "error" ? localization.t("common.error") : value || notReported();
 export const activityIdentity = (activity: Activity) => activity.id ?? JSON.stringify([activity.source, activity.runId, activity.signal, activity.traceId ?? "", activity.spanId ?? "", activity.observedAt, activity.name]);
 export const operationLabel = (activity: Activity) => {
   if (activity.toolName) return activity.toolName;
   switch (activity.kind) {
-    case "prompt": return "User prompt";
-    case "response": return activity.tokens.total === null ? "Model response" : "Model call usage";
-    case "tool": return "Tool operation";
-    case "delegation": return "Agent delegation";
-    case "message": return "Agent message";
-    case "reasoning": return "Reasoning";
-    default: return "Telemetry event";
+    case "prompt": return localization.t("activity.userPrompt");
+    case "response": return localization.t(activity.tokens.total === null ? "activity.modelResponse" : "activity.modelCallUsage");
+    case "tool": return localization.t("activity.toolOperation");
+    case "delegation": return localization.t("activity.agentDelegation");
+    case "message": return localization.t("activity.agentMessage");
+    case "reasoning": return localization.t("common.reasoning");
+    default: return localization.t("activity.telemetryEvent");
   }
 };
 const tokenView = (activity: Activity) => {
   return html`<am-token-breakdown .usage=${activity.tokens} .compact=${true}></am-token-breakdown>
-    ${activity.contributesToTotal ? null : html`<small class="rollup">Corroborating; excluded from total</small>`}`;
+    ${activity.contributesToTotal ? null : html`<small class="rollup">${localization.t("activity.corroborating")}</small>`}`;
 };
 const correlationView = (activity: Activity) => {
   const values = [
-    activity.promptId ? ["Prompt", activity.promptId] : null,
-    activity.usageId ? ["Usage", activity.usageId] : null,
+    activity.promptId ? [localization.t("activity.prompt"), activity.promptId] : null,
+    activity.usageId ? [localization.t("activity.usage"), activity.usageId] : null,
   ].filter((entry): entry is [string, string] => entry !== null);
   return values.length === 0 ? null : html`<div class="correlation">${values.map(([label, value]) => html`<small title=${value}>${label} ${shortValue(value)}</small>`)}</div>`;
 };

@@ -1,9 +1,11 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Trace } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-trace-summary")
-export class TraceSummary extends LitElement {
+export class TraceSummary extends LocalizedElement {
   @property({ attribute: false }) trace?: Trace;
 
   static styles = css`
@@ -23,22 +25,21 @@ export class TraceSummary extends LitElement {
     if (!trace) return null;
     const activityCount = trace.activityCount || trace.activities.length;
     return html`<div class="identity">
-      <div><p>OTLP Trace ID</p><code>${trace.traceId}</code></div>
+      <div><p>${localization.t("trace.otlpId")}</p><code>${trace.traceId}</code></div>
       <span class=${`fact status ${trace.status.toLowerCase()}`}>${title(trace.status)}</span>
     </div>
-    <div class="facts" aria-label="Trace summary">
+    <div class="facts" aria-label=${localization.t("trace.summaryAria")}>
       <span class="fact">${formatDuration(trace.startedAt, trace.endedAt)}</span>
-      <span class="fact">${plural(trace.conversations.length, "conversation")}</span>
-      <span class="fact">${plural(trace.agents.length, "agent")}</span>
-      <span class="fact">${plural(trace.rootSpanCount, "root span")}</span>
-      <span class="fact">${plural(trace.missingParentCount, "missing parent")}</span>
-      <span class="fact">Showing ${trace.activities.length.toLocaleString()} of ${activityCount.toLocaleString()} activities</span>
+      <span class="fact">${localization.t("trace.conversationCount", { count: localization.number(trace.conversations.length) })}</span>
+      <span class="fact">${localization.t("trace.agentCount", { count: localization.number(trace.agents.length) })}</span>
+      <span class="fact">${localization.t("trace.rootSpanCount", { count: localization.number(trace.rootSpanCount) })}</span>
+      <span class="fact">${localization.t("trace.missingParentCount", { count: localization.number(trace.missingParentCount) })}</span>
+      <span class="fact">${localization.t("trace.showingActivities", { shown: localization.number(trace.activities.length), total: localization.number(activityCount) })}</span>
     </div>`;
   }
 }
 
-const title = (value: string) => value ? `${value[0].toUpperCase()}${value.slice(1)}` : "Unknown";
-const plural = (count: number, label: string) => `${count.toLocaleString()} ${label}${count === 1 ? "" : "s"}`;
+const title = (value: string) => value ? `${value[0].toUpperCase()}${value.slice(1)}` : localization.t("common.unknown");
 const formatDuration = (startedAt: string, endedAt: string) => {
   const milliseconds = Math.max(0, new Date(endedAt).getTime() - new Date(startedAt).getTime());
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 2 : 1)} s`;

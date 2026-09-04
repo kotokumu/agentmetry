@@ -18,6 +18,7 @@ import type { TraceExplorer } from "../components/trace-explorer";
 import type { DashboardSummary } from "../components/dashboard-summary";
 import type { MCPConnection } from "../components/mcp-connection";
 import type { TokenUsage } from "../model/telemetry";
+import { localization } from "../localization/localization";
 
 const emptyOverview = {
   sources: [],
@@ -192,7 +193,8 @@ const overviewFetch = (overview: TestOverview) => vi.fn().mockImplementation(asy
   }
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await localization.select("en");
   document.body.replaceChildren();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -200,6 +202,27 @@ afterEach(() => {
 });
 
 describe("Agentmetry app composition", () => {
+  it("switches the application shell and document metadata to Japanese without reloading", async () => {
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    await localization.select("en");
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await app.updateComplete;
+
+    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("Agent conversations");
+    const selector = app.shadowRoot?.querySelector("am-language-selector");
+    await selector?.updateComplete;
+    const select = selector?.shadowRoot?.querySelector("select");
+    select!.value = "ja";
+    select!.dispatchEvent(new Event("change"));
+    await localization.whenReady();
+    await app.updateComplete;
+
+    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("エージェントの会話");
+    expect(document.documentElement.lang).toBe("ja");
+    expect(document.title).toBe("Agentmetry · ローカル AI エージェント可観測性");
+  });
+
   it("applies acknowledged full conditions and preserves the last query on unsupported or invalid drafts", async () => {
     const stub = overviewFetch(emptyOverview);
     vi.stubGlobal("fetch", stub);

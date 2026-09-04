@@ -1,10 +1,12 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { PlanUsageSnapshot } from "../model/telemetry";
-import { NOT_CONNECTED, NOT_REPORTED } from "../presentation/missing-data";
+import { notConnected, notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-plan-usage")
-export class PlanUsage extends LitElement {
+export class PlanUsage extends LocalizedElement {
   @property({ attribute: false }) snapshots: readonly PlanUsageSnapshot[] = [];
 
   static styles = css`
@@ -21,41 +23,41 @@ export class PlanUsage extends LitElement {
 
   render() {
     if (this.snapshots.length === 0) {
-      return html`<p class="empty"><strong>${NOT_CONNECTED}.</strong> Connect an account usage adapter to display plan limits; model tokens cannot determine them.</p>`;
+      return html`<p class="empty"><strong>${notConnected()}.</strong> ${localization.t("plan.notConnected")}</p>`;
     }
     return html`<div class="windows">${this.snapshots.map((snapshot) => html`<article>
       <header>
         <span>${windowLabel(snapshot)}</span>
-        <strong>${formatPercent(snapshot.usedPercent)} used · ${formatPercent(100 - snapshot.usedPercent)} remaining</strong>
+        <strong>${localization.t("plan.usedRemaining", { used: formatPercent(snapshot.usedPercent), remaining: formatPercent(100 - snapshot.usedPercent) })}</strong>
       </header>
       <div class="track" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow=${snapshot.usedPercent}>
         <div class="bar" style=${`width:${snapshot.usedPercent}%`}></div>
       </div>
-      <small>${resetLabel(snapshot)} · observed ${formatLocalTime(snapshot.capturedAt)}</small>
+      <small>${resetLabel(snapshot)} · ${localization.t("plan.observed", { time: formatLocalTime(snapshot.capturedAt) })}</small>
       <small>${metadataLabel(snapshot)}</small>
     </article>`)}</div>`;
   }
 }
 
 const windowLabel = (snapshot: PlanUsageSnapshot) => {
-  if (snapshot.windowDurationMinutes === undefined) return "Usage window";
-  if (snapshot.windowDurationMinutes % 1_440 === 0) return `${snapshot.windowDurationMinutes / 1_440}-day window`;
-  if (snapshot.windowDurationMinutes % 60 === 0) return `${snapshot.windowDurationMinutes / 60}-hour window`;
-  return `${snapshot.windowDurationMinutes}-minute window`;
+  if (snapshot.windowDurationMinutes === undefined) return localization.t("plan.usageWindow");
+  if (snapshot.windowDurationMinutes % 1_440 === 0) return localization.t("plan.days", { count: snapshot.windowDurationMinutes / 1_440 });
+  if (snapshot.windowDurationMinutes % 60 === 0) return localization.t("plan.hours", { count: snapshot.windowDurationMinutes / 60 });
+  return localization.t("plan.minutes", { count: snapshot.windowDurationMinutes });
 };
 const resetLabel = (snapshot: PlanUsageSnapshot) => snapshot.resetsAt
-  ? `resets ${formatLocalTime(snapshot.resetsAt)}`
-  : NOT_REPORTED;
+  ? localization.t("plan.resets", { time: formatLocalTime(snapshot.resetsAt) })
+  : notReported();
 const metadataLabel = (snapshot: PlanUsageSnapshot) => [
-  `Source ${snapshot.source}`,
-  snapshot.accountId ? `account ${snapshot.accountId}` : undefined,
-  snapshot.plan ? `plan ${snapshot.plan}` : undefined,
-  `authority ${snapshot.authority}`,
+  localization.t("plan.source", { value: snapshot.source }),
+  snapshot.accountId ? localization.t("plan.account", { value: snapshot.accountId }) : undefined,
+  snapshot.plan ? localization.t("plan.plan", { value: snapshot.plan }) : undefined,
+  localization.t("plan.authority", { value: snapshot.authority }),
 ].filter(Boolean).join(" · ");
-const formatLocalTime = (value: string) => new Intl.DateTimeFormat(undefined, {
+const formatLocalTime = (value: string) => localization.dateTime(new Date(value), {
   dateStyle: "medium",
   timeStyle: "short",
-}).format(new Date(value));
-const formatPercent = (value: number) => `${Math.max(0, Math.min(100, value)).toLocaleString(undefined, { maximumFractionDigits: 1 })}%`;
+});
+const formatPercent = (value: number) => `${localization.number(Math.max(0, Math.min(100, value)), { maximumFractionDigits: 1 })}%`;
 
 declare global { interface HTMLElementTagNameMap { "am-plan-usage": PlanUsage } }

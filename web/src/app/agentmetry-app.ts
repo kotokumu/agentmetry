@@ -1,9 +1,12 @@
 import { conditionsKey, hasSessionConditions, parseInvestigationFilters, sessionConditions, type InvestigationFilters, type SessionConditions } from "../model/investigation-conditions";
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators.js";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 import "../components/app-update-control";
 import "../components/conversation-workspace";
 import "../components/dashboard-summary";
+import "../components/language-selector";
 import "../components/mcp-connection";
 import "../components/time-range-filter";
 import "../components/trace-explorer";
@@ -29,7 +32,7 @@ import {
 } from "./navigation";
 
 @customElement("am-app")
-export class AgentmetryApp extends LitElement {
+export class AgentmetryApp extends LocalizedElement {
   @state() private range: TimeRange = "24h";
   @state() private sourceId = "";
   @state() private search = "";
@@ -49,7 +52,7 @@ export class AgentmetryApp extends LitElement {
   @state() private requestedPurpose: NavigationViewState["purpose"] = "execution";
   @state() private requestedActivityId = "";
   @state() private requestedEvidenceFocus?: NavigationViewState["evidenceFocus"];
-  @state() private routeAnnouncement = "Dashboard";
+  @state() private routeAnnouncement = localization.t("app.dashboard");
   @state() private dashboardStatus: DashboardStateDetail["status"] = "loading";
   @state() private sources: readonly TelemetrySource[] = [];
   @state() private conversationStatus: ConversationSummaryDetail["status"] = "loading";
@@ -144,8 +147,8 @@ export class AgentmetryApp extends LitElement {
     return html`<main data-density="operator">
       <p class="sr-only" aria-live="polite">${this.routeAnnouncement}</p>
       ${traceActive ? null : html`<header>
-        <div><a class="brand" href=${dashboardHref} aria-label="Back to Agentmetry dashboard" @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><p class="eyebrow">Local trace observatory // Live</p><h1>Agent conversations,<br><span>decoded.</span></h1></div>
-        <div class="header-controls"><div class="utility-controls"><am-app-update-control></am-app-update-control><am-mcp-connection></am-mcp-connection></div><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
+        <div><a class="brand" href=${dashboardHref} aria-label=${localization.t("app.backToDashboard")} @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><p class="eyebrow">${localization.t("app.eyebrow")}</p><h1>${localization.t("app.headline")}<br><span>${localization.t("app.headlineSuffix")}</span></h1></div>
+        <div class="header-controls"><div class="utility-controls"><am-language-selector></am-language-selector><am-app-update-control></am-app-update-control><am-mcp-connection></am-mcp-connection></div><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
       </header>`}
 
       ${traceActive ? null : html`<am-dashboard-summary
@@ -163,7 +166,7 @@ export class AgentmetryApp extends LitElement {
         .anchorSpanId=${this.selectedTraceSpanId}
         .requestedInvestigation=${this.requestedTraceInvestigation}
         .returnHref=${this.traceReturn?.href ?? dashboardHref}
-        .returnLabel=${this.traceReturn?.label ?? "Conversations"}
+        .returnLabel=${this.traceReturn ? this.localizedOriginLabel(this.traceReturn) : localization.t("app.conversations")}
         .locationForConversation=${(target: ConversationTarget) => conversationLocation(target, this.filters)}
         @trace-close-requested=${this.closeTrace}
         @trace-removed=${this.traceRemoved}
@@ -182,7 +185,7 @@ export class AgentmetryApp extends LitElement {
         .requestedConversation=${this.requestedConversation}
         .listHref=${dashboardHref}
         .returnHref=${this.conversationReturn?.href ?? ""}
-        .returnLabel=${this.conversationReturn?.label ?? ""}
+        .returnLabel=${this.conversationReturn ? this.localizedOriginLabel(this.conversationReturn) : ""}
         .requestedAgentId=${this.requestedAgentId}
         .purpose=${this.requestedPurpose}
         .requestedActivityId=${this.requestedActivityId}
@@ -253,7 +256,7 @@ export class AgentmetryApp extends LitElement {
     const origin: NavigationOrigin = {
       kind: "conversation",
       href: originHref,
-      label: `Conversation ${shortId(event.detail.conversationId)}`,
+      label: localization.t("app.conversation", { id: shortId(event.detail.conversationId) }),
     };
     this.beginNavigation(originHref);
     if (event.detail.spanId) {
@@ -270,7 +273,7 @@ export class AgentmetryApp extends LitElement {
     const origin: NavigationOrigin = {
       kind: "trace",
       href: `${window.location.pathname}${window.location.search}`,
-      label: `Trace ${shortId(this.selectedTraceId)}`,
+      label: localization.t("app.trace", { id: shortId(this.selectedTraceId) }),
     };
     this.beginNavigation();
     history.pushState({ origin }, "", conversationLocation(event.detail, this.filters));
@@ -357,7 +360,7 @@ export class AgentmetryApp extends LitElement {
     this.filterPending = false;
     let filters = this.filters;
     try { filters = filtersFromLocation(new URL(window.location.href)); this.filterError = ""; }
-    catch (error) { this.filterError = error instanceof Error ? error.message : "Invalid URL conditions."; }
+    catch (error) { this.filterError = error instanceof Error ? error.message : localization.t("app.invalidUrlConditions"); }
     const conditions = sessionConditions(filters);
     if (conditionsKey(conditions) !== conditionsKey(this.conditions)) this.conditions = conditions;
     this.range = filters.range;
@@ -378,8 +381,8 @@ export class AgentmetryApp extends LitElement {
       this.requestedAgentId = view?.selectedAgentId ?? "";
       this.traceReturn = undefined;
       this.conversationReturn = origin?.kind === "trace" ? origin : undefined;
-      this.routeAnnouncement = `Conversation ${shortId(conversationTarget.conversationId)}`;
-      document.title = `Agentmetry · ${this.routeAnnouncement}`;
+      this.routeAnnouncement = localization.t("app.conversation", { id: shortId(conversationTarget.conversationId) });
+      this.syncDocumentMetadata();
       this.pendingFocus = restoreContext ? "detail" : undefined;
       return;
     }
@@ -390,8 +393,8 @@ export class AgentmetryApp extends LitElement {
     this.traceReturn = traceId && origin?.kind === "conversation" ? origin : undefined;
     this.conversationReturn = undefined;
     if (traceId) {
-      this.routeAnnouncement = `Trace ${shortId(traceId)}`;
-      document.title = `Agentmetry · ${this.routeAnnouncement}`;
+      this.routeAnnouncement = localization.t("app.trace", { id: shortId(traceId) });
+      this.syncDocumentMetadata();
       this.pendingFocus = restoreContext ? "trace" : undefined;
       return;
     }
@@ -399,8 +402,8 @@ export class AgentmetryApp extends LitElement {
     this.requestedConversation = undefined;
     this.requestedAgentId = view?.selectedAgentId ?? "";
     this.traceReturn = undefined;
-    this.routeAnnouncement = "Dashboard";
-    document.title = "Agentmetry · Local AI Agent Observability";
+    this.routeAnnouncement = localization.t("app.dashboard");
+    this.syncDocumentMetadata();
     this.pendingFocus = restoreContext ? "list" : undefined;
   }
 
@@ -422,7 +425,7 @@ export class AgentmetryApp extends LitElement {
       history.pushState({}, "", dashboardLocation(filters));
       this.readRoute(true, true);
     } catch (error) {
-      if (request === this.filterRequest) this.filterError = error instanceof Error ? error.message : "Conditions could not be applied.";
+      if (request === this.filterRequest) this.filterError = error instanceof Error ? error.message : localization.t("app.conditionsCouldNotApply");
     } finally { if (request === this.filterRequest) this.filterPending = false; }
   }
 
@@ -439,6 +442,7 @@ export class AgentmetryApp extends LitElement {
   }
 
   protected updated(_changed: PropertyValues<this>) {
+    this.syncDocumentMetadata();
     this.restoreRouteContext();
   }
 
@@ -505,10 +509,36 @@ export class AgentmetryApp extends LitElement {
 
 
   private statusText() {
-    const receiver = html`<span class="receiver"><span class="status-dot" aria-label="Receiving OTLP"></span><span>Receiving OTLP locally · HTTP :4318 · gRPC :4317</span></span>`;
-    if (this.dashboardStatus === "loading") return html`${receiver}<span class="state-note">Refreshing dashboard…</span>`;
-    if (this.dashboardStatus === "failed") return html`${receiver}<span class="state-note error">Dashboard data unavailable</span>`;
+    const receiver = html`<span class="receiver"><span class="status-dot" aria-label=${localization.t("app.receivingAria")}></span><span>${localization.t("app.receiving")}</span></span>`;
+    if (this.dashboardStatus === "loading") return html`${receiver}<span class="state-note">${localization.t("app.refreshing")}</span>`;
+    if (this.dashboardStatus === "failed") return html`${receiver}<span class="state-note error">${localization.t("app.dashboardUnavailable")}</span>`;
     return receiver;
+  }
+
+  private syncDocumentMetadata() {
+    document.documentElement.lang = localization.locale;
+    if (this.selectedTraceId) {
+      this.routeAnnouncement = localization.t("app.trace", { id: shortId(this.selectedTraceId) });
+      document.title = `Agentmetry · ${this.routeAnnouncement}`;
+      return;
+    }
+    if (this.requestedConversation) {
+      this.routeAnnouncement = localization.t("app.conversation", { id: shortId(this.requestedConversation.conversationId) });
+      document.title = `Agentmetry · ${this.routeAnnouncement}`;
+      return;
+    }
+    this.routeAnnouncement = localization.t("app.dashboard");
+    document.title = localization.t("app.title.dashboard");
+  }
+
+  private localizedOriginLabel(origin: NavigationOrigin): string {
+    const url = new URL(origin.href, window.location.origin);
+    if (origin.kind === "conversation") {
+      const target = conversationTargetFromLocation(url.pathname, url.search);
+      return target ? localization.t("app.conversation", { id: shortId(target.conversationId) }) : localization.t("app.conversations");
+    }
+    const traceId = traceIdFromPath(url.pathname);
+    return traceId ? localization.t("app.trace", { id: shortId(traceId) }) : origin.label;
   }
 }
 

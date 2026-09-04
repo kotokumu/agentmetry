@@ -1,11 +1,13 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type { TraceInvestigationState, TraceOverview } from "../model/trace-investigation";
 import type { Activity } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-trace-overview")
-export class TraceOverviewPanel extends LitElement {
+export class TraceOverviewPanel extends LocalizedElement {
   @property({ attribute: false }) overview?: TraceOverview;
   @property({ attribute: false }) investigation: TraceInvestigationState = {};
   @property({ type: Number }) matchingActivities = 0;
@@ -40,46 +42,46 @@ export class TraceOverviewPanel extends LitElement {
     const chosenStart = this.investigation.startedAt ? Date.parse(this.investigation.startedAt) : extent?.start ?? 0;
     const chosenEnd = this.investigation.endedAt ? Date.parse(this.investigation.endedAt) : extent?.end ?? 0;
     const stateMessage = this.overviewState === "unsupported"
-      ? this.overviewError || "Trace overview is unsupported by this server. The loaded evidence remains available."
+      ? this.overviewError || localization.t("overview.unsupported")
       : this.overviewState === "failed"
-        ? this.overviewError || "Trace overview is unavailable. The loaded evidence remains available."
-        : this.overviewState === "loading" ? "Loading trace overview…" : "";
+        ? this.overviewError || localization.t("overview.unavailable")
+        : this.overviewState === "loading" ? localization.t("overview.loading") : "";
     return html`
       ${stateMessage ? html`<p class=${`status ${this.overviewState === "failed" ? "error" : ""}`} role=${this.overviewState === "failed" ? "alert" : "status"}>${stateMessage}</p>` : null}
-      ${this.windowState === "unsupported" ? html`<p class="status">${this.windowError || "Bounded trace windows are unsupported by this server."}</p>` : null}
+      ${this.windowState === "unsupported" ? html`<p class="status">${this.windowError || localization.t("overview.windowUnsupported")}</p>` : null}
       ${overview ? html`
-        <p class="status">Overview ${overview.returnedActivities.toLocaleString()} of ${overview.totalActivities.toLocaleString()} activities · ${overview.coverage === "complete" ? "complete coverage" : "partial retained coverage"} · ${this.matchingActivities.toLocaleString()} match the current window</p>
-        <div class="map" role="img" aria-label=${`Trace overview from ${overview.startedAt} to ${overview.endedAt}`}>
+        <p class="status">${localization.t("overview.status", { shown: localization.number(overview.returnedActivities), total: localization.number(overview.totalActivities), coverage: localization.t(overview.coverage === "complete" ? "overview.complete" : "overview.partial"), matches: localization.number(this.matchingActivities) })}</p>
+        <div class="map" role="img" aria-label=${localization.t("overview.mapAria", { start: overview.startedAt, end: overview.endedAt })}>
           ${overview.activities.map((activity, index) => {
             const position = overviewPosition(activity.startedAt, activity.endedAt, extent!);
             return html`<span class=${`mark ${activity.status?.toLowerCase() === "error" ? "error" : ""} ${activity.missingParent ? "missing-parent" : ""}`}
-              title=${`${activity.name}${activity.missingParent ? " · missing parent" : ""}`}
+              title=${`${activity.name}${activity.missingParent ? ` · ${localization.t("overview.missingParent")}` : ""}`}
               style=${`left:${position.left}%;width:${position.width}%;top:${6 + (index % 7) * 8}px`}></span>`;
           })}
         </div>
         <div class="controls">
-          <label>Window start
-            <input aria-label="Trace window start" type="range" min=${extent!.start} max=${extent!.end} step="1" .value=${live(String(chosenStart))} @change=${this.rangeChanged}>
+          <label>${localization.t("overview.windowStart")}
+            <input aria-label=${localization.t("overview.windowStartAria")} type="range" min=${extent!.start} max=${extent!.end} step="1" .value=${live(String(chosenStart))} @change=${this.rangeChanged}>
             <span>${new Date(chosenStart).toISOString()}</span>
           </label>
-          <label>Window end
-            <input aria-label="Trace window end" type="range" min=${extent!.start} max=${extent!.end} step="1" .value=${live(String(chosenEnd))} @change=${this.rangeChanged}>
+          <label>${localization.t("overview.windowEnd")}
+            <input aria-label=${localization.t("overview.windowEndAria")} type="range" min=${extent!.start} max=${extent!.end} step="1" .value=${live(String(chosenEnd))} @change=${this.rangeChanged}>
             <span>${new Date(chosenEnd).toISOString()}</span>
           </label>
-          <label>Activity kind
-            <select aria-label="Trace activity kind" @change=${this.kindChanged}>
-              <option value="">All kinds</option>${kinds.map((kind) => html`<option value=${kind}>${kind}</option>`)}
+          <label>${localization.t("overview.activityKind")}
+            <select data-role="activity-kind" aria-label=${localization.t("overview.activityKindAria")} @change=${this.kindChanged}>
+              <option value="">${localization.t("overview.allKinds")}</option>${kinds.map((kind) => html`<option value=${kind}>${kind}</option>`)}
             </select>
           </label>
-          <label class="check"><input type="checkbox" .checked=${live(this.investigation.errorsOnly ?? false)} @change=${this.errorsChanged}> Errors only</label>
-          <div class="buttons"><button type="button" @click=${() => this.zoom(.5)}>Zoom in</button><button type="button" @click=${() => this.zoom(2)}>Zoom out</button><button type="button" @click=${this.reset}>Reset window</button></div>
+          <label class="check"><input type="checkbox" .checked=${live(this.investigation.errorsOnly ?? false)} @change=${this.errorsChanged}> ${localization.t("overview.errorsOnly")}</label>
+          <div class="buttons"><button type="button" @click=${() => this.zoom(.5)}>${localization.t("overview.zoomIn")}</button><button type="button" @click=${() => this.zoom(2)}>${localization.t("overview.zoomOut")}</button><button type="button" @click=${this.reset}>${localization.t("overview.reset")}</button></div>
         </div>
       ` : null}
     `;
   }
 
   protected updated() {
-    const select = this.renderRoot.querySelector<HTMLSelectElement>('select[aria-label="Trace activity kind"]');
+    const select = this.renderRoot.querySelector<HTMLSelectElement>('select[data-role="activity-kind"]');
     if (select && select.value !== (this.investigation.kind ?? "")) select.value = this.investigation.kind ?? "";
   }
 

@@ -1,12 +1,14 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 type CopyStatus = "idle" | "copied" | "failed";
 
 export const mcpEndpointFromOrigin = (origin: string) => new URL("/mcp", origin).href;
 
 @customElement("am-mcp-connection")
-export class MCPConnection extends LitElement {
+export class MCPConnection extends LocalizedElement {
   @property() endpoint = mcpEndpointFromOrigin(window.location.origin);
   @state() private open = false;
   @state() private copyStatus: CopyStatus = "idle";
@@ -84,23 +86,23 @@ export class MCPConnection extends LitElement {
         aria-controls="mcp-connection-panel"
         @click=${this.togglePanel}
         @keydown=${this.keyDown}
-      ><span class="signal" aria-hidden="true">//</span><span>MCP</span><span class="action">${this.open ? "close" : "details"}</span></button>
+      ><span class="signal" aria-hidden="true">//</span><span>MCP</span><span class="action">${localization.t(this.open ? "mcp.close" : "mcp.details")}</span></button>
       <section id="mcp-connection-panel" class="panel" ?hidden=${!this.open} aria-labelledby="mcp-connection-title" @keydown=${this.keyDown}>
-        <p class="eyebrow">Local analysis interface</p>
-        <h2 id="mcp-connection-title">MCP connection</h2>
-        <p class="intro">Use this server URL in an MCP client to query Agentmetry's local telemetry.</p>
-        <span class="label">Server URL</span>
+        <p class="eyebrow">${localization.t("mcp.eyebrow")}</p>
+        <h2 id="mcp-connection-title">${localization.t("mcp.title")}</h2>
+        <p class="intro">${localization.t("mcp.intro")}</p>
+        <span class="label">${localization.t("mcp.serverUrl")}</span>
         <div class="endpoint">
-          <input class="endpoint-value" aria-label="MCP server URL" .value=${this.endpoint} readonly @focus=${this.selectEndpoint}>
-          <button class="copy" type="button" @click=${this.copyEndpoint}>${this.copyStatus === "copied" ? "Copied" : "Copy URL"}</button>
+          <input class="endpoint-value" aria-label=${localization.t("mcp.serverUrlAria")} .value=${this.endpoint} readonly @focus=${this.selectEndpoint}>
+          <button class="copy" type="button" @click=${this.copyEndpoint}>${localization.t(this.copyStatus === "copied" ? "mcp.copied" : "mcp.copyUrl")}</button>
         </div>
         <p class="copy-status ${this.copyStatus === "failed" ? "failed" : ""}" aria-live="polite">${this.copyMessage}</p>
         <dl>
-          <div><dt>Transport</dt><dd>Streamable HTTP</dd></div>
-          <div><dt>Authentication</dt><dd>No authentication</dd></div>
-          <div><dt>Access</dt><dd>Read only</dd></div>
+          <div><dt>${localization.t("mcp.transport")}</dt><dd>Streamable HTTP</dd></div>
+          <div><dt>${localization.t("mcp.authentication")}</dt><dd>${localization.t("mcp.noAuthentication")}</dd></div>
+          <div><dt>${localization.t("mcp.access")}</dt><dd>${localization.t("mcp.readOnly")}</dd></div>
         </dl>
-        <p class="workflow">Call <code>get_agent_context</code> first. Run analysis requires an explicit <code>source</code> and <code>runId</code>.</p>
+        <p class="workflow">${localization.t("mcp.workflowBefore")} <code>get_agent_context</code> ${localization.t("mcp.workflowMiddle")} <code>source</code> ${localization.t("mcp.workflowAnd")} <code>runId</code>.</p>
       </section>
     `;
   }
@@ -149,8 +151,8 @@ export class MCPConnection extends LitElement {
   };
 
   private get copyMessage() {
-    if (this.copyStatus === "copied") return "Copied to clipboard";
-    if (this.copyStatus === "failed") return "Copy failed — select the URL manually";
+    if (this.copyStatus === "copied") return localization.t("mcp.copiedMessage");
+    if (this.copyStatus === "failed") return localization.t("mcp.copyFailed");
     return "";
   }
 }

@@ -1,13 +1,15 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Trace } from "../model/telemetry";
 import { aggregateTraceAgentUsage } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
-import { NOT_REPORTED } from "../presentation/missing-data";
+import { notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 import "./token-breakdown";
 
 @customElement("am-trace-participants")
-export class TraceParticipants extends LitElement {
+export class TraceParticipants extends LocalizedElement {
   @property({ attribute: false }) trace?: Trace;
 
   static styles = css`
@@ -25,11 +27,11 @@ export class TraceParticipants extends LitElement {
     const trace = this.trace;
     if (!trace) return null;
     const agents = aggregateTraceAgentUsage(trace);
-    return html`<section><h3>Conversations</h3><ul>${trace.conversations.map((conversation) => html`
-      <li><small>${conversation.sourceId || NOT_REPORTED}</small><code>${conversation.id}</code></li>`)}
+    return html`<section><h3>${localization.t("participants.conversations")}</h3><ul>${trace.conversations.map((conversation) => html`
+      <li><small>${conversation.sourceId || notReported()}</small><code>${conversation.id}</code></li>`)}
     </ul></section>
-    <section><h3>Agents</h3><ul>${agents.map((agent) => html`
-      <li><small>${agent.sourceId} · ${agent.conversationId}</small><strong>${agentDisplayLabel(agent)}</strong><code>${agent.agentId || NOT_REPORTED}</code><small>${[agent.agentType, agent.model].filter(Boolean).join(" · ") || NOT_REPORTED}</small><small>${agent.activityCount.toLocaleString()} activities</small><am-token-breakdown .usage=${agent.tokens} .compact=${true}></am-token-breakdown></li>`)}
+    <section><h3>${localization.t("participants.agents")}</h3><ul>${agents.map((agent) => html`
+      <li><small>${agent.sourceId} · ${agent.conversationId}</small><strong>${agentDisplayLabel(agent)}</strong><code>${agent.agentId || notReported()}</code><small>${[agent.agentType, agent.model].filter(Boolean).join(" · ") || notReported()}</small><small>${localization.t("participants.activityCount", { count: localization.number(agent.activityCount) })}</small><am-token-breakdown .usage=${agent.tokens} .compact=${true}></am-token-breakdown></li>`)}
     </ul></section>`;
   }
 }
