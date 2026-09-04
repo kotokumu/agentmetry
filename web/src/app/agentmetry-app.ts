@@ -237,7 +237,7 @@ export class AgentmetryApp extends LitElement {
     const target = { sourceId: event.detail.sourceId, conversationId: event.detail.sessionId };
     this.beginNavigation();
     history.pushState({}, "", conversationLocation(target, this.filters));
-    this.readRoute(true, true);
+    this.readRoute(true);
   }
 
   private traceSelected(event: CustomEvent<{ traceId: string; sourceId: string; conversationId: string; spanId?: string; evidenceOrigin?: "episode" }>) {

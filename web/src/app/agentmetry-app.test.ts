@@ -694,7 +694,7 @@ describe("Agentmetry app composition", () => {
     expect(metrics).toContain("$0.0125");
   });
 
-  it("filters operations when an agent graph node is selected", async () => {
+  it("preserves conversation view state and page scroll across session changes", async () => {
     const tokenUsage = { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null };
     const activities = [
       { source: "codex", signal: "trace" as const, traceId: "trace-main", spanId: "span-main", name: "main operation", kind: "tool" as const, agentId: "main", runId: "session-1", model: "model-a", observedAt: "2026-08-11T00:00:01Z", tokens: tokenUsage, contributesToTotal: false },
@@ -752,7 +752,7 @@ describe("Agentmetry app composition", () => {
       detail: { sourceId: "codex", sessionId: "session-2" }, bubbles: true, composed: true,
     }));
     await vi.waitFor(() => expect(location.pathname).toBe("/conversations/codex/session-2"));
-    expect(scrollTo).toHaveBeenCalledWith({ top: 0, behavior: "auto" });
+    expect(scrollTo).not.toHaveBeenCalled();
 
     history.back();
     await vi.waitFor(() => expect(location.pathname).toBe("/conversations/codex/session-1"));
