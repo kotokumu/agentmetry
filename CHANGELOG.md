@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.13.0](https://github.com/kotokumu/agentmetry/compare/v1.12.0...v1.13.0) (2026-09-04)
+
+
+### Features
+
+* **web:** add Lit-based internationalization ([db22278](https://github.com/kotokumu/agentmetry/commit/db2227864c70d1483c9b33f17d0f8450616317bf))
+* **web:** add Lit-based internationalization ([48f247a](https://github.com/kotokumu/agentmetry/commit/48f247ae082000c6230d116e7d0de9b8d45f2968))
+
 ## [1.12.0](https://github.com/kotokumu/agentmetry/compare/v1.11.2...v1.12.0) (2026-09-04)
 
 
