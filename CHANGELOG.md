@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.12.0](https://github.com/kotokumu/agentmetry/compare/v1.11.2...v1.12.0) (2026-09-04)
+
+
+### Features
+
+* **web:** streamline investigation filters ([5e2f481](https://github.com/kotokumu/agentmetry/commit/5e2f481929067f2435a7fae700a09e1cb399e7c0))
+* **web:** streamline investigation filters ([67c142a](https://github.com/kotokumu/agentmetry/commit/67c142af4d457c62221057d0092aee370d3cb3d7))
+
+
+### Bug Fixes
+
+* **web:** preserve scroll when switching sessions ([5471f19](https://github.com/kotokumu/agentmetry/commit/5471f197ab6a83dd28bf71908767da2666bb2dfe))
+* **web:** preserve scroll when switching sessions ([74df934](https://github.com/kotokumu/agentmetry/commit/74df9345609a5eb882cd8c3af82900a54b6fd394))
+
 ## [1.11.2](https://github.com/kotokumu/agentmetry/compare/v1.11.1...v1.11.2) (2026-09-03)
 
 
