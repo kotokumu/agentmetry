@@ -87,7 +87,7 @@ export class InvestigationFilter extends LocalizedElement {
   render() {
     return html`<section aria-labelledby="investigation-filters-heading">
         <h3 id="investigation-filters-heading">${localization.t("investigation.title")}</h3>
-        <p class="applied">${localization.t("investigation.applied")}: ${describeFilters(this.filters)}</p>
+        <p class="applied">${localization.t("investigation.applied", { filters: describeFilters(this.filters) })}</p>
         <label>${localization.t("saved.filter")}
           <select name="saved-filter" .value=${this.selectedName} ?disabled=${this.pending} @change=${this.selectSaved}>
             <option value="">${localization.t("saved.chooseOne")}</option>

@@ -169,7 +169,7 @@ export const sourceMessages = {
   "saved.loadFailed": (_parameters: MessageParameters = {}) => msg("The saved filter could not be loaded.", { id: "saved.loadFailed" }),
   "saved.noLongerExists": (_parameters: MessageParameters = {}) => msg("The saved filter no longer exists.", { id: "saved.noLongerExists" }),
   "investigation.title": (_parameters: MessageParameters = {}) => msg("Investigation filters", { id: "investigation.title" }),
-  "investigation.applied": (_parameters: MessageParameters = {}) => msg("Applied", { id: "investigation.applied" }),
+  "investigation.applied": ({ filters }: MessageParameters = {}) => msg(str`Applied: ${filters}`, { id: "investigation.applied" }),
   "investigation.requested": (_parameters: MessageParameters = {}) => msg("Requested (not yet applied)", { id: "investigation.requested" }),
   "investigation.observedFailure": (_parameters: MessageParameters = {}) => msg("Observed failure", { id: "investigation.observedFailure" }),
   "investigation.minElapsed": (_parameters: MessageParameters = {}) => msg("Minimum elapsed time (ms)", { id: "investigation.minElapsed" }),
