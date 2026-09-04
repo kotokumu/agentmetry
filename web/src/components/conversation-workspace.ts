@@ -11,7 +11,6 @@ import type { ComparisonBaselineSelectedDetail } from "./rework-comparison";
 import "./rework-summary";
 import "./session-filter";
 import "./investigation-filter";
-import "./saved-filters";
 import { hasSessionConditions, type SessionConditions } from "../model/investigation-conditions";
 import "./session-list";
 import "./token-chart";
@@ -100,9 +99,11 @@ export class ConversationWorkspace extends LitElement {
       display: flex;
       flex-direction: column;
       max-height: calc(100dvh - 32px);
-      overflow: hidden;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      scrollbar-gutter: stable;
     }
-    aside.panel > h2, aside.panel > am-session-filter { flex: 0 0 auto; }
+    aside.panel > h2, aside.panel > am-session-filter, aside.panel > am-investigation-filter { flex: 0 0 auto; }
     aside.panel > am-session-list {
       flex: 1 1 auto;
       min-height: 0;
@@ -183,7 +184,7 @@ export class ConversationWorkspace extends LitElement {
         .sources=${this.sources.length ? this.sources : this.conversations.sources}
         .selectedSource=${this.sourceId}
         .search=${this.search}
-      ></am-session-filter><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? "Conversation query unavailable") : "")}></am-investigation-filter><am-saved-filters .filters=${this.investigationFilters} .confirmed=${!this.filterPending && !this.conversations.loadingList && !this.conversations.listFailed} .pending=${this.filterPending || this.conversations.loadingList}></am-saved-filters><am-session-list
+      ></am-session-filter><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? "Conversation query unavailable") : "")}></am-investigation-filter><am-session-list
         .sessions=${sessions}
         .loading=${this.conversations.loadingList}
         .unavailable=${this.conversations.listFailed}
