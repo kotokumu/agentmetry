@@ -16,9 +16,8 @@ export class LanguageSelector extends LocalizedElement {
   render() {
     return html`<label><span>${localization.t("language.label")}</span><select
       aria-label=${localization.t("language.label")}
-      .value=${localization.locale}
       @change=${this.localeSelected}
-    >${supportedLocales.map(({ code, name }) => html`<option value=${code}>${name}</option>`)}</select></label>`;
+    >${supportedLocales.map(({ code, name }) => html`<option value=${code} ?selected=${code === localization.locale}>${name}</option>`)}</select></label>`;
   }
 
   private readonly localeSelected = (event: Event) => {
