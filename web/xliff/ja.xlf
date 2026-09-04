@@ -12,7 +12,7 @@
 </trans-unit>
 <trans-unit id="app.eyebrow">
   <source>Local trace observatory // Live</source>
-  <target>ローカルトレース観測 // ライブ</target>
+  <target>ローカルトレース観測 // 稼働中</target>
 </trans-unit>
 <trans-unit id="app.headline">
   <source>Agent conversations,</source>
@@ -40,7 +40,7 @@
 </trans-unit>
 <trans-unit id="app.title.dashboard">
   <source>Agentmetry · Local AI Agent Observability</source>
-  <target>Agentmetry · ローカル AI エージェント可観測性</target>
+  <target>Agentmetry · ローカル AI エージェントの可観測性</target>
 </trans-unit>
 <trans-unit id="app.receivingAria">
   <source>Receiving OTLP</source>
@@ -56,7 +56,7 @@
 </trans-unit>
 <trans-unit id="app.dashboardUnavailable">
   <source>Dashboard data unavailable</source>
-  <target>ダッシュボードデータを利用できません</target>
+  <target>ダッシュボードのデータを取得できません</target>
 </trans-unit>
 <trans-unit id="app.invalidUrlConditions">
   <source>Invalid URL conditions.</source>
@@ -172,7 +172,7 @@
 </trans-unit>
 <trans-unit id="content.strength.readOutput">
   <source>Received read or tool output</source>
-  <target>受信した読み取りまたはツール出力</target>
+  <target>受信した読み取り結果またはツール出力</target>
 </trans-unit>
 <trans-unit id="content.strength.explicitModelInput">
   <source>Explicitly reported model input</source>
@@ -188,7 +188,7 @@
 </trans-unit>
 <trans-unit id="content.availability.redacted">
   <source>Producer-redacted</source>
-  <target>送信元で編集済み</target>
+  <target>送信元で秘匿済み</target>
 </trans-unit>
 <trans-unit id="content.availability.notReturned">
   <source>Body not requested</source>
@@ -260,7 +260,7 @@
 </trans-unit>
 <trans-unit id="tokens.observedTotal">
   <source>Observed total</source>
-  <target>観測合計</target>
+  <target>観測合計値</target>
 </trans-unit>
 <trans-unit id="tokens.primaryUsage">
   <source>Primary usage</source>
@@ -268,7 +268,7 @@
 </trans-unit>
 <trans-unit id="tokens.additionalEvidence">
   <source>Modifiers and additional evidence</source>
-  <target>補正値と追加根拠</target>
+  <target>補正と追加の根拠</target>
 </trans-unit>
 <trans-unit id="tokens.sourceNote">
   <source>Categories are source-reported. Cache and reasoning values may overlap their parent totals.</source>
@@ -276,11 +276,11 @@
 </trans-unit>
 <trans-unit id="plan.notConnected">
   <source>Connect an account usage adapter to display plan limits; model tokens cannot determine them.</source>
-  <target>プラン上限を表示するにはアカウント使用量アダプターを接続してください。モデルトークンだけでは判定できません。</target>
+  <target>プラン上限を表示するには、アカウントの使用量アダプターを接続してください。モデルのトークン数だけでは判定できません。</target>
 </trans-unit>
 <trans-unit id="plan.usageWindow">
   <source>Usage window</source>
-  <target>使用量の期間</target>
+  <target>使用量の集計期間</target>
 </trans-unit>
 <trans-unit id="plan.days">
   <source><x id="0" equiv-text="${count}"/>-day window</source>
@@ -296,7 +296,7 @@
 </trans-unit>
 <trans-unit id="plan.usedRemaining">
   <source><x id="0" equiv-text="${used}"/> used · <x id="1" equiv-text="${remaining}"/> remaining</source>
-  <target><x id="0" equiv-text="${used}"/> 使用 · <x id="1" equiv-text="${remaining}"/> 残り</target>
+  <target>使用済み <x id="0" equiv-text="${used}"/> · 残り <x id="1" equiv-text="${remaining}"/></target>
 </trans-unit>
 <trans-unit id="plan.resets">
   <source>resets <x id="0" equiv-text="${time}"/></source>
@@ -304,7 +304,7 @@
 </trans-unit>
 <trans-unit id="plan.observed">
   <source>observed <x id="0" equiv-text="${time}"/></source>
-  <target><x id="0" equiv-text="${time}"/> に観測</target>
+  <target>観測時刻: <x id="0" equiv-text="${time}"/></target>
 </trans-unit>
 <trans-unit id="plan.source">
   <source>Source <x id="0" equiv-text="${value}"/></source>
@@ -364,11 +364,11 @@
 </trans-unit>
 <trans-unit id="dashboard.modelTraffic">
   <source>Observed model traffic</source>
-  <target>観測されたモデル通信量</target>
+  <target>観測モデル通信量</target>
 </trans-unit>
 <trans-unit id="dashboard.modelTrafficHint">
   <source>Input + output reported by model calls; not a plan quota</source>
-  <target>モデル呼び出しで報告された入力＋出力。プラン上限ではありません</target>
+  <target>モデル呼び出しの報告値（入力＋出力）。プラン上限ではありません</target>
 </trans-unit>
 <trans-unit id="dashboard.planLimits">
   <source>Plan limits</source>
@@ -448,7 +448,7 @@
 </trans-unit>
 <trans-unit id="mcp.intro">
   <source>Use this server URL in an MCP client to query Agentmetry's local telemetry.</source>
-  <target>MCP クライアントにこのサーバー URL を設定すると、Agentmetry のローカルテレメトリを照会できます。</target>
+  <target>MCP クライアントでこのサーバー URL を使うと、Agentmetry のローカルテレメトリを検索できます。</target>
 </trans-unit>
 <trans-unit id="mcp.serverUrl">
   <source>Server URL</source>
@@ -496,11 +496,11 @@
 </trans-unit>
 <trans-unit id="mcp.workflowBefore">
   <source>Call</source>
-  <target>最初に</target>
+  <target>まず</target>
 </trans-unit>
 <trans-unit id="mcp.workflowMiddle">
   <source>first. Run analysis requires an explicit</source>
-  <target>を呼び出してください。実行分析には明示的な</target>
+  <target>を呼び出してください。分析の実行には明示的な</target>
 </trans-unit>
 <trans-unit id="mcp.workflowAnd">
   <source>and</source>
@@ -579,8 +579,8 @@
   <target>調査フィルター</target>
 </trans-unit>
 <trans-unit id="investigation.applied">
-  <source>Applied</source>
-  <target>適用済み</target>
+  <source>Applied: <x id="0" equiv-text="${filters}"/></source>
+  <target>適用済み：<x id="0" equiv-text="${filters}"/></target>
 </trans-unit>
 <trans-unit id="investigation.requested">
   <source>Requested (not yet applied)</source>
@@ -588,7 +588,7 @@
 </trans-unit>
 <trans-unit id="investigation.observedFailure">
   <source>Observed failure</source>
-  <target>観測された失敗</target>
+  <target>失敗を観測</target>
 </trans-unit>
 <trans-unit id="investigation.minElapsed">
   <source>Minimum elapsed time (ms)</source>
@@ -616,11 +616,11 @@
 </trans-unit>
 <trans-unit id="investigation.note">
   <source>All conditions must match the conversation. Unknown outcomes do not count as failures.</source>
-  <target>会話はすべての条件に一致する必要があります。不明な結果は失敗として数えません。</target>
+  <target>すべての条件が会話に一致する必要があります。不明な結果は失敗として数えません。</target>
 </trans-unit>
 <trans-unit id="investigation.notApplied">
   <source>Not applied: <x id="0" equiv-text="${reason}"/></source>
-  <target>未適用: <x id="0" equiv-text="${reason}"/></target>
+  <target>未適用：<x id="0" equiv-text="${reason}"/></target>
 </trans-unit>
 <trans-unit id="investigation.invalid">
   <source>Invalid conditions.</source>
@@ -636,7 +636,7 @@
 </trans-unit>
 <trans-unit id="investigation.failure">
   <source>observed failure</source>
-  <target>観測された失敗</target>
+  <target>失敗を観測</target>
 </trans-unit>
 <trans-unit id="investigation.atLeast">
   <source>at least <x id="0" equiv-text="${value}"/> ms</source>
@@ -664,7 +664,7 @@
 </trans-unit>
 <trans-unit id="agentTree.aria">
   <source>Agent delegation topology</source>
-  <target>エージェント委譲の構成</target>
+  <target>エージェント委譲トポロジー</target>
 </trans-unit>
 <trans-unit id="agentTree.root">
   <source>Root</source>
@@ -688,7 +688,7 @@
 </trans-unit>
 <trans-unit id="workspace.loadingListBody">
   <source>Reading the latest bounded conversation list.</source>
-  <target>最新の範囲指定された会話一覧を読み込んでいます。</target>
+  <target>最新の会話一覧（取得範囲内）を読み込んでいます。</target>
 </trans-unit>
 <trans-unit id="workspace.loadingConversationTitle">
   <source>Loading requested conversation</source>
@@ -696,7 +696,7 @@
 </trans-unit>
 <trans-unit id="workspace.loadingConversationBody">
   <source>Resolving the source-qualified conversation and span.</source>
-  <target>ソースで特定された会話とスパンを解決しています。</target>
+  <target>ソースを指定した会話とスパンを確認しています。</target>
 </trans-unit>
 <trans-unit id="workspace.conversationUnavailable">
   <source>Conversation unavailable</source>
@@ -720,7 +720,7 @@
 </trans-unit>
 <trans-unit id="workspace.waitingBody">
   <source>Point an OTLP exporter at this process, then start a conversation.</source>
-  <target>OTLP エクスポーターをこのプロセスに向けてから、会話を開始してください。</target>
+  <target>このプロセスを OTLP エクスポーターの送信先に設定し、会話を開始してください。</target>
 </trans-unit>
 <trans-unit id="workspace.selected">
   <source>Selected conversation</source>
@@ -768,11 +768,11 @@
 </trans-unit>
 <trans-unit id="workspace.coverageUnavailable">
   <source>not yet available</source>
-  <target>まだ利用不可</target>
+  <target>未取得</target>
 </trans-unit>
 <trans-unit id="workspace.coverage">
   <source>Analysis coverage: <x id="0" equiv-text="${state}"/>. This does not establish that every input or body was reported.</source>
-  <target>分析範囲: <x id="0" equiv-text="${state}"/>。すべての入力や本文が報告されたことを示すものではありません。</target>
+  <target>分析範囲：<x id="0" equiv-text="${state}"/>。すべての入力や本文が報告されたことを示すものではありません。</target>
 </trans-unit>
 <trans-unit id="workspace.investigationAria">
   <source>Investigation view</source>
@@ -792,11 +792,11 @@
 </trans-unit>
 <trans-unit id="workspace.reworkUnavailable">
   <source>Rework analysis unavailable</source>
-  <target>手戻り分析を利用できません</target>
+  <target>手戻り分析を取得できません</target>
 </trans-unit>
 <trans-unit id="workspace.modelTraffic">
   <source>Observed model traffic</source>
-  <target>観測されたモデル通信量</target>
+  <target>観測モデル通信量</target>
 </trans-unit>
 <trans-unit id="workspace.agentTopology">
   <source>Agent topology</source>
@@ -1268,7 +1268,7 @@
 </trans-unit>
 <trans-unit id="rework.subtitle">
   <source>Diagnostic signals from normalized Claude/Codex telemetry—not a productivity score.</source>
-  <target>正規化された Claude/Codex テレメトリによる診断シグナルです。生産性スコアではありません。</target>
+  <target>正規化した Claude/Codex テレメトリから得た診断シグナルです。生産性スコアではありません。</target>
 </trans-unit>
 <trans-unit id="rework.partialEvidence">
   <source>Partial evidence</source>
@@ -1296,7 +1296,7 @@
 </trans-unit>
 <trans-unit id="rework.validationDescription">
   <source>Known failed test, build, and lint operations. Use this to locate validation friction; zero can also mean no validation ran or outcomes were not reported.</source>
-  <target>失敗が確認されたテスト、ビルド、Lint 操作です。0 は検証未実行や結果未報告の場合もあります。</target>
+  <target>失敗が確認されたテスト、ビルド、Lint 操作です。検証上の問題箇所の特定に使えます。0 は検証を実行していないか、結果が報告されていない場合もあります。</target>
 </trans-unit>
 <trans-unit id="rework.initialSuccess">
   <source>Initial validation success</source>
@@ -1304,7 +1304,7 @@
 </trans-unit>
 <trans-unit id="rework.initialSuccessDescription">
   <source>ID-backed command identities whose first observed known-outcome attempt in this session succeeded. Identity is same agent, operation, normalized command, and working directory when reported—not a change or task—so this is a first-pass proxy. Uncorrelated observations are excluded; missing outcomes can still bias the rate.</source>
-  <target>セッション内で最初に観測された既知結果が成功した、ID で裏付けられたコマンド識別子の割合です。未関連付けの観測は除外されます。</target>
+  <target>このセッションで最初に観測された既知の結果が成功だった、ID で裏付けられたコマンド識別子の割合です。識別子は、報告された場合の同一エージェント、操作、正規化コマンド、作業ディレクトリで判定します。変更やタスク単位ではないため、初回成功の代理指標です。関連付けられない観測は除外されますが、結果がない観測により割合が偏る場合があります。</target>
 </trans-unit>
 <trans-unit id="rework.recurringImpact">
   <source>Recurring-loop impact</source>
@@ -1320,7 +1320,7 @@
 </trans-unit>
 <trans-unit id="rework.recurringDescription">
   <source>ID-backed validation episodes where the same agent ran the same normalized test, build, or lint command in the same reported working directory and the same unambiguous error fingerprint failed at least twice. Uncorrelated observations and ambiguous error evidence are excluded from confirmed recurrence.</source>
-  <target>同じエージェント、正規化コマンド、作業ディレクトリで、同じ明確なエラーが 2 回以上失敗した検証エピソードです。</target>
+  <target>同じエージェントが、同じ作業ディレクトリで同じ正規化テスト・ビルド・Lint コマンドを実行し、同じ明確なエラー指紋で 2 回以上失敗した検証エピソードです。関連付けられない観測や、エラー根拠が曖昧なものは確定した再発から除外します。</target>
 </trans-unit>
 <trans-unit id="rework.failureAttempts">
   <source>Failure attempts in recurring loops</source>
@@ -1332,7 +1332,7 @@
 </trans-unit>
 <trans-unit id="rework.failureAttemptsDescription">
   <source>All failed validation attempts in an episode once any observed error fingerprint recurs, including failures with a different or missing fingerprint inside that episode. FAIL(X) → FAIL(Y) → FAIL(X) → PASS counts as three attempts.</source>
-  <target>エラー指紋が再発したエピソード内のすべての失敗検証を数えます。</target>
+  <target>観測されたエラー指紋が再発したエピソードでは、そのエピソード内の失敗検証をすべて数えます。異なる指紋や指紋なしの失敗も含みます。</target>
 </trans-unit>
 <trans-unit id="rework.resolutionTime">
   <source>Total loop resolution time</source>
@@ -1340,7 +1340,7 @@
 </trans-unit>
 <trans-unit id="rework.resolutionDescription">
   <source>Sum of each resolved recurring loop's elapsed wall time from first failure to matching success. Unresolved loops are excluded, and overlapping loops contribute separately, so the total can exceed session elapsed time.</source>
-  <target>解決済み反復ループの最初の失敗から対応する成功までの経過時間合計です。</target>
+  <target>解決した各反復ループについて、最初の失敗から対応する成功までの実経過時間を合計した値です。未解決のループは除外します。ループが重なる場合は個別に加算するため、セッションの経過時間を超えることがあります。</target>
 </trans-unit>
 <trans-unit id="rework.resolutionTokens">
   <source>Tokens in resolved loops</source>
@@ -1348,7 +1348,7 @@
 </trans-unit>
 <trans-unit id="rework.resolutionTokensDescription">
   <source>Unique authoritative same-agent token observations inside resolved recurring-loop windows. Unresolved loops are excluded. Missing token telemetry is shown as not reported; this is associated cost, not proven waste.</source>
-  <target>解決済み反復ループ範囲内で観測された一意の権威あるトークンです。浪費を証明するものではありません。</target>
+  <target>解決した反復ループの範囲内で、同一エージェントから観測された一意かつ信頼できるトークン数です。未解決のループは除外します。トークン情報がない場合は未報告として表示します。関連コストを示すもので、浪費を証明するものではありません。</target>
 </trans-unit>
 <trans-unit id="rework.otherSignals">
   <source>Other operational signals</source>
@@ -1364,7 +1364,7 @@
 </trans-unit>
 <trans-unit id="rework.effortDescription">
   <source>Detected same-agent activity time inside failure, edit, and matching retry windows divided by all observed agent-active time. Matching is heuristic and the retry need not succeed. Activity overlap is merged within each agent; other parallel agents add to the denominator and can dilute the session share. This is not proven waste or a productivity score.</source>
-  <target>失敗・編集・再試行範囲内の同一エージェント稼働時間を、観測された全稼働時間で割った値です。</target>
+  <target>失敗・編集・対応する再試行の範囲内にある同一エージェントの稼働時間を、観測された全エージェント稼働時間で割った値です。判定は推定で、再試行が成功するとは限りません。エージェントごとに重複時間を統合しますが、並行する他のエージェントは分母に加わるため、セッション全体の割合が小さくなる場合があります。確定した浪費や生産性スコアではありません。</target>
 </trans-unit>
 <trans-unit id="rework.tokenRate">
   <source>Rework token rate</source>
@@ -1372,7 +1372,7 @@
 </trans-unit>
 <trans-unit id="rework.tokenDescription">
   <source>Authoritative tokens observed inside detected failure/edit/retry windows divided by total authoritative tokens for this session. It normalizes for session size, but cycle-associated tokens are not necessarily avoidable waste.</source>
-  <target>失敗・編集・再試行範囲内の権威あるトークンを、セッション全体のトークンで割った値です。</target>
+  <target>検出した失敗・編集・再試行の範囲内で観測された信頼できるトークン数を、このセッションの信頼できる総トークン数で割った値です。セッション規模を補正しますが、サイクルに関連するトークンが避けられない浪費とは限りません。</target>
 </trans-unit>
 <trans-unit id="rework.toolFailureRate">
   <source>Tool failure rate</source>
@@ -1388,7 +1388,7 @@
 </trans-unit>
 <trans-unit id="rework.toolFailureDescription">
   <source>Known failed tool outcomes divided by tool attempts with known outcomes. Missing outcomes are excluded, and small samples can make the percentage unstable.</source>
-  <target>結果が判明しているツール試行のうち失敗した割合です。未報告結果は除外されます。</target>
+  <target>結果が判明しているツール試行のうち、失敗した割合です。結果がない試行は除外します。サンプル数が少ないと割合が不安定になる場合があります。</target>
 </trans-unit>
 <trans-unit id="rework.apiRetry">
   <source>Estimated API retry</source>
@@ -1400,7 +1400,7 @@
 </trans-unit>
 <trans-unit id="rework.apiRetryDescription">
   <source>Failed API attempts followed later by a matching API call. Matching is heuristic; the value shows estimated retry count and observed duration, not guaranteed waste.</source>
-  <target>失敗した API 試行の後に一致する呼び出しが行われた推定回数と観測時間です。</target>
+  <target>失敗した API 試行の後に、対応する API 呼び出しが行われた回数の推定値と観測時間です。対応付けは推定であり、確定した浪費を示すものではありません。</target>
 </trans-unit>
 <trans-unit id="rework.repeatedCommands">
   <source>Repeated commands</source>
@@ -1412,7 +1412,7 @@
 </trans-unit>
 <trans-unit id="rework.repeatedCommandsDescription">
   <source>Each execution after the first of the same normalized command by one agent. Re-running validation after an edit may be healthy rather than rework.</source>
-  <target>同一エージェントによる同じ正規化コマンドの 2 回目以降の実行です。</target>
+  <target>1 つのエージェントが同じ正規化コマンドを実行したうち、2 回目以降の実行です。編集後の検証を再実行するのは正常な場合もあり、必ずしも手戻りではありません。</target>
 </trans-unit>
 <trans-unit id="rework.reeditedFiles">
   <source>Re-edited files</source>
@@ -1424,7 +1424,7 @@
 </trans-unit>
 <trans-unit id="rework.reeditedFilesDescription">
   <source>Each edit after the first to the same file by one agent. Iterative editing can be normal; this is a concentration signal, not proof of wasted work.</source>
-  <target>同一エージェントによる同じファイルの 2 回目以降の編集です。</target>
+  <target>1 つのエージェントが同じファイルを編集したうち、2 回目以降の編集です。反復編集は通常の作業でもあり、作業の浪費を示すものではなく、集中度のシグナルです。</target>
 </trans-unit>
 <trans-unit id="rework.evidenceCoverage">
   <source>Evidence coverage</source>
@@ -1508,11 +1508,11 @@
 </trans-unit>
 <trans-unit id="rework.tokenUnavailable">
   <source>Rework token usage unavailable</source>
-  <target>手戻りトークン使用量を利用不可</target>
+  <target>手戻りトークン使用量を取得できません</target>
 </trans-unit>
 <trans-unit id="rework.sessionTokenUnavailable">
   <source>Session token total unavailable</source>
-  <target>セッショントークン合計を利用不可</target>
+  <target>セッションの総トークン数を取得できません</target>
 </trans-unit>
 <trans-unit id="rework.sessionTokens">
   <source><x id="0" equiv-text="${part}"/> of <x id="1" equiv-text="${total}"/> session tokens</source>
@@ -1520,7 +1520,7 @@
 </trans-unit>
 <trans-unit id="rework.effortUnavailable">
   <source>Observed agent-active duration unavailable</source>
-  <target>観測されたエージェント稼働時間を利用不可</target>
+  <target>観測されたエージェント稼働時間を取得できません</target>
 </trans-unit>
 <trans-unit id="rework.noClosedCycles">
   <source>No detected closed retry cycles · <x id="0" equiv-text="${total}"/> observed agent-active time</source>
@@ -1528,7 +1528,7 @@
 </trans-unit>
 <trans-unit id="rework.effortTime">
   <source><x id="0" equiv-text="${part}"/> of <x id="1" equiv-text="${total}"/> observed agent-active time</source>
-  <target>観測稼働時間 <x id="1" equiv-text="${total}"/> 中 <x id="0" equiv-text="${part}"/></target>
+  <target>観測されたエージェント稼働時間 <x id="1" equiv-text="${total}"/> 中 <x id="0" equiv-text="${part}"/></target>
 </trans-unit>
 <trans-unit id="comparison.title">
   <source>Before / After diagnostics</source>
@@ -1612,7 +1612,7 @@
 </trans-unit>
 <trans-unit id="comparison.harnessNotComparable">
   <source>Reported harness fingerprint is not comparable</source>
-  <target>報告ハーネス指紋を比較不可</target>
+  <target>報告ハーネス指紋は比較できません</target>
 </trans-unit>
 <trans-unit id="comparison.baselineIssue">
   <source>Baseline: <x id="0" equiv-text="${issue}"/></source>
@@ -1632,7 +1632,7 @@
 </trans-unit>
 <trans-unit id="comparison.harnessHelp">
   <source>A fingerprint covers only the files selected when it was generated. This pairwise association does not prove effective configuration equality or that a harness change caused a metric change.</source>
-  <target>指紋は生成時に選ばれたファイルのみを対象とします。設定の同一性や指標変化の原因を証明しません。</target>
+  <target>指紋は生成時に選ばれたファイルだけを対象とします。この一対比較から、設定が完全に同じであることや、ハーネスの変更が指標の変化を引き起こしたことは証明できません。</target>
 </trans-unit>
 <trans-unit id="comparison.aboutMetric">
   <source>About <x id="0" equiv-text="${label}"/></source>
@@ -1656,7 +1656,7 @@
 </trans-unit>
 <trans-unit id="comparison.tokenDescription">
   <source>Tokens attributed to detected closed failure/edit/retry windows divided by all observed session tokens. Lower is generally preferable when coverage is comparable.</source>
-  <target>検出された完結失敗・編集・再試行範囲のトークンを、観測セッション全体のトークンで割った値です。</target>
+  <target>検出した完結済みの失敗・編集・再試行範囲に割り当てられたトークン数を、観測されたセッション全体のトークン数で割った値です。比較対象のデータ範囲が同程度の場合は、低いほど一般に望ましい値です。</target>
 </trans-unit>
 <trans-unit id="comparison.tokenEvidence">
   <source>session tokens</source>
@@ -1680,7 +1680,7 @@
 </trans-unit>
 <trans-unit id="comparison.toolDescription">
   <source>Observed failed tool attempts divided by tool attempts with a known outcome. Missing outcomes are excluded from both sides.</source>
-  <target>既知結果を持つツール試行のうち観測された失敗の割合です。</target>
+  <target>結果が判明しているツール試行のうち、観測された失敗の割合です。結果がない試行は両方の分子・分母から除外します。</target>
 </trans-unit>
 <trans-unit id="comparison.toolEvidence">
   <source>outcome-known tool attempts</source>
@@ -1732,7 +1732,7 @@
 </trans-unit>
 <trans-unit id="comparison.reportedRecords">
   <source><x id="0" equiv-text="${reported}"/> / <x id="1" equiv-text="${eligible}"/> reported records</source>
-  <target>対象 <x id="1" equiv-text="${eligible}"/> 件中 <x id="0" equiv-text="${reported}"/> 件を報告</target>
+  <target>対象 <x id="1" equiv-text="${eligible}"/> 件中 <x id="0" equiv-text="${reported}"/> 件で報告あり</target>
 </trans-unit>
 <trans-unit id="comparison.scopeValue">
   <source>scope <x id="0" equiv-text="${scope}"/></source>
@@ -1744,7 +1744,7 @@
 </trans-unit>
 <trans-unit id="comparison.invalidPayload">
   <source>Invalid harness evidence response</source>
-  <target>ハーネス根拠レスポンスが不正です</target>
+  <target>ハーネス根拠の応答が不正です</target>
 </trans-unit>
 <trans-unit id="comparison.noEligibleRecords">
   <source>No eligible records</source>
@@ -1764,7 +1764,7 @@
 </trans-unit>
 <trans-unit id="comparison.invalidHarness">
   <source>Invalid fingerprint metadata was observed</source>
-  <target>不正な指紋メタデータを観測しました</target>
+  <target>不正な指紋メタデータが観測されました</target>
 </trans-unit>
 <trans-unit id="range.1h">
   <source>1h</source>

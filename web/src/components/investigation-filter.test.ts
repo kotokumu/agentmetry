@@ -1,15 +1,30 @@
 import { Storage as BrowserStorage } from "happy-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { loadSavedFilters, saveFilter, SAVED_FILTERS_STORAGE_KEY } from "../model/saved-filters";
+import { localization } from "../localization/localization";
 import "./investigation-filter";
 import type { InvestigationFilter } from "./investigation-filter";
 
 beforeEach(() => vi.stubGlobal("localStorage", new BrowserStorage()));
-afterEach(() => {
+afterEach(async () => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
+  await localization.select("en");
 });
+
+it("localizes punctuation in the applied-conditions summary message", async () => {
+  const panel = document.createElement("am-investigation-filter") as InvestigationFilter;
+  panel.filters = { range: "24h", sourceId: "", search: "" };
+  document.body.append(panel);
+  await panel.updateComplete;
+  expect(panel.shadowRoot!.querySelector(".applied")?.textContent).toContain("Applied: 24h");
+
+  await localization.select("ja");
+  await panel.updateComplete;
+  expect(panel.shadowRoot!.querySelector(".applied")?.textContent).toContain("適用済み：24h");
+});
+
 describe("investigation filter draft", () => {
   it("keeps saved and draft filter actions in one clear workflow", async () => {
     const saved = { range: "7d" as const, sourceId: "codex", search: "retry", observedFailure: true };

@@ -220,7 +220,7 @@ describe("Agentmetry app composition", () => {
 
     expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("エージェントの会話");
     expect(document.documentElement.lang).toBe("ja");
-    expect(document.title).toBe("Agentmetry · ローカル AI エージェント可観測性");
+    expect(document.title).toBe("Agentmetry · ローカル AI エージェントの可観測性");
   });
 
   it("applies acknowledged full conditions and preserves the last query on unsupported or invalid drafts", async () => {
