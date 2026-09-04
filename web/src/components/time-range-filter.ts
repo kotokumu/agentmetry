@@ -1,11 +1,13 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { TimeRange } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 export type RangeSelectedDetail = Readonly<{ range: TimeRange }>;
 
 @customElement("am-time-range-filter")
-export class TimeRangeFilter extends LitElement {
+export class TimeRangeFilter extends LocalizedElement {
   @property() selected: TimeRange = "24h";
 
   static styles = css`
@@ -48,7 +50,7 @@ export class TimeRangeFilter extends LitElement {
           aria-pressed=${String(this.selected === range)}
           @click=${() => this.select(range)}
         >
-          ${range}
+          ${localization.t(`range.${range}`)}
         </button>
       `,
     )}`;

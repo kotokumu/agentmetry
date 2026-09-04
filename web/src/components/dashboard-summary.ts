@@ -1,13 +1,15 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "./kpi-card";
 import "./plan-usage";
 import { DashboardController } from "../controllers/dashboard-controller";
 import { agentmetryClient } from "../api/agentmetry-client";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
-import { NOT_REPORTED, UNAVAILABLE } from "../presentation/missing-data";
+import { notReported, unavailable } from "../presentation/missing-data";
 import { featurePanelStyles } from "./feature-styles";
 import { affectsOverview, LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 export type DashboardStateDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -15,7 +17,7 @@ export type DashboardStateDetail = Readonly<{
 }>;
 
 @customElement("am-dashboard-summary")
-export class DashboardSummary extends LitElement {
+export class DashboardSummary extends LocalizedElement {
   @property() range: TimeRange = "24h";
   @property() sourceId = "";
   @property() search = "";
@@ -46,16 +48,16 @@ export class DashboardSummary extends LitElement {
 
   render() {
     const value = this.dashboard.value;
-    const placeholder = this.dashboard.failed ? UNAVAILABLE : "Loading…";
-    const conversationPlaceholder = this.conversationStatus === "failed" ? UNAVAILABLE : "Loading…";
+    const placeholder = this.dashboard.failed ? unavailable() : localization.t("common.loading");
+    const conversationPlaceholder = this.conversationStatus === "failed" ? unavailable() : localization.t("common.loading");
     return html`
-      <section class="kpis" aria-label="Conversation overview">
-        <am-kpi-card label="Conversations" .value=${this.conversationStatus === "ready" && this.conversationCount !== undefined ? String(this.conversationCount) : conversationPlaceholder}></am-kpi-card>
-        <am-kpi-card label="Agents" .value=${value ? String(value.agentCount) : placeholder}></am-kpi-card>
-        <am-kpi-card label="Activities" .value=${this.conversationStatus === "ready" && this.activityCount !== undefined ? String(this.activityCount) : conversationPlaceholder}></am-kpi-card>
-        <am-kpi-card label="Observed model traffic" .value=${value ? formatOptionalNumber(value.tokens.total) : placeholder} hint="Input + output reported by model calls; not a plan quota"></am-kpi-card>
+      <section class="kpis" aria-label=${localization.t("dashboard.overviewAria")}>
+        <am-kpi-card .label=${localization.t("dashboard.conversations")} .value=${this.conversationStatus === "ready" && this.conversationCount !== undefined ? localization.number(this.conversationCount) : conversationPlaceholder}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("dashboard.agents")} .value=${value ? localization.number(value.agentCount) : placeholder}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("dashboard.activities")} .value=${this.conversationStatus === "ready" && this.activityCount !== undefined ? localization.number(this.activityCount) : conversationPlaceholder}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("dashboard.modelTraffic")} .value=${value ? formatOptionalNumber(value.tokens.total) : placeholder} .hint=${localization.t("dashboard.modelTrafficHint")}></am-kpi-card>
       </section>
-      <section class="panel plan-panel"><h2>Plan limits</h2><am-plan-usage .snapshots=${value?.planUsage ?? []}></am-plan-usage></section>
+      <section class="panel plan-panel"><h2>${localization.t("dashboard.planLimits")}</h2><am-plan-usage .snapshots=${value?.planUsage ?? []}></am-plan-usage></section>
     `;
   }
 
@@ -73,6 +75,6 @@ export class DashboardSummary extends LitElement {
   };
 }
 
-const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? NOT_REPORTED : value.toLocaleString();
+const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? notReported() : localization.number(value);
 
 declare global { interface HTMLElementTagNameMap { "am-dashboard-summary": DashboardSummary } }

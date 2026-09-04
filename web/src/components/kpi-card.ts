@@ -1,10 +1,12 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 let nextHelpID = 0;
 
 @customElement("am-kpi-card")
-export class KpiCard extends LitElement {
+export class KpiCard extends LocalizedElement {
   @property() label = "";
   @property() value = "0";
   @property() hint = "";
@@ -121,7 +123,7 @@ export class KpiCard extends LitElement {
         <button
           class="help"
           type="button"
-          aria-label=${`Explain ${this.label}`}
+          aria-label=${localization.t("kpi.explain", { label: this.label })}
           aria-controls=${this.helpID}
           aria-expanded=${String(this.helpOpen)}
           @mouseenter=${this.previewHelp}

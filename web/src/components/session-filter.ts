@@ -1,10 +1,12 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import { live } from "lit/directives/live.js";
 import type { TelemetrySource } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-session-filter")
-export class SessionFilter extends LitElement {
+export class SessionFilter extends LocalizedElement {
   @property({ attribute: false }) sources: readonly TelemetrySource[] = [];
   @property() selectedSource = "";
   @property() search = "";
@@ -23,12 +25,12 @@ export class SessionFilter extends LitElement {
 
   render() {
     return html`<div class="filters">
-      <label>Source<select .value=${live(this.selectedSource)} @change=${this.selectSource}>
-        <option value="">All sources</option>
+      <label>${localization.t("filter.source")}<select .value=${live(this.selectedSource)} @change=${this.selectSource}>
+        <option value="">${localization.t("filter.allSources")}</option>
         ${this.sources.map((source) => html`<option value=${source.id}>${source.label}</option>`)}
       </select></label>
-      <label>Search
-        <input type="search" .value=${live(this.search)} placeholder="Session ID, prompts, messages, tools…" aria-label="Search conversations" @input=${this.searchChanged}>
+      <label>${localization.t("filter.search")}
+        <input type="search" .value=${live(this.search)} placeholder=${localization.t("filter.searchPlaceholder")} aria-label=${localization.t("filter.searchAria")} @input=${this.searchChanged}>
       </label>
     </div>`;
   }

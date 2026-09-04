@@ -1,27 +1,30 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { ContentEvidence } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
+import type { MessageKey } from "../localization/messages";
 
-const kinds: Record<ContentEvidence["kind"], string> = {
-  prompt: "Received prompt", response: "Received response", tool_input: "Received tool input",
-  tool_output: "Received tool output", tool_input_output: "Received tool input and output",
-  model_input: "Reported model input", reference: "Reference only", unknown: "Unknown",
+const kinds: Record<ContentEvidence["kind"], MessageKey> = {
+  prompt: "content.kind.prompt", response: "content.kind.response", tool_input: "content.kind.toolInput",
+  tool_output: "content.kind.toolOutput", tool_input_output: "content.kind.toolInputOutput",
+  model_input: "content.kind.modelInput", reference: "content.kind.reference", unknown: "common.unknown",
 };
-const strengths: Record<ContentEvidence["evidence"], string> = {
-  reference: "Reference only", read_output: "Received read or tool output",
-  explicit_model_input: "Explicitly reported model input", unknown: "Unknown",
+const strengths: Record<ContentEvidence["evidence"], MessageKey> = {
+  reference: "content.kind.reference", read_output: "content.strength.readOutput",
+  explicit_model_input: "content.strength.explicitModelInput", unknown: "common.unknown",
 };
-const availability: Record<ContentEvidence["availability"], string> = {
-  available: "Body available", not_reported: "Body not reported", redacted: "Producer-redacted", not_returned: "Body not requested",
+const availability: Record<ContentEvidence["availability"], MessageKey> = {
+  available: "content.availability.available", not_reported: "content.availability.notReported", redacted: "content.availability.redacted", not_returned: "content.availability.notReturned",
 };
 
 export const readableActivityContent = (evidence: ContentEvidence | undefined, content: string | undefined): string =>
   evidence?.availability === "redacted" || evidence?.availability === "not_returned" ? "" : content ?? "";
 export const contentAvailabilityLabel = (evidence: ContentEvidence | undefined, content: string | undefined): string =>
-  availability[evidence?.availability ?? (content ? "available" : "not_reported")];
+  localization.t(availability[evidence?.availability ?? (content ? "available" : "not_reported")]);
 
 @customElement("am-content-evidence")
-export class ContentEvidencePanel extends LitElement {
+export class ContentEvidencePanel extends LocalizedElement {
   @property({ attribute: false }) evidence?: ContentEvidence;
   @property() activityContent = "";
 
@@ -35,14 +38,14 @@ export class ContentEvidencePanel extends LitElement {
   render() {
     const evidence = this.evidence;
     return html`<dl>
-      <dt>Content kind</dt><dd>${kinds[evidence?.kind ?? "unknown"]}</dd>
-      <dt>Evidence</dt><dd>${strengths[evidence?.evidence ?? "unknown"]}</dd>
-      <dt>Availability</dt><dd>${contentAvailabilityLabel(evidence, this.activityContent)}</dd>
-      ${evidence?.fields.length ? html`<dt>Received fields</dt><dd>${evidence.fields.join(", ")}</dd>` : null}
+      <dt>${localization.t("content.kind")}</dt><dd>${localization.t(kinds[evidence?.kind ?? "unknown"])}</dd>
+      <dt>${localization.t("content.evidence")}</dt><dd>${localization.t(strengths[evidence?.evidence ?? "unknown"])}</dd>
+      <dt>${localization.t("content.availability")}</dt><dd>${contentAvailabilityLabel(evidence, this.activityContent)}</dd>
+      ${evidence?.fields.length ? html`<dt>${localization.t("content.receivedFields")}</dt><dd>${evidence.fields.join(", ")}</dd>` : null}
     </dl>
-    ${evidence?.evidence !== "explicit_model_input" ? html`<p>Model-input inclusion is unconfirmed.</p>` : null}
-    ${evidence?.truncated ? html`<p>Received content is truncated.</p>` : null}
-    ${evidence?.redactionReason === "encrypted_input" ? html`<p>Input was encrypted. Only readable received content is shown.</p>` : null}`;
+    ${evidence?.evidence !== "explicit_model_input" ? html`<p>${localization.t("content.unconfirmed")}</p>` : null}
+    ${evidence?.truncated ? html`<p>${localization.t("content.truncated")}</p>` : null}
+    ${evidence?.redactionReason === "encrypted_input" ? html`<p>${localization.t("content.encrypted")}</p>` : null}`;
   }
 }
 

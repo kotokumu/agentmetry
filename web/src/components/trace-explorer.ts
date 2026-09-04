@@ -1,4 +1,4 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import "./trace-participants";
 import "./trace-summary";
@@ -11,14 +11,16 @@ import { featurePanelStyles } from "./feature-styles";
 import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 import { parseTraceInvestigationState, type TraceInvestigationState } from "../model/trace-investigation";
 import type { Activity } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-trace-explorer")
-export class TraceExplorer extends LitElement {
+export class TraceExplorer extends LocalizedElement {
   @property() traceId = "";
   @property() anchorSpanId = "";
   @property({ attribute: false }) requestedInvestigation?: TraceInvestigationState;
   @property() returnHref = "/";
-  @property() returnLabel = "Conversations";
+  @property() returnLabel = localization.t("app.conversations");
   @property({ attribute: false }) locationForConversation?: (target: ConversationTarget) => string;
   private readonly trace = new TraceController(this, agentmetryClient);
   private lastReadyTraceId = "";
@@ -56,15 +58,15 @@ export class TraceExplorer extends LitElement {
     const trace = this.trace.value;
     return html`<section class="trace-view">
       <div class="panel trace-toolbar">
-        <div><p class="eyebrow">Cross-conversation causality</p><h1 class="trace-title" tabindex="-1">Trace explorer</h1></div>
+        <div><p class="eyebrow">${localization.t("traceExplorer.eyebrow")}</p><h1 class="trace-title" tabindex="-1">${localization.t("traceExplorer.title")}</h1></div>
         <a class="trace-close" href=${this.returnHref} @click=${this.closeRequested}>← ${this.returnLabel}</a>
       </div>
-      ${this.trace.loading ? html`<div class="panel trace-state" role="status">Loading trace evidence…</div>` : null}
-      ${this.trace.failed ? html`<div class="panel trace-state error" role="alert">${this.anchorSpanId ? `Requested span ${this.anchorSpanId} is unavailable. ` : ""}${String(this.trace.error ?? "Trace unavailable")}</div>` : null}
+      ${this.trace.loading ? html`<div class="panel trace-state" role="status">${localization.t("traceExplorer.loading")}</div>` : null}
+      ${this.trace.failed ? html`<div class="panel trace-state error" role="alert">${this.anchorSpanId ? localization.t("traceExplorer.requestedSpanUnavailable", { id: this.anchorSpanId }) : ""}${String(this.trace.error ?? localization.t("traceExplorer.unavailable"))}</div>` : null}
       ${trace ? html`
         <section class="panel"><am-trace-summary .trace=${trace}></am-trace-summary></section>
-        <section class="panel"><h2>Participants</h2><am-trace-participants .trace=${trace}></am-trace-participants></section>
-        <section class="panel"><h2>Investigate trace window</h2><am-trace-overview
+        <section class="panel"><h2>${localization.t("traceExplorer.participants")}</h2><am-trace-participants .trace=${trace}></am-trace-participants></section>
+        <section class="panel"><h2>${localization.t("traceExplorer.investigate")}</h2><am-trace-overview
           .overview=${this.trace.overview}
           .investigation=${this.investigation}
           .matchingActivities=${this.trace.matchingActivities}
@@ -74,7 +76,7 @@ export class TraceExplorer extends LitElement {
           .windowError=${this.trace.windowError ?? ""}
           @trace-investigation-requested=${this.investigationRequested}
         ></am-trace-overview></section>
-        <section class="panel"><h2>Span & event timeline</h2><am-trace-waterfall
+        <section class="panel"><h2>${localization.t("traceExplorer.timeline")}</h2><am-trace-waterfall
           .trace=${trace}
           .overview=${this.trace.overview}
           .selectedSpanId=${this.investigation.selectedSpanId ?? ""}

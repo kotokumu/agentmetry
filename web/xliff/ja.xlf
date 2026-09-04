@@ -1,0 +1,1879 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
+<file target-language="ja" source-language="en" original="lit-localize-inputs" datatype="plaintext">
+<body>
+<trans-unit id="language.label">
+  <source>Language</source>
+  <target>言語</target>
+</trans-unit>
+<trans-unit id="app.backToDashboard">
+  <source>Back to Agentmetry dashboard</source>
+  <target>Agentmetry ダッシュボードに戻る</target>
+</trans-unit>
+<trans-unit id="app.eyebrow">
+  <source>Local trace observatory // Live</source>
+  <target>ローカルトレース観測 // ライブ</target>
+</trans-unit>
+<trans-unit id="app.headline">
+  <source>Agent conversations,</source>
+  <target>エージェントの会話を、</target>
+</trans-unit>
+<trans-unit id="app.headlineSuffix">
+  <source>decoded.</source>
+  <target>読み解く。</target>
+</trans-unit>
+<trans-unit id="app.dashboard">
+  <source>Dashboard</source>
+  <target>ダッシュボード</target>
+</trans-unit>
+<trans-unit id="app.conversation">
+  <source>Conversation <x id="0" equiv-text="${id}"/></source>
+  <target>会話 <x id="0" equiv-text="${id}"/></target>
+</trans-unit>
+<trans-unit id="app.trace">
+  <source>Trace <x id="0" equiv-text="${id}"/></source>
+  <target>トレース <x id="0" equiv-text="${id}"/></target>
+</trans-unit>
+<trans-unit id="app.conversations">
+  <source>Conversations</source>
+  <target>会話</target>
+</trans-unit>
+<trans-unit id="app.title.dashboard">
+  <source>Agentmetry · Local AI Agent Observability</source>
+  <target>Agentmetry · ローカル AI エージェント可観測性</target>
+</trans-unit>
+<trans-unit id="app.receivingAria">
+  <source>Receiving OTLP</source>
+  <target>OTLP を受信中</target>
+</trans-unit>
+<trans-unit id="app.receiving">
+  <source>Receiving OTLP locally · HTTP :4318 · gRPC :4317</source>
+  <target>ローカルで OTLP を受信中 · HTTP :4318 · gRPC :4317</target>
+</trans-unit>
+<trans-unit id="app.refreshing">
+  <source>Refreshing dashboard…</source>
+  <target>ダッシュボードを更新中…</target>
+</trans-unit>
+<trans-unit id="app.dashboardUnavailable">
+  <source>Dashboard data unavailable</source>
+  <target>ダッシュボードデータを利用できません</target>
+</trans-unit>
+<trans-unit id="app.invalidUrlConditions">
+  <source>Invalid URL conditions.</source>
+  <target>URL の条件が正しくありません。</target>
+</trans-unit>
+<trans-unit id="app.conditionsCouldNotApply">
+  <source>Conditions could not be applied.</source>
+  <target>条件を適用できませんでした。</target>
+</trans-unit>
+<trans-unit id="common.notReported">
+  <source>Not reported</source>
+  <target>未報告</target>
+</trans-unit>
+<trans-unit id="common.notConnected">
+  <source>Not connected</source>
+  <target>未接続</target>
+</trans-unit>
+<trans-unit id="common.unavailable">
+  <source>Unavailable</source>
+  <target>利用不可</target>
+</trans-unit>
+<trans-unit id="common.loading">
+  <source>Loading…</source>
+  <target>読み込み中…</target>
+</trans-unit>
+<trans-unit id="common.partial">
+  <source>Partial</source>
+  <target>一部のみ</target>
+</trans-unit>
+<trans-unit id="common.tokens">
+  <source>tokens</source>
+  <target>トークン</target>
+</trans-unit>
+<trans-unit id="common.usage">
+  <source>usage</source>
+  <target>使用量</target>
+</trans-unit>
+<trans-unit id="common.breakdown">
+  <source>Breakdown</source>
+  <target>内訳</target>
+</trans-unit>
+<trans-unit id="common.input">
+  <source>Input</source>
+  <target>入力</target>
+</trans-unit>
+<trans-unit id="common.output">
+  <source>Output</source>
+  <target>出力</target>
+</trans-unit>
+<trans-unit id="common.cacheRead">
+  <source>Cache read</source>
+  <target>キャッシュ読み取り</target>
+</trans-unit>
+<trans-unit id="common.cacheWrite">
+  <source>Cache write</source>
+  <target>キャッシュ書き込み</target>
+</trans-unit>
+<trans-unit id="common.reasoning">
+  <source>Reasoning</source>
+  <target>推論</target>
+</trans-unit>
+<trans-unit id="common.unknown">
+  <source>Unknown</source>
+  <target>不明</target>
+</trans-unit>
+<trans-unit id="common.error">
+  <source>Error</source>
+  <target>エラー</target>
+</trans-unit>
+<trans-unit id="content.kind">
+  <source>Content kind</source>
+  <target>コンテンツ種別</target>
+</trans-unit>
+<trans-unit id="content.evidence">
+  <source>Evidence</source>
+  <target>根拠</target>
+</trans-unit>
+<trans-unit id="content.availability">
+  <source>Availability</source>
+  <target>利用状況</target>
+</trans-unit>
+<trans-unit id="content.receivedFields">
+  <source>Received fields</source>
+  <target>受信フィールド</target>
+</trans-unit>
+<trans-unit id="content.kind.prompt">
+  <source>Received prompt</source>
+  <target>受信プロンプト</target>
+</trans-unit>
+<trans-unit id="content.kind.response">
+  <source>Received response</source>
+  <target>受信レスポンス</target>
+</trans-unit>
+<trans-unit id="content.kind.toolInput">
+  <source>Received tool input</source>
+  <target>受信ツール入力</target>
+</trans-unit>
+<trans-unit id="content.kind.toolOutput">
+  <source>Received tool output</source>
+  <target>受信ツール出力</target>
+</trans-unit>
+<trans-unit id="content.kind.toolInputOutput">
+  <source>Received tool input and output</source>
+  <target>受信ツール入出力</target>
+</trans-unit>
+<trans-unit id="content.kind.modelInput">
+  <source>Reported model input</source>
+  <target>報告済みモデル入力</target>
+</trans-unit>
+<trans-unit id="content.kind.reference">
+  <source>Reference only</source>
+  <target>参照のみ</target>
+</trans-unit>
+<trans-unit id="content.strength.readOutput">
+  <source>Received read or tool output</source>
+  <target>受信した読み取りまたはツール出力</target>
+</trans-unit>
+<trans-unit id="content.strength.explicitModelInput">
+  <source>Explicitly reported model input</source>
+  <target>明示的に報告されたモデル入力</target>
+</trans-unit>
+<trans-unit id="content.availability.available">
+  <source>Body available</source>
+  <target>本文あり</target>
+</trans-unit>
+<trans-unit id="content.availability.notReported">
+  <source>Body not reported</source>
+  <target>本文未報告</target>
+</trans-unit>
+<trans-unit id="content.availability.redacted">
+  <source>Producer-redacted</source>
+  <target>送信元で編集済み</target>
+</trans-unit>
+<trans-unit id="content.availability.notReturned">
+  <source>Body not requested</source>
+  <target>本文未取得</target>
+</trans-unit>
+<trans-unit id="content.unconfirmed">
+  <source>Model-input inclusion is unconfirmed.</source>
+  <target>モデル入力に含まれるかは未確認です。</target>
+</trans-unit>
+<trans-unit id="content.truncated">
+  <source>Received content is truncated.</source>
+  <target>受信コンテンツは省略されています。</target>
+</trans-unit>
+<trans-unit id="content.encrypted">
+  <source>Input was encrypted. Only readable received content is shown.</source>
+  <target>入力は暗号化されています。読み取り可能な受信内容のみ表示します。</target>
+</trans-unit>
+<trans-unit id="filter.source">
+  <source>Source</source>
+  <target>ソース</target>
+</trans-unit>
+<trans-unit id="filter.allSources">
+  <source>All sources</source>
+  <target>すべてのソース</target>
+</trans-unit>
+<trans-unit id="filter.search">
+  <source>Search</source>
+  <target>検索</target>
+</trans-unit>
+<trans-unit id="filter.searchPlaceholder">
+  <source>Session ID, prompts, messages, tools…</source>
+  <target>セッション ID、プロンプト、メッセージ、ツール…</target>
+</trans-unit>
+<trans-unit id="filter.searchAria">
+  <source>Search conversations</source>
+  <target>会話を検索</target>
+</trans-unit>
+<trans-unit id="sessions.loading">
+  <source>Loading conversations…</source>
+  <target>会話を読み込み中…</target>
+</trans-unit>
+<trans-unit id="sessions.unavailable">
+  <source>Conversations unavailable.</source>
+  <target>会話を利用できません。</target>
+</trans-unit>
+<trans-unit id="sessions.noMatching">
+  <source>No matching conversations.</source>
+  <target>条件に一致する会話はありません。</target>
+</trans-unit>
+<trans-unit id="sessions.none">
+  <source>No conversations yet.</source>
+  <target>会話はまだありません。</target>
+</trans-unit>
+<trans-unit id="sessions.navigation">
+  <source>Agent conversations</source>
+  <target>エージェントの会話</target>
+</trans-unit>
+<trans-unit id="sessions.counts">
+  <source><x id="0" equiv-text="${agents}"/> agents · <x id="1" equiv-text="${activities}"/> activities</source>
+  <target>エージェント <x id="0" equiv-text="${agents}"/> · アクティビティ <x id="1" equiv-text="${activities}"/></target>
+</trans-unit>
+<trans-unit id="tokens.aria">
+  <source>Token usage</source>
+  <target>トークン使用量</target>
+</trans-unit>
+<trans-unit id="tokens.chartAria">
+  <source>Token usage by type</source>
+  <target>種類別トークン使用量</target>
+</trans-unit>
+<trans-unit id="tokens.observedTotal">
+  <source>Observed total</source>
+  <target>観測合計</target>
+</trans-unit>
+<trans-unit id="tokens.primaryUsage">
+  <source>Primary usage</source>
+  <target>主要使用量</target>
+</trans-unit>
+<trans-unit id="tokens.additionalEvidence">
+  <source>Modifiers and additional evidence</source>
+  <target>補正値と追加根拠</target>
+</trans-unit>
+<trans-unit id="tokens.sourceNote">
+  <source>Categories are source-reported. Cache and reasoning values may overlap their parent totals.</source>
+  <target>各分類はソースの報告値です。キャッシュと推論の値は親の合計に含まれる場合があります。</target>
+</trans-unit>
+<trans-unit id="plan.notConnected">
+  <source>Connect an account usage adapter to display plan limits; model tokens cannot determine them.</source>
+  <target>プラン上限を表示するにはアカウント使用量アダプターを接続してください。モデルトークンだけでは判定できません。</target>
+</trans-unit>
+<trans-unit id="plan.usageWindow">
+  <source>Usage window</source>
+  <target>使用量の期間</target>
+</trans-unit>
+<trans-unit id="plan.days">
+  <source><x id="0" equiv-text="${count}"/>-day window</source>
+  <target><x id="0" equiv-text="${count}"/> 日間</target>
+</trans-unit>
+<trans-unit id="plan.hours">
+  <source><x id="0" equiv-text="${count}"/>-hour window</source>
+  <target><x id="0" equiv-text="${count}"/> 時間</target>
+</trans-unit>
+<trans-unit id="plan.minutes">
+  <source><x id="0" equiv-text="${count}"/>-minute window</source>
+  <target><x id="0" equiv-text="${count}"/> 分間</target>
+</trans-unit>
+<trans-unit id="plan.usedRemaining">
+  <source><x id="0" equiv-text="${used}"/> used · <x id="1" equiv-text="${remaining}"/> remaining</source>
+  <target><x id="0" equiv-text="${used}"/> 使用 · <x id="1" equiv-text="${remaining}"/> 残り</target>
+</trans-unit>
+<trans-unit id="plan.resets">
+  <source>resets <x id="0" equiv-text="${time}"/></source>
+  <target><x id="0" equiv-text="${time}"/> にリセット</target>
+</trans-unit>
+<trans-unit id="plan.observed">
+  <source>observed <x id="0" equiv-text="${time}"/></source>
+  <target><x id="0" equiv-text="${time}"/> に観測</target>
+</trans-unit>
+<trans-unit id="plan.source">
+  <source>Source <x id="0" equiv-text="${value}"/></source>
+  <target>ソース <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="plan.account">
+  <source>account <x id="0" equiv-text="${value}"/></source>
+  <target>アカウント <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="plan.plan">
+  <source>plan <x id="0" equiv-text="${value}"/></source>
+  <target>プラン <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="plan.authority">
+  <source>authority <x id="0" equiv-text="${value}"/></source>
+  <target>権限元 <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="trace.otlpId">
+  <source>OTLP Trace ID</source>
+  <target>OTLP トレース ID</target>
+</trans-unit>
+<trans-unit id="trace.summaryAria">
+  <source>Trace summary</source>
+  <target>トレース概要</target>
+</trans-unit>
+<trans-unit id="trace.showingActivities">
+  <source>Showing <x id="0" equiv-text="${shown}"/> of <x id="1" equiv-text="${total}"/> activities</source>
+  <target><x id="1" equiv-text="${total}"/> 件中 <x id="0" equiv-text="${shown}"/> 件のアクティビティを表示</target>
+</trans-unit>
+<trans-unit id="participants.conversations">
+  <source>Conversations</source>
+  <target>会話</target>
+</trans-unit>
+<trans-unit id="participants.agents">
+  <source>Agents</source>
+  <target>エージェント</target>
+</trans-unit>
+<trans-unit id="participants.activityCount">
+  <source><x id="0" equiv-text="${count}"/> activities</source>
+  <target>アクティビティ <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="dashboard.overviewAria">
+  <source>Conversation overview</source>
+  <target>会話の概要</target>
+</trans-unit>
+<trans-unit id="dashboard.conversations">
+  <source>Conversations</source>
+  <target>会話</target>
+</trans-unit>
+<trans-unit id="dashboard.agents">
+  <source>Agents</source>
+  <target>エージェント</target>
+</trans-unit>
+<trans-unit id="dashboard.activities">
+  <source>Activities</source>
+  <target>アクティビティ</target>
+</trans-unit>
+<trans-unit id="dashboard.modelTraffic">
+  <source>Observed model traffic</source>
+  <target>観測されたモデル通信量</target>
+</trans-unit>
+<trans-unit id="dashboard.modelTrafficHint">
+  <source>Input + output reported by model calls; not a plan quota</source>
+  <target>モデル呼び出しで報告された入力＋出力。プラン上限ではありません</target>
+</trans-unit>
+<trans-unit id="dashboard.planLimits">
+  <source>Plan limits</source>
+  <target>プラン上限</target>
+</trans-unit>
+<trans-unit id="update.checkingMessage">
+  <source>Checking for updates…</source>
+  <target>更新を確認中…</target>
+</trans-unit>
+<trans-unit id="update.upToDate">
+  <source>v<x id="0" equiv-text="${version}"/> is up to date</source>
+  <target>v<x id="0" equiv-text="${version}"/> は最新版です</target>
+</trans-unit>
+<trans-unit id="update.available">
+  <source>v<x id="0" equiv-text="${version}"/> available</source>
+  <target>v<x id="0" equiv-text="${version}"/> を利用できます</target>
+</trans-unit>
+<trans-unit id="update.downloading">
+  <source>Downloading v<x id="0" equiv-text="${version}"/> · <x id="1" equiv-text="${progress}"/></source>
+  <target>v<x id="0" equiv-text="${version}"/> をダウンロード中 · <x id="1" equiv-text="${progress}"/></target>
+</trans-unit>
+<trans-unit id="update.installing">
+  <source>Installing v<x id="0" equiv-text="${version}"/>…</source>
+  <target>v<x id="0" equiv-text="${version}"/> をインストール中…</target>
+</trans-unit>
+<trans-unit id="update.restarting">
+  <source>Restarting Agentmetry…</source>
+  <target>Agentmetry を再起動中…</target>
+</trans-unit>
+<trans-unit id="update.failed">
+  <source>Update failed</source>
+  <target>更新に失敗しました</target>
+</trans-unit>
+<trans-unit id="update.checkingAction">
+  <source>Checking…</source>
+  <target>確認中…</target>
+</trans-unit>
+<trans-unit id="update.installAction">
+  <source>Install &amp; restart</source>
+  <target>インストールして再起動</target>
+</trans-unit>
+<trans-unit id="update.downloadingAction">
+  <source>Downloading…</source>
+  <target>ダウンロード中…</target>
+</trans-unit>
+<trans-unit id="update.installingAction">
+  <source>Installing…</source>
+  <target>インストール中…</target>
+</trans-unit>
+<trans-unit id="update.restartingAction">
+  <source>Restarting…</source>
+  <target>再起動中…</target>
+</trans-unit>
+<trans-unit id="update.retryAction">
+  <source>Try again</source>
+  <target>再試行</target>
+</trans-unit>
+<trans-unit id="update.checkAction">
+  <source>Check for updates</source>
+  <target>更新を確認</target>
+</trans-unit>
+<trans-unit id="mcp.close">
+  <source>close</source>
+  <target>閉じる</target>
+</trans-unit>
+<trans-unit id="mcp.details">
+  <source>details</source>
+  <target>詳細</target>
+</trans-unit>
+<trans-unit id="mcp.eyebrow">
+  <source>Local analysis interface</source>
+  <target>ローカル分析インターフェース</target>
+</trans-unit>
+<trans-unit id="mcp.title">
+  <source>MCP connection</source>
+  <target>MCP 接続</target>
+</trans-unit>
+<trans-unit id="mcp.intro">
+  <source>Use this server URL in an MCP client to query Agentmetry's local telemetry.</source>
+  <target>MCP クライアントにこのサーバー URL を設定すると、Agentmetry のローカルテレメトリを照会できます。</target>
+</trans-unit>
+<trans-unit id="mcp.serverUrl">
+  <source>Server URL</source>
+  <target>サーバー URL</target>
+</trans-unit>
+<trans-unit id="mcp.serverUrlAria">
+  <source>MCP server URL</source>
+  <target>MCP サーバー URL</target>
+</trans-unit>
+<trans-unit id="mcp.copied">
+  <source>Copied</source>
+  <target>コピー済み</target>
+</trans-unit>
+<trans-unit id="mcp.copyUrl">
+  <source>Copy URL</source>
+  <target>URL をコピー</target>
+</trans-unit>
+<trans-unit id="mcp.copiedMessage">
+  <source>Copied to clipboard</source>
+  <target>クリップボードにコピーしました</target>
+</trans-unit>
+<trans-unit id="mcp.copyFailed">
+  <source>Copy failed — select the URL manually</source>
+  <target>コピーできませんでした — URL を手動で選択してください</target>
+</trans-unit>
+<trans-unit id="mcp.transport">
+  <source>Transport</source>
+  <target>通信方式</target>
+</trans-unit>
+<trans-unit id="mcp.authentication">
+  <source>Authentication</source>
+  <target>認証</target>
+</trans-unit>
+<trans-unit id="mcp.noAuthentication">
+  <source>No authentication</source>
+  <target>認証なし</target>
+</trans-unit>
+<trans-unit id="mcp.access">
+  <source>Access</source>
+  <target>アクセス</target>
+</trans-unit>
+<trans-unit id="mcp.readOnly">
+  <source>Read only</source>
+  <target>読み取り専用</target>
+</trans-unit>
+<trans-unit id="mcp.workflowBefore">
+  <source>Call</source>
+  <target>最初に</target>
+</trans-unit>
+<trans-unit id="mcp.workflowMiddle">
+  <source>first. Run analysis requires an explicit</source>
+  <target>を呼び出してください。実行分析には明示的な</target>
+</trans-unit>
+<trans-unit id="mcp.workflowAnd">
+  <source>and</source>
+  <target>と</target>
+</trans-unit>
+<trans-unit id="saved.title">
+  <source>Saved filters</source>
+  <target>保存済みフィルター</target>
+</trans-unit>
+<trans-unit id="saved.intro">
+  <source>Save currently applied conditions. Relative time ranges are evaluated when applied.</source>
+  <target>現在適用中の条件を保存します。相対時間範囲は適用時に評価されます。</target>
+</trans-unit>
+<trans-unit id="saved.filterName">
+  <source>Filter name</source>
+  <target>フィルター名</target>
+</trans-unit>
+<trans-unit id="saved.save">
+  <source>Save applied conditions</source>
+  <target>適用中の条件を保存</target>
+</trans-unit>
+<trans-unit id="saved.conditions">
+  <source>Saved conditions</source>
+  <target>保存済み条件</target>
+</trans-unit>
+<trans-unit id="saved.choose">
+  <source>Choose saved filters</source>
+  <target>保存済みフィルターを選択</target>
+</trans-unit>
+<trans-unit id="saved.apply">
+  <source>Apply</source>
+  <target>適用</target>
+</trans-unit>
+<trans-unit id="saved.replace">
+  <source>Replace with applied conditions</source>
+  <target>適用中の条件で置換</target>
+</trans-unit>
+<trans-unit id="saved.delete">
+  <source>Delete</source>
+  <target>削除</target>
+</trans-unit>
+<trans-unit id="saved.applyFirst">
+  <source>Apply the current conditions successfully before saving or replacing a filter.</source>
+  <target>フィルターを保存または置換する前に、現在の条件を正常に適用してください。</target>
+</trans-unit>
+<trans-unit id="saved.reload">
+  <source>Reload saved filters</source>
+  <target>保存済みフィルターを再読み込み</target>
+</trans-unit>
+<trans-unit id="saved.unavailable">
+  <source>Saved filters are unavailable.</source>
+  <target>保存済みフィルターを利用できません。</target>
+</trans-unit>
+<trans-unit id="saved.saved">
+  <source>Saved “<x id="0" equiv-text="${name}"/>”.</source>
+  <target>「<x id="0" equiv-text="${name}"/>」を保存しました。</target>
+</trans-unit>
+<trans-unit id="saved.replaced">
+  <source>Replaced “<x id="0" equiv-text="${name}"/>”.</source>
+  <target>「<x id="0" equiv-text="${name}"/>」を置換しました。</target>
+</trans-unit>
+<trans-unit id="saved.deleted">
+  <source>Deleted “<x id="0" equiv-text="${name}"/>”.</source>
+  <target>「<x id="0" equiv-text="${name}"/>」を削除しました。</target>
+</trans-unit>
+<trans-unit id="saved.persistFailed">
+  <source>The saved filter change could not be persisted.</source>
+  <target>保存済みフィルターの変更を保存できませんでした。</target>
+</trans-unit>
+<trans-unit id="saved.loadFailed">
+  <source>The saved filter could not be loaded.</source>
+  <target>保存済みフィルターを読み込めませんでした。</target>
+</trans-unit>
+<trans-unit id="investigation.title">
+  <source>Investigation filters</source>
+  <target>調査フィルター</target>
+</trans-unit>
+<trans-unit id="investigation.applied">
+  <source>Applied</source>
+  <target>適用済み</target>
+</trans-unit>
+<trans-unit id="investigation.requested">
+  <source>Requested (not yet applied)</source>
+  <target>要求済み（未適用）</target>
+</trans-unit>
+<trans-unit id="investigation.observedFailure">
+  <source>Observed failure</source>
+  <target>観測された失敗</target>
+</trans-unit>
+<trans-unit id="investigation.minElapsed">
+  <source>Minimum elapsed time (ms)</source>
+  <target>最小経過時間（ms）</target>
+</trans-unit>
+<trans-unit id="investigation.maxElapsed">
+  <source>Maximum elapsed time (ms)</source>
+  <target>最大経過時間（ms）</target>
+</trans-unit>
+<trans-unit id="investigation.modelExact">
+  <source>Model (exact)</source>
+  <target>モデル（完全一致）</target>
+</trans-unit>
+<trans-unit id="investigation.toolExact">
+  <source>Tool (exact)</source>
+  <target>ツール（完全一致）</target>
+</trans-unit>
+<trans-unit id="investigation.checking">
+  <source>Checking conditions…</source>
+  <target>条件を確認中…</target>
+</trans-unit>
+<trans-unit id="investigation.applyDraft">
+  <source>Apply draft conditions</source>
+  <target>下書き条件を適用</target>
+</trans-unit>
+<trans-unit id="investigation.note">
+  <source>All conditions must match the conversation. Unknown outcomes do not count as failures.</source>
+  <target>会話はすべての条件に一致する必要があります。不明な結果は失敗として数えません。</target>
+</trans-unit>
+<trans-unit id="investigation.notApplied">
+  <source>Not applied: <x id="0" equiv-text="${reason}"/></source>
+  <target>未適用: <x id="0" equiv-text="${reason}"/></target>
+</trans-unit>
+<trans-unit id="investigation.invalid">
+  <source>Invalid conditions.</source>
+  <target>条件が正しくありません。</target>
+</trans-unit>
+<trans-unit id="investigation.allSources">
+  <source>all sources</source>
+  <target>すべてのソース</target>
+</trans-unit>
+<trans-unit id="investigation.search">
+  <source>search <x id="0" equiv-text="${value}"/></source>
+  <target>検索 <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="investigation.failure">
+  <source>observed failure</source>
+  <target>観測された失敗</target>
+</trans-unit>
+<trans-unit id="investigation.atLeast">
+  <source>at least <x id="0" equiv-text="${value}"/> ms</source>
+  <target><x id="0" equiv-text="${value}"/> ms 以上</target>
+</trans-unit>
+<trans-unit id="investigation.atMost">
+  <source>at most <x id="0" equiv-text="${value}"/> ms</source>
+  <target><x id="0" equiv-text="${value}"/> ms 以下</target>
+</trans-unit>
+<trans-unit id="investigation.model">
+  <source>model <x id="0" equiv-text="${value}"/></source>
+  <target>モデル <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="investigation.tool">
+  <source>tool <x id="0" equiv-text="${value}"/></source>
+  <target>ツール <x id="0" equiv-text="${value}"/></target>
+</trans-unit>
+<trans-unit id="kpi.explain">
+  <source>Explain <x id="0" equiv-text="${label}"/></source>
+  <target><x id="0" equiv-text="${label}"/>の説明</target>
+</trans-unit>
+<trans-unit id="agentTree.empty">
+  <source>No agent relationships reported.</source>
+  <target>エージェントの関係は報告されていません。</target>
+</trans-unit>
+<trans-unit id="agentTree.aria">
+  <source>Agent delegation topology</source>
+  <target>エージェント委譲の構成</target>
+</trans-unit>
+<trans-unit id="agentTree.root">
+  <source>Root</source>
+  <target>ルート</target>
+</trans-unit>
+<trans-unit id="agentTree.child">
+  <source>Child</source>
+  <target>子</target>
+</trans-unit>
+<trans-unit id="agentTree.runtimeId">
+  <source>Runtime ID: <x id="0" equiv-text="${id}"/></source>
+  <target>ランタイム ID: <x id="0" equiv-text="${id}"/></target>
+</trans-unit>
+<trans-unit id="workspace.queryUnavailable">
+  <source>Conversation query unavailable</source>
+  <target>会話クエリを利用できません</target>
+</trans-unit>
+<trans-unit id="workspace.loadingListTitle">
+  <source>Loading conversations</source>
+  <target>会話を読み込み中</target>
+</trans-unit>
+<trans-unit id="workspace.loadingListBody">
+  <source>Reading the latest bounded conversation list.</source>
+  <target>最新の範囲指定された会話一覧を読み込んでいます。</target>
+</trans-unit>
+<trans-unit id="workspace.loadingConversationTitle">
+  <source>Loading requested conversation</source>
+  <target>指定された会話を読み込み中</target>
+</trans-unit>
+<trans-unit id="workspace.loadingConversationBody">
+  <source>Resolving the source-qualified conversation and span.</source>
+  <target>ソースで特定された会話とスパンを解決しています。</target>
+</trans-unit>
+<trans-unit id="workspace.conversationUnavailable">
+  <source>Conversation unavailable</source>
+  <target>会話を利用できません</target>
+</trans-unit>
+<trans-unit id="workspace.retry">
+  <source>Retry</source>
+  <target>再試行</target>
+</trans-unit>
+<trans-unit id="workspace.listUnavailable">
+  <source>Conversations unavailable</source>
+  <target>会話を利用できません</target>
+</trans-unit>
+<trans-unit id="workspace.listUnavailableBody">
+  <source>Conversation data could not be loaded.</source>
+  <target>会話データを読み込めませんでした。</target>
+</trans-unit>
+<trans-unit id="workspace.waitingTitle">
+  <source>Waiting for agent telemetry</source>
+  <target>エージェントテレメトリを待機中</target>
+</trans-unit>
+<trans-unit id="workspace.waitingBody">
+  <source>Point an OTLP exporter at this process, then start a conversation.</source>
+  <target>OTLP エクスポーターをこのプロセスに向けてから、会話を開始してください。</target>
+</trans-unit>
+<trans-unit id="workspace.selected">
+  <source>Selected conversation</source>
+  <target>選択中の会話</target>
+</trans-unit>
+<trans-unit id="workspace.usageAria">
+  <source>Selected conversation usage</source>
+  <target>選択中の会話の使用量</target>
+</trans-unit>
+<trans-unit id="workspace.totalTokens">
+  <source>Total tokens</source>
+  <target>合計トークン</target>
+</trans-unit>
+<trans-unit id="workspace.inputTokens">
+  <source>Input tokens</source>
+  <target>入力トークン</target>
+</trans-unit>
+<trans-unit id="workspace.outputTokens">
+  <source>Output tokens</source>
+  <target>出力トークン</target>
+</trans-unit>
+<trans-unit id="workspace.estimatedCost">
+  <source>Estimated cost</source>
+  <target>推定コスト</target>
+</trans-unit>
+<trans-unit id="workspace.inputOutput">
+  <source>Input + output</source>
+  <target>入力＋出力</target>
+</trans-unit>
+<trans-unit id="workspace.reportedByModel">
+  <source>Reported by model calls</source>
+  <target>モデル呼び出しによる報告値</target>
+</trans-unit>
+<trans-unit id="workspace.observedTelemetry">
+  <source>Observed telemetry</source>
+  <target>観測テレメトリ</target>
+</trans-unit>
+<trans-unit id="workspace.coverageComplete">
+  <source>all retained projected activities</source>
+  <target>保持された投影アクティビティすべて</target>
+</trans-unit>
+<trans-unit id="workspace.coveragePartial">
+  <source>partial projected evidence</source>
+  <target>一部の投影根拠</target>
+</trans-unit>
+<trans-unit id="workspace.coverageUnavailable">
+  <source>not yet available</source>
+  <target>まだ利用不可</target>
+</trans-unit>
+<trans-unit id="workspace.coverage">
+  <source>Analysis coverage: <x id="0" equiv-text="${state}"/>. This does not establish that every input or body was reported.</source>
+  <target>分析範囲: <x id="0" equiv-text="${state}"/>。すべての入力や本文が報告されたことを示すものではありません。</target>
+</trans-unit>
+<trans-unit id="workspace.investigationAria">
+  <source>Investigation view</source>
+  <target>調査ビュー</target>
+</trans-unit>
+<trans-unit id="workspace.execution">
+  <source>Execution</source>
+  <target>実行</target>
+</trans-unit>
+<trans-unit id="workspace.rework">
+  <source>Rework</source>
+  <target>手戻り</target>
+</trans-unit>
+<trans-unit id="workspace.comparison">
+  <source>Comparison</source>
+  <target>比較</target>
+</trans-unit>
+<trans-unit id="workspace.reworkUnavailable">
+  <source>Rework analysis unavailable</source>
+  <target>手戻り分析を利用できません</target>
+</trans-unit>
+<trans-unit id="workspace.modelTraffic">
+  <source>Observed model traffic</source>
+  <target>観測されたモデル通信量</target>
+</trans-unit>
+<trans-unit id="workspace.agentTopology">
+  <source>Agent topology</source>
+  <target>エージェント構成</target>
+</trans-unit>
+<trans-unit id="workspace.operations">
+  <source>Operations &amp; messages</source>
+  <target>操作とメッセージ</target>
+</trans-unit>
+<trans-unit id="workspace.filteredBy">
+  <source>Filtered by</source>
+  <target>絞り込み</target>
+</trans-unit>
+<trans-unit id="workspace.allAgents">
+  <source>All agents</source>
+  <target>すべてのエージェント</target>
+</trans-unit>
+<trans-unit id="traceExplorer.eyebrow">
+  <source>Cross-conversation causality</source>
+  <target>会話をまたぐ因果関係</target>
+</trans-unit>
+<trans-unit id="traceExplorer.title">
+  <source>Trace explorer</source>
+  <target>トレースエクスプローラー</target>
+</trans-unit>
+<trans-unit id="traceExplorer.loading">
+  <source>Loading trace evidence…</source>
+  <target>トレース根拠を読み込み中…</target>
+</trans-unit>
+<trans-unit id="traceExplorer.requestedSpanUnavailable">
+  <source>Requested span <x id="0" equiv-text="${id}"/> is unavailable. </source>
+  <target>指定されたスパン <x id="0" equiv-text="${id}"/> を利用できません。</target>
+</trans-unit>
+<trans-unit id="traceExplorer.unavailable">
+  <source>Trace unavailable</source>
+  <target>トレースを利用できません</target>
+</trans-unit>
+<trans-unit id="traceExplorer.participants">
+  <source>Participants</source>
+  <target>参加者</target>
+</trans-unit>
+<trans-unit id="traceExplorer.investigate">
+  <source>Investigate trace window</source>
+  <target>トレース範囲を調査</target>
+</trans-unit>
+<trans-unit id="traceExplorer.timeline">
+  <source>Span &amp; event timeline</source>
+  <target>スパンとイベントのタイムライン</target>
+</trans-unit>
+<trans-unit id="activity.time">
+  <source>Time</source>
+  <target>時刻</target>
+</trans-unit>
+<trans-unit id="activity.activity">
+  <source>Activity</source>
+  <target>アクティビティ</target>
+</trans-unit>
+<trans-unit id="activity.agent">
+  <source>Agent</source>
+  <target>エージェント</target>
+</trans-unit>
+<trans-unit id="activity.trace">
+  <source>Trace</source>
+  <target>トレース</target>
+</trans-unit>
+<trans-unit id="activity.selected">
+  <source>Selected</source>
+  <target>選択中</target>
+</trans-unit>
+<trans-unit id="activity.detail">
+  <source>Activity detail</source>
+  <target>アクティビティ詳細</target>
+</trans-unit>
+<trans-unit id="activity.outsideFilter">
+  <source>Outside current agent filter. The selected activity remains available from the conversation evidence.</source>
+  <target>現在のエージェントフィルター対象外です。選択したアクティビティは会話の根拠から引き続き参照できます。</target>
+</trans-unit>
+<trans-unit id="activity.notLoadedRetained">
+  <source>Selected activity is not in the loaded activity page. Its retained body and metadata are shown below.</source>
+  <target>選択したアクティビティは読み込み済みページにありません。保持されている本文とメタデータを以下に表示します。</target>
+</trans-unit>
+<trans-unit id="activity.back">
+  <source>Back to activity</source>
+  <target>アクティビティに戻る</target>
+</trans-unit>
+<trans-unit id="activity.receivedReference">
+  <source>Received reference</source>
+  <target>受信した参照</target>
+</trans-unit>
+<trans-unit id="activity.receivedBody">
+  <source>Received body</source>
+  <target>受信した本文</target>
+</trans-unit>
+<trans-unit id="activity.noBodyReported">
+  <source>No body was reported for this activity.</source>
+  <target>このアクティビティの本文は報告されていません。</target>
+</trans-unit>
+<trans-unit id="activity.noReadableBody">
+  <source>No readable body is available.</source>
+  <target>読み取り可能な本文はありません。</target>
+</trans-unit>
+<trans-unit id="activity.metadata">
+  <source>Metadata</source>
+  <target>メタデータ</target>
+</trans-unit>
+<trans-unit id="activity.source">
+  <source>Source</source>
+  <target>ソース</target>
+</trans-unit>
+<trans-unit id="activity.conversation">
+  <source>Conversation</source>
+  <target>会話</target>
+</trans-unit>
+<trans-unit id="activity.signal">
+  <source>Signal</source>
+  <target>シグナル</target>
+</trans-unit>
+<trans-unit id="activity.event">
+  <source>Event</source>
+  <target>イベント</target>
+</trans-unit>
+<trans-unit id="activity.agentType">
+  <source>Agent type</source>
+  <target>エージェント種別</target>
+</trans-unit>
+<trans-unit id="activity.model">
+  <source>Model</source>
+  <target>モデル</target>
+</trans-unit>
+<trans-unit id="activity.status">
+  <source>Status</source>
+  <target>状態</target>
+</trans-unit>
+<trans-unit id="activity.observed">
+  <source>Observed</source>
+  <target>観測時刻</target>
+</trans-unit>
+<trans-unit id="activity.span">
+  <source>Span</source>
+  <target>スパン</target>
+</trans-unit>
+<trans-unit id="activity.tokens">
+  <source>Tokens</source>
+  <target>トークン</target>
+</trans-unit>
+<trans-unit id="activity.targetAgent">
+  <source>Target agent</source>
+  <target>対象エージェント</target>
+</trans-unit>
+<trans-unit id="activity.prompt">
+  <source>Prompt</source>
+  <target>プロンプト</target>
+</trans-unit>
+<trans-unit id="activity.usage">
+  <source>Usage</source>
+  <target>使用量</target>
+</trans-unit>
+<trans-unit id="activity.selectedUnavailable">
+  <source>Selected activity is not in the loaded activities. Its body is unavailable here.</source>
+  <target>選択したアクティビティは読み込み済みデータにありません。ここでは本文を利用できません。</target>
+</trans-unit>
+<trans-unit id="activity.selectPrompt">
+  <source>Select an activity to read its received body and metadata.</source>
+  <target>受信した本文とメタデータを読むアクティビティを選択してください。</target>
+</trans-unit>
+<trans-unit id="activity.loadingDirection">
+  <source>Loading <x id="0" equiv-text="${direction}"/> observations…</source>
+  <target><x id="0" equiv-text="${direction}"/>の観測を読み込み中…</target>
+</trans-unit>
+<trans-unit id="activity.retryLoading">
+  <source>Retry loading</source>
+  <target>読み込みを再試行</target>
+</trans-unit>
+<trans-unit id="activity.showDirection">
+  <source>Show <x id="0" equiv-text="${direction}"/> loaded activities</source>
+  <target>読み込み済みの<x id="0" equiv-text="${direction}"/>アクティビティを表示</target>
+</trans-unit>
+<trans-unit id="activity.openTrace">
+  <source>Open trace <x id="0" equiv-text="${id}"/></source>
+  <target>トレース <x id="0" equiv-text="${id}"/> を開く</target>
+</trans-unit>
+<trans-unit id="activity.linked">
+  <source>Linked <x id="0" equiv-text="${id}"/></source>
+  <target>リンク <x id="0" equiv-text="${id}"/></target>
+</trans-unit>
+<trans-unit id="activity.userPrompt">
+  <source>User prompt</source>
+  <target>ユーザープロンプト</target>
+</trans-unit>
+<trans-unit id="activity.modelResponse">
+  <source>Model response</source>
+  <target>モデル応答</target>
+</trans-unit>
+<trans-unit id="activity.modelCallUsage">
+  <source>Model call usage</source>
+  <target>モデル呼び出し使用量</target>
+</trans-unit>
+<trans-unit id="activity.toolOperation">
+  <source>Tool operation</source>
+  <target>ツール操作</target>
+</trans-unit>
+<trans-unit id="activity.agentDelegation">
+  <source>Agent delegation</source>
+  <target>エージェント委譲</target>
+</trans-unit>
+<trans-unit id="activity.agentMessage">
+  <source>Agent message</source>
+  <target>エージェントメッセージ</target>
+</trans-unit>
+<trans-unit id="activity.telemetryEvent">
+  <source>Telemetry event</source>
+  <target>テレメトリイベント</target>
+</trans-unit>
+<trans-unit id="activity.corroborating">
+  <source>Corroborating; excluded from total</source>
+  <target>補強根拠（合計から除外）</target>
+</trans-unit>
+<trans-unit id="activity.newer">
+  <source>newer</source>
+  <target>新しい</target>
+</trans-unit>
+<trans-unit id="activity.older">
+  <source>older</source>
+  <target>古い</target>
+</trans-unit>
+<trans-unit id="overview.unsupported">
+  <source>Trace overview is unsupported by this server. The loaded evidence remains available.</source>
+  <target>このサーバーはトレース概要に対応していません。読み込み済みの根拠は引き続き利用できます。</target>
+</trans-unit>
+<trans-unit id="overview.unavailable">
+  <source>Trace overview is unavailable. The loaded evidence remains available.</source>
+  <target>トレース概要を利用できません。読み込み済みの根拠は引き続き利用できます。</target>
+</trans-unit>
+<trans-unit id="overview.loading">
+  <source>Loading trace overview…</source>
+  <target>トレース概要を読み込み中…</target>
+</trans-unit>
+<trans-unit id="overview.windowUnsupported">
+  <source>Bounded trace windows are unsupported by this server.</source>
+  <target>このサーバーは範囲指定トレースに対応していません。</target>
+</trans-unit>
+<trans-unit id="overview.status">
+  <source>Overview <x id="0" equiv-text="${shown}"/> of <x id="1" equiv-text="${total}"/> activities · <x id="2" equiv-text="${coverage}"/> · <x id="3" equiv-text="${matches}"/> match the current window</source>
+  <target>アクティビティ <x id="1" equiv-text="${total}"/> 件中 <x id="0" equiv-text="${shown}"/> 件の概要 · <x id="2" equiv-text="${coverage}"/> · 現在の範囲に <x id="3" equiv-text="${matches}"/> 件一致</target>
+</trans-unit>
+<trans-unit id="overview.complete">
+  <source>complete coverage</source>
+  <target>全範囲</target>
+</trans-unit>
+<trans-unit id="overview.partial">
+  <source>partial retained coverage</source>
+  <target>保持データの一部</target>
+</trans-unit>
+<trans-unit id="overview.mapAria">
+  <source>Trace overview from <x id="0" equiv-text="${start}"/> to <x id="1" equiv-text="${end}"/></source>
+  <target><x id="0" equiv-text="${start}"/> から <x id="1" equiv-text="${end}"/> までのトレース概要</target>
+</trans-unit>
+<trans-unit id="overview.missingParent">
+  <source>missing parent</source>
+  <target>親不明</target>
+</trans-unit>
+<trans-unit id="overview.windowStart">
+  <source>Window start</source>
+  <target>範囲の開始</target>
+</trans-unit>
+<trans-unit id="overview.windowStartAria">
+  <source>Trace window start</source>
+  <target>トレース範囲の開始</target>
+</trans-unit>
+<trans-unit id="overview.windowEnd">
+  <source>Window end</source>
+  <target>範囲の終了</target>
+</trans-unit>
+<trans-unit id="overview.windowEndAria">
+  <source>Trace window end</source>
+  <target>トレース範囲の終了</target>
+</trans-unit>
+<trans-unit id="overview.activityKind">
+  <source>Activity kind</source>
+  <target>アクティビティ種別</target>
+</trans-unit>
+<trans-unit id="overview.activityKindAria">
+  <source>Trace activity kind</source>
+  <target>トレースアクティビティ種別</target>
+</trans-unit>
+<trans-unit id="overview.allKinds">
+  <source>All kinds</source>
+  <target>すべての種別</target>
+</trans-unit>
+<trans-unit id="overview.errorsOnly">
+  <source>Errors only</source>
+  <target>エラーのみ</target>
+</trans-unit>
+<trans-unit id="overview.zoomIn">
+  <source>Zoom in</source>
+  <target>拡大</target>
+</trans-unit>
+<trans-unit id="overview.zoomOut">
+  <source>Zoom out</source>
+  <target>縮小</target>
+</trans-unit>
+<trans-unit id="overview.reset">
+  <source>Reset window</source>
+  <target>範囲をリセット</target>
+</trans-unit>
+<trans-unit id="waterfall.timelineAria">
+  <source>Trace timeline</source>
+  <target>トレースタイムライン</target>
+</trans-unit>
+<trans-unit id="waterfall.selectedEvidence">
+  <source>Selected evidence</source>
+  <target>選択中の根拠</target>
+</trans-unit>
+<trans-unit id="waterfall.missingParent">
+  <source>Missing parent <x id="0" equiv-text="${id}"/></source>
+  <target>親が不明 <x id="0" equiv-text="${id}"/></target>
+</trans-unit>
+<trans-unit id="waterfall.parentUnknown">
+  <source>Parent availability unknown <x id="0" equiv-text="${id}"/></source>
+  <target>親の利用状況が不明 <x id="0" equiv-text="${id}"/></target>
+</trans-unit>
+<trans-unit id="waterfall.loadingMore">
+  <source>Loading more trace data…</source>
+  <target>追加のトレースデータを読み込み中…</target>
+</trans-unit>
+<trans-unit id="waterfall.previous">
+  <source>previous</source>
+  <target>前の</target>
+</trans-unit>
+<trans-unit id="waterfall.next">
+  <source>next</source>
+  <target>次の</target>
+</trans-unit>
+<trans-unit id="waterfall.showWindow">
+  <source>Show <x id="0" equiv-text="${direction}"/> loaded trace activities</source>
+  <target>読み込み済みトレースの<x id="0" equiv-text="${direction}"/>アクティビティを表示</target>
+</trans-unit>
+<trans-unit id="waterfall.outsideFilters">
+  <source>Selected evidence is outside the current filters.</source>
+  <target>選択した根拠は現在のフィルター対象外です。</target>
+</trans-unit>
+<trans-unit id="waterfall.notLoaded">
+  <source>Selected evidence is not in the loaded trace window.</source>
+  <target>選択した根拠は読み込み済みトレース範囲にありません。</target>
+</trans-unit>
+<trans-unit id="waterfall.clearSelection">
+  <source>Clear selection</source>
+  <target>選択を解除</target>
+</trans-unit>
+<trans-unit id="waterfall.showSelection">
+  <source>Show selected evidence</source>
+  <target>選択した根拠を表示</target>
+</trans-unit>
+<trans-unit id="waterfall.partialTokens">
+  <source>Partial · <x id="0" equiv-text="${components}"/></source>
+  <target>一部のみ · <x id="0" equiv-text="${components}"/></target>
+</trans-unit>
+<trans-unit id="waterfall.corroborating">
+  <source>Corroborating · <x id="0" equiv-text="${label}"/></source>
+  <target>補強根拠 · <x id="0" equiv-text="${label}"/></target>
+</trans-unit>
+<trans-unit id="waterfall.kind">
+  <source>Kind</source>
+  <target>種別</target>
+</trans-unit>
+<trans-unit id="waterfall.toolName">
+  <source>Tool name</source>
+  <target>ツール名</target>
+</trans-unit>
+<trans-unit id="waterfall.telemetryName">
+  <source>Telemetry name</source>
+  <target>テレメトリ名</target>
+</trans-unit>
+<trans-unit id="waterfall.runtimeAgentId">
+  <source>Runtime agent ID</source>
+  <target>ランタイムエージェント ID</target>
+</trans-unit>
+<trans-unit id="waterfall.parentAgent">
+  <source>Parent agent</source>
+  <target>親エージェント</target>
+</trans-unit>
+<trans-unit id="waterfall.observedAt">
+  <source>Observed at</source>
+  <target>観測時刻</target>
+</trans-unit>
+<trans-unit id="waterfall.startedAt">
+  <source>Started at</source>
+  <target>開始時刻</target>
+</trans-unit>
+<trans-unit id="waterfall.endedAt">
+  <source>Ended at</source>
+  <target>終了時刻</target>
+</trans-unit>
+<trans-unit id="waterfall.traceId">
+  <source>Trace ID</source>
+  <target>トレース ID</target>
+</trans-unit>
+<trans-unit id="waterfall.linkedTrace">
+  <source>Linked trace</source>
+  <target>リンク先トレース</target>
+</trans-unit>
+<trans-unit id="waterfall.spanId">
+  <source>Span ID</source>
+  <target>スパン ID</target>
+</trans-unit>
+<trans-unit id="waterfall.parentSpan">
+  <source>Parent span</source>
+  <target>親スパン</target>
+</trans-unit>
+<trans-unit id="waterfall.rollup">
+  <source>Rollup</source>
+  <target>集計</target>
+</trans-unit>
+<trans-unit id="waterfall.tokenBreakdown">
+  <source>Token breakdown</source>
+  <target>トークン内訳</target>
+</trans-unit>
+<trans-unit id="waterfall.openConversation">
+  <source>Open conversation</source>
+  <target>会話を開く</target>
+</trans-unit>
+<trans-unit id="waterfall.openSpanConversation">
+  <source>Open span in conversation</source>
+  <target>会話内のスパンを開く</target>
+</trans-unit>
+<trans-unit id="waterfall.included">
+  <source>Included in observed total</source>
+  <target>観測合計に含む</target>
+</trans-unit>
+<trans-unit id="waterfall.excluded">
+  <source>Excluded from rollup as corroborating usage evidence</source>
+  <target>補強用の使用量根拠として集計から除外</target>
+</trans-unit>
+<trans-unit id="waterfall.timing">
+  <source><x id="0" equiv-text="${start}"/> to <x id="1" equiv-text="${end}"/></source>
+  <target><x id="0" equiv-text="${start}"/> から <x id="1" equiv-text="${end}"/></target>
+</trans-unit>
+<trans-unit id="waterfall.eventAt">
+  <source>Event at <x id="0" equiv-text="${time}"/></source>
+  <target><x id="0" equiv-text="${time}"/> のイベント</target>
+</trans-unit>
+<trans-unit id="rework.analyzing">
+  <source>Analyzing development rework</source>
+  <target>開発時の手戻りを分析中</target>
+</trans-unit>
+<trans-unit id="rework.normalizing">
+  <source>Normalizing the complete retained session.</source>
+  <target>保持されたセッション全体を正規化しています。</target>
+</trans-unit>
+<trans-unit id="rework.unavailable">
+  <source>Rework analysis unavailable</source>
+  <target>手戻り分析を利用できません</target>
+</trans-unit>
+<trans-unit id="rework.retry">
+  <source>Retry analysis</source>
+  <target>分析を再試行</target>
+</trans-unit>
+<trans-unit id="rework.waiting">
+  <source>Waiting for rework analysis</source>
+  <target>手戻り分析を待機中</target>
+</trans-unit>
+<trans-unit id="rework.noResult">
+  <source>No analysis result is available for this session yet.</source>
+  <target>このセッションの分析結果はまだありません。</target>
+</trans-unit>
+<trans-unit id="rework.title">
+  <source>Development rework</source>
+  <target>開発時の手戻り</target>
+</trans-unit>
+<trans-unit id="rework.subtitle">
+  <source>Diagnostic signals from normalized Claude/Codex telemetry—not a productivity score.</source>
+  <target>正規化された Claude/Codex テレメトリによる診断シグナルです。生産性スコアではありません。</target>
+</trans-unit>
+<trans-unit id="rework.partialEvidence">
+  <source>Partial evidence</source>
+  <target>一部の根拠</target>
+</trans-unit>
+<trans-unit id="rework.completeProjection">
+  <source>Complete retained projection</source>
+  <target>保持投影全体</target>
+</trans-unit>
+<trans-unit id="rework.validationEffectiveness">
+  <source>Validation effectiveness</source>
+  <target>検証の有効性</target>
+</trans-unit>
+<trans-unit id="rework.validationAria">
+  <source>Validation effectiveness indicators</source>
+  <target>検証有効性の指標</target>
+</trans-unit>
+<trans-unit id="rework.validationFailures">
+  <source>Validation failures</source>
+  <target>検証失敗</target>
+</trans-unit>
+<trans-unit id="rework.validationHint">
+  <source>Test, build, and lint</source>
+  <target>テスト、ビルド、Lint</target>
+</trans-unit>
+<trans-unit id="rework.validationDescription">
+  <source>Known failed test, build, and lint operations. Use this to locate validation friction; zero can also mean no validation ran or outcomes were not reported.</source>
+  <target>失敗が確認されたテスト、ビルド、Lint 操作です。0 は検証未実行や結果未報告の場合もあります。</target>
+</trans-unit>
+<trans-unit id="rework.initialSuccess">
+  <source>Initial validation success</source>
+  <target>初回検証成功</target>
+</trans-unit>
+<trans-unit id="rework.initialSuccessDescription">
+  <source>ID-backed command identities whose first observed known-outcome attempt in this session succeeded. Identity is same agent, operation, normalized command, and working directory when reported—not a change or task—so this is a first-pass proxy. Uncorrelated observations are excluded; missing outcomes can still bias the rate.</source>
+  <target>セッション内で最初に観測された既知結果が成功した、ID で裏付けられたコマンド識別子の割合です。未関連付けの観測は除外されます。</target>
+</trans-unit>
+<trans-unit id="rework.recurringImpact">
+  <source>Recurring-loop impact</source>
+  <target>反復ループの影響</target>
+</trans-unit>
+<trans-unit id="rework.recurringAria">
+  <source>Recurring failure loop indicators</source>
+  <target>反復失敗ループの指標</target>
+</trans-unit>
+<trans-unit id="rework.recurringLoops">
+  <source>Recurring failure loops</source>
+  <target>反復失敗ループ</target>
+</trans-unit>
+<trans-unit id="rework.recurringDescription">
+  <source>ID-backed validation episodes where the same agent ran the same normalized test, build, or lint command in the same reported working directory and the same unambiguous error fingerprint failed at least twice. Uncorrelated observations and ambiguous error evidence are excluded from confirmed recurrence.</source>
+  <target>同じエージェント、正規化コマンド、作業ディレクトリで、同じ明確なエラーが 2 回以上失敗した検証エピソードです。</target>
+</trans-unit>
+<trans-unit id="rework.failureAttempts">
+  <source>Failure attempts in recurring loops</source>
+  <target>反復ループ内の失敗回数</target>
+</trans-unit>
+<trans-unit id="rework.includesFirst">
+  <source>Includes the first failure</source>
+  <target>最初の失敗を含む</target>
+</trans-unit>
+<trans-unit id="rework.failureAttemptsDescription">
+  <source>All failed validation attempts in an episode once any observed error fingerprint recurs, including failures with a different or missing fingerprint inside that episode. FAIL(X) → FAIL(Y) → FAIL(X) → PASS counts as three attempts.</source>
+  <target>エラー指紋が再発したエピソード内のすべての失敗検証を数えます。</target>
+</trans-unit>
+<trans-unit id="rework.resolutionTime">
+  <source>Total loop resolution time</source>
+  <target>ループ解決時間の合計</target>
+</trans-unit>
+<trans-unit id="rework.resolutionDescription">
+  <source>Sum of each resolved recurring loop's elapsed wall time from first failure to matching success. Unresolved loops are excluded, and overlapping loops contribute separately, so the total can exceed session elapsed time.</source>
+  <target>解決済み反復ループの最初の失敗から対応する成功までの経過時間合計です。</target>
+</trans-unit>
+<trans-unit id="rework.resolutionTokens">
+  <source>Tokens in resolved loops</source>
+  <target>解決済みループのトークン</target>
+</trans-unit>
+<trans-unit id="rework.resolutionTokensDescription">
+  <source>Unique authoritative same-agent token observations inside resolved recurring-loop windows. Unresolved loops are excluded. Missing token telemetry is shown as not reported; this is associated cost, not proven waste.</source>
+  <target>解決済み反復ループ範囲内で観測された一意の権威あるトークンです。浪費を証明するものではありません。</target>
+</trans-unit>
+<trans-unit id="rework.otherSignals">
+  <source>Other operational signals</source>
+  <target>その他の運用シグナル</target>
+</trans-unit>
+<trans-unit id="rework.otherAria">
+  <source>Other operational indicators</source>
+  <target>その他の運用指標</target>
+</trans-unit>
+<trans-unit id="rework.effortShare">
+  <source>Detected retry-cycle share</source>
+  <target>検出した再試行サイクルの割合</target>
+</trans-unit>
+<trans-unit id="rework.effortDescription">
+  <source>Detected same-agent activity time inside failure, edit, and matching retry windows divided by all observed agent-active time. Matching is heuristic and the retry need not succeed. Activity overlap is merged within each agent; other parallel agents add to the denominator and can dilute the session share. This is not proven waste or a productivity score.</source>
+  <target>失敗・編集・再試行範囲内の同一エージェント稼働時間を、観測された全稼働時間で割った値です。</target>
+</trans-unit>
+<trans-unit id="rework.tokenRate">
+  <source>Rework token rate</source>
+  <target>手戻りトークン率</target>
+</trans-unit>
+<trans-unit id="rework.tokenDescription">
+  <source>Authoritative tokens observed inside detected failure/edit/retry windows divided by total authoritative tokens for this session. It normalizes for session size, but cycle-associated tokens are not necessarily avoidable waste.</source>
+  <target>失敗・編集・再試行範囲内の権威あるトークンを、セッション全体のトークンで割った値です。</target>
+</trans-unit>
+<trans-unit id="rework.toolFailureRate">
+  <source>Tool failure rate</source>
+  <target>ツール失敗率</target>
+</trans-unit>
+<trans-unit id="rework.knownOutcomes">
+  <source><x id="0" equiv-text="${failures}"/> of <x id="1" equiv-text="${total}"/> known outcomes</source>
+  <target>既知結果 <x id="1" equiv-text="${total}"/> 件中 <x id="0" equiv-text="${failures}"/> 件</target>
+</trans-unit>
+<trans-unit id="rework.noOutcomes">
+  <source>No reported outcomes</source>
+  <target>報告された結果なし</target>
+</trans-unit>
+<trans-unit id="rework.toolFailureDescription">
+  <source>Known failed tool outcomes divided by tool attempts with known outcomes. Missing outcomes are excluded, and small samples can make the percentage unstable.</source>
+  <target>結果が判明しているツール試行のうち失敗した割合です。未報告結果は除外されます。</target>
+</trans-unit>
+<trans-unit id="rework.apiRetry">
+  <source>Estimated API retry</source>
+  <target>推定 API 再試行</target>
+</trans-unit>
+<trans-unit id="rework.observedDuration">
+  <source><x id="0" equiv-text="${duration}"/> observed</source>
+  <target><x id="0" equiv-text="${duration}"/> を観測</target>
+</trans-unit>
+<trans-unit id="rework.apiRetryDescription">
+  <source>Failed API attempts followed later by a matching API call. Matching is heuristic; the value shows estimated retry count and observed duration, not guaranteed waste.</source>
+  <target>失敗した API 試行の後に一致する呼び出しが行われた推定回数と観測時間です。</target>
+</trans-unit>
+<trans-unit id="rework.repeatedCommands">
+  <source>Repeated commands</source>
+  <target>コマンド再実行</target>
+</trans-unit>
+<trans-unit id="rework.sameAgentCommand">
+  <source>Same agent and command</source>
+  <target>同じエージェントとコマンド</target>
+</trans-unit>
+<trans-unit id="rework.repeatedCommandsDescription">
+  <source>Each execution after the first of the same normalized command by one agent. Re-running validation after an edit may be healthy rather than rework.</source>
+  <target>同一エージェントによる同じ正規化コマンドの 2 回目以降の実行です。</target>
+</trans-unit>
+<trans-unit id="rework.reeditedFiles">
+  <source>Re-edited files</source>
+  <target>ファイル再編集</target>
+</trans-unit>
+<trans-unit id="rework.sameAgentFile">
+  <source>Same agent and file</source>
+  <target>同じエージェントとファイル</target>
+</trans-unit>
+<trans-unit id="rework.reeditedFilesDescription">
+  <source>Each edit after the first to the same file by one agent. Iterative editing can be normal; this is a concentration signal, not proof of wasted work.</source>
+  <target>同一エージェントによる同じファイルの 2 回目以降の編集です。</target>
+</trans-unit>
+<trans-unit id="rework.evidenceCoverage">
+  <source>Evidence coverage</source>
+  <target>根拠範囲</target>
+</trans-unit>
+<trans-unit id="rework.coverageDetail">
+  <source><x id="0" equiv-text="${outcomes}"/> of <x id="1" equiv-text="${validations}"/> logical validation attempts report outcomes · <x id="2" equiv-text="${identified}"/> have command identity · <x id="3" equiv-text="${fingerprinted}"/> of <x id="4" equiv-text="${failures}"/> failures fingerprinted · <x id="5" equiv-text="${backed}"/> ID-backed (<x id="6" equiv-text="${merged}"/> merged) / <x id="7" equiv-text="${uncorrelated}"/> uncorrelated / <x id="8" equiv-text="${conflicts}"/> identity conflicts / <x id="9" equiv-text="${ambiguous}"/> ambiguous errors</source>
+  <target>論理検証 <x id="1" equiv-text="${validations}"/> 件中 <x id="0" equiv-text="${outcomes}"/> 件に結果 · <x id="2" equiv-text="${identified}"/> 件にコマンド識別子 · 失敗 <x id="4" equiv-text="${failures}"/> 件中 <x id="3" equiv-text="${fingerprinted}"/> 件に指紋 · ID 裏付け <x id="5" equiv-text="${backed}"/> 件（統合 <x id="6" equiv-text="${merged}"/>）/ 未関連 <x id="7" equiv-text="${uncorrelated}"/> / 識別競合 <x id="8" equiv-text="${conflicts}"/> / 曖昧エラー <x id="9" equiv-text="${ambiguous}"/></target>
+</trans-unit>
+<trans-unit id="rework.changeRevert">
+  <source>Change revert</source>
+  <target>変更の巻き戻し</target>
+</trans-unit>
+<trans-unit id="rework.crossAgentOverlap">
+  <source>Cross-agent overlap</source>
+  <target>エージェント間の重複</target>
+</trans-unit>
+<trans-unit id="rework.notAvailable">
+  <source>Not available</source>
+  <target>利用不可</target>
+</trans-unit>
+<trans-unit id="rework.highestImpact">
+  <source>Highest-impact recurring loops</source>
+  <target>影響の大きい反復ループ</target>
+</trans-unit>
+<trans-unit id="rework.episode">
+  <source><x id="0" equiv-text="${attempts}"/> failed attempts · <x id="1" equiv-text="${resolution}"/> · agent <x id="2" equiv-text="${agent}"/></source>
+  <target>失敗 <x id="0" equiv-text="${attempts}"/> 回 · <x id="1" equiv-text="${resolution}"/> · エージェント <x id="2" equiv-text="${agent}"/></target>
+</trans-unit>
+<trans-unit id="rework.resolvedIn">
+  <source>resolved in <x id="0" equiv-text="${duration}"/></source>
+  <target><x id="0" equiv-text="${duration}"/> で解決</target>
+</trans-unit>
+<trans-unit id="rework.unresolved">
+  <source>unresolved</source>
+  <target>未解決</target>
+</trans-unit>
+<trans-unit id="rework.openFirst">
+  <source>Open first failed attempt</source>
+  <target>最初の失敗を開く</target>
+</trans-unit>
+<trans-unit id="rework.showingEpisodes">
+  <source>Showing <x id="0" equiv-text="${shown}"/> of <x id="1" equiv-text="${total}"/> reported episodes</source>
+  <target>報告エピソード <x id="1" equiv-text="${total}"/> 件中 <x id="0" equiv-text="${shown}"/> 件を表示</target>
+</trans-unit>
+<trans-unit id="rework.showMore">
+  <source>Show more loops (<x id="0" equiv-text="${count}"/> remaining)</source>
+  <target>さらにループを表示（残り <x id="0" equiv-text="${count}"/> 件）</target>
+</trans-unit>
+<trans-unit id="rework.validationIdentities">
+  <source><x id="0" equiv-text="${successes}"/> of <x id="1" equiv-text="${eligible}"/> validation identities</source>
+  <target>検証識別子 <x id="1" equiv-text="${eligible}"/> 件中 <x id="0" equiv-text="${successes}"/> 件</target>
+</trans-unit>
+<trans-unit id="rework.noValidationIdentities">
+  <source>No validation identities with known outcomes</source>
+  <target>既知結果を持つ検証識別子なし</target>
+</trans-unit>
+<trans-unit id="rework.detected">
+  <source><x id="0" equiv-text="${count}"/> detected</source>
+  <target><x id="0" equiv-text="${count}"/> 件検出</target>
+</trans-unit>
+<trans-unit id="rework.resolvedUnresolved">
+  <source><x id="0" equiv-text="${resolved}"/> resolved · <x id="1" equiv-text="${unresolved}"/> unresolved</source>
+  <target>解決 <x id="0" equiv-text="${resolved}"/> 件 · 未解決 <x id="1" equiv-text="${unresolved}"/> 件</target>
+</trans-unit>
+<trans-unit id="rework.insufficientFingerprints">
+  <source>Insufficient failure evidence for fingerprints</source>
+  <target>指紋に必要な失敗根拠が不足</target>
+</trans-unit>
+<trans-unit id="rework.fingerprinted">
+  <source><x id="0" equiv-text="${count}"/> of <x id="1" equiv-text="${total}"/> failed validations fingerprinted</source>
+  <target>失敗検証 <x id="1" equiv-text="${total}"/> 件中 <x id="0" equiv-text="${count}"/> 件に指紋あり</target>
+</trans-unit>
+<trans-unit id="rework.noRecurrence">
+  <source>No same-error recurrence detected</source>
+  <target>同一エラーの再発なし</target>
+</trans-unit>
+<trans-unit id="rework.noResolvedLoops">
+  <source>No resolved recurring loops · <x id="0" equiv-text="${unresolved}"/> unresolved</source>
+  <target>解決済み反復ループなし · 未解決 <x id="0" equiv-text="${unresolved}"/> 件</target>
+</trans-unit>
+<trans-unit id="rework.tokenUnavailable">
+  <source>Rework token usage unavailable</source>
+  <target>手戻りトークン使用量を利用不可</target>
+</trans-unit>
+<trans-unit id="rework.sessionTokenUnavailable">
+  <source>Session token total unavailable</source>
+  <target>セッショントークン合計を利用不可</target>
+</trans-unit>
+<trans-unit id="rework.sessionTokens">
+  <source><x id="0" equiv-text="${part}"/> of <x id="1" equiv-text="${total}"/> session tokens</source>
+  <target>セッショントークン <x id="1" equiv-text="${total}"/> 中 <x id="0" equiv-text="${part}"/></target>
+</trans-unit>
+<trans-unit id="rework.effortUnavailable">
+  <source>Observed agent-active duration unavailable</source>
+  <target>観測されたエージェント稼働時間を利用不可</target>
+</trans-unit>
+<trans-unit id="rework.noClosedCycles">
+  <source>No detected closed retry cycles · <x id="0" equiv-text="${total}"/> observed agent-active time</source>
+  <target>検出された完結再試行サイクルなし · 観測稼働時間 <x id="0" equiv-text="${total}"/></target>
+</trans-unit>
+<trans-unit id="rework.effortTime">
+  <source><x id="0" equiv-text="${part}"/> of <x id="1" equiv-text="${total}"/> observed agent-active time</source>
+  <target>観測稼働時間 <x id="1" equiv-text="${total}"/> 中 <x id="0" equiv-text="${part}"/></target>
+</trans-unit>
+<trans-unit id="comparison.title">
+  <source>Before / After diagnostics</source>
+  <target>前後の診断比較</target>
+</trans-unit>
+<trans-unit id="comparison.subtitle">
+  <source>Compare normalized diagnostic signals between two same-source conversations.</source>
+  <target>同じソースの 2 つの会話で正規化された診断シグナルを比較します。</target>
+</trans-unit>
+<trans-unit id="comparison.baselineConversation">
+  <source>Baseline conversation</source>
+  <target>基準会話</target>
+</trans-unit>
+<trans-unit id="comparison.ended">
+  <source>ended <x id="0" equiv-text="${time}"/></source>
+  <target>終了 <x id="0" equiv-text="${time}"/></target>
+</trans-unit>
+<trans-unit id="comparison.scope">
+  <source>Baseline candidates are limited to non-overlapping conversations in the current filtered list.</source>
+  <target>基準候補は現在の絞り込み一覧内で重複しない会話に限定されます。</target>
+</trans-unit>
+<trans-unit id="comparison.noBaseline">
+  <source>No non-overlapping baseline in the current conversation list</source>
+  <target>現在の会話一覧に重複しない基準がありません</target>
+</trans-unit>
+<trans-unit id="comparison.noBaselineHelp">
+  <source>Broaden the time range or filters, or collect another completed conversation from this source.</source>
+  <target>時間範囲やフィルターを広げるか、このソースでもう一つ完了した会話を収集してください。</target>
+</trans-unit>
+<trans-unit id="comparison.loading">
+  <source>Loading baseline diagnostics</source>
+  <target>基準診断を読み込み中</target>
+</trans-unit>
+<trans-unit id="comparison.loadingHelp">
+  <source>Reading both conversations in one diagnostic snapshot.</source>
+  <target>2 つの会話を一つの診断スナップショットとして読み込んでいます。</target>
+</trans-unit>
+<trans-unit id="comparison.unavailable">
+  <source>Comparison unavailable</source>
+  <target>比較を利用できません</target>
+</trans-unit>
+<trans-unit id="comparison.retry">
+  <source>Retry comparison</source>
+  <target>比較を再試行</target>
+</trans-unit>
+<trans-unit id="comparison.waiting">
+  <source>Waiting for comparable diagnostics</source>
+  <target>比較可能な診断を待機中</target>
+</trans-unit>
+<trans-unit id="comparison.caption">
+  <source>Normalized diagnostic comparison between baseline and current conversations</source>
+  <target>基準会話と現在の会話の正規化診断比較</target>
+</trans-unit>
+<trans-unit id="comparison.diagnostic">
+  <source>Diagnostic</source>
+  <target>診断</target>
+</trans-unit>
+<trans-unit id="comparison.baseline">
+  <source>Baseline</source>
+  <target>基準</target>
+</trans-unit>
+<trans-unit id="comparison.current">
+  <source>Current</source>
+  <target>現在</target>
+</trans-unit>
+<trans-unit id="comparison.change">
+  <source>Change</source>
+  <target>変化</target>
+</trans-unit>
+<trans-unit id="comparison.qualification">
+  <source>Observed differences are diagnostic signals, not causal evidence or a productivity score.</source>
+  <target>観測差は診断シグナルであり、因果関係の根拠や生産性スコアではありません。</target>
+</trans-unit>
+<trans-unit id="comparison.harnessChanged">
+  <source>Reported harness fingerprint changed</source>
+  <target>報告ハーネス指紋が変化</target>
+</trans-unit>
+<trans-unit id="comparison.harnessSame">
+  <source>Reported harness fingerprint is the same</source>
+  <target>報告ハーネス指紋は同一</target>
+</trans-unit>
+<trans-unit id="comparison.harnessNotComparable">
+  <source>Reported harness fingerprint is not comparable</source>
+  <target>報告ハーネス指紋を比較不可</target>
+</trans-unit>
+<trans-unit id="comparison.baselineIssue">
+  <source>Baseline: <x id="0" equiv-text="${issue}"/></source>
+  <target>基準: <x id="0" equiv-text="${issue}"/></target>
+</trans-unit>
+<trans-unit id="comparison.currentIssue">
+  <source>Current: <x id="0" equiv-text="${issue}"/></source>
+  <target>現在: <x id="0" equiv-text="${issue}"/></target>
+</trans-unit>
+<trans-unit id="comparison.scopeMismatch">
+  <source>The reported comparison scopes differ.</source>
+  <target>報告された比較範囲が異なります。</target>
+</trans-unit>
+<trans-unit id="comparison.aboutHarness">
+  <source>About reported harness fingerprints</source>
+  <target>報告ハーネス指紋について</target>
+</trans-unit>
+<trans-unit id="comparison.harnessHelp">
+  <source>A fingerprint covers only the files selected when it was generated. This pairwise association does not prove effective configuration equality or that a harness change caused a metric change.</source>
+  <target>指紋は生成時に選ばれたファイルのみを対象とします。設定の同一性や指標変化の原因を証明しません。</target>
+</trans-unit>
+<trans-unit id="comparison.aboutMetric">
+  <source>About <x id="0" equiv-text="${label}"/></source>
+  <target><x id="0" equiv-text="${label}"/>について</target>
+</trans-unit>
+<trans-unit id="comparison.initialLabel">
+  <source>Initial validation success proxy</source>
+  <target>初回検証成功の代理指標</target>
+</trans-unit>
+<trans-unit id="comparison.initialDescription">
+  <source>First observed outcome for each same-agent operation, normalized command, and working-directory identity. It is not task- or change-level first-pass success.</source>
+  <target>同一エージェントの操作、正規化コマンド、作業ディレクトリごとの最初の観測結果です。タスク単位の初回成功ではありません。</target>
+</trans-unit>
+<trans-unit id="comparison.initialEvidence">
+  <source>eligible identities</source>
+  <target>対象識別子</target>
+</trans-unit>
+<trans-unit id="comparison.tokenLabel">
+  <source>Rework token share</source>
+  <target>手戻りトークンの割合</target>
+</trans-unit>
+<trans-unit id="comparison.tokenDescription">
+  <source>Tokens attributed to detected closed failure/edit/retry windows divided by all observed session tokens. Lower is generally preferable when coverage is comparable.</source>
+  <target>検出された完結失敗・編集・再試行範囲のトークンを、観測セッション全体のトークンで割った値です。</target>
+</trans-unit>
+<trans-unit id="comparison.tokenEvidence">
+  <source>session tokens</source>
+  <target>セッショントークン</target>
+</trans-unit>
+<trans-unit id="comparison.effortLabel">
+  <source>Detected retry-cycle effort share</source>
+  <target>再試行サイクル稼働時間の割合</target>
+</trans-unit>
+<trans-unit id="comparison.effortDescription">
+  <source>Agent-active duration intersecting detected closed retry-cycle windows divided by total observed agent-active duration.</source>
+  <target>再試行サイクル範囲と交差するエージェント稼働時間を、全観測稼働時間で割った値です。</target>
+</trans-unit>
+<trans-unit id="comparison.effortEvidence">
+  <source>ms observed agent-active time</source>
+  <target>観測稼働時間（ms）</target>
+</trans-unit>
+<trans-unit id="comparison.toolLabel">
+  <source>Tool failure rate</source>
+  <target>ツール失敗率</target>
+</trans-unit>
+<trans-unit id="comparison.toolDescription">
+  <source>Observed failed tool attempts divided by tool attempts with a known outcome. Missing outcomes are excluded from both sides.</source>
+  <target>既知結果を持つツール試行のうち観測された失敗の割合です。</target>
+</trans-unit>
+<trans-unit id="comparison.toolEvidence">
+  <source>outcome-known tool attempts</source>
+  <target>結果既知のツール試行</target>
+</trans-unit>
+<trans-unit id="comparison.loopLabel">
+  <source>Recurring failure loops / 100 validations</source>
+  <target>検証 100 回あたりの反復失敗ループ</target>
+</trans-unit>
+<trans-unit id="comparison.loopDescription">
+  <source>Confirmed same-command and same-error recurring episodes per 100 logical validation attempts with known outcomes.</source>
+  <target>既知結果を持つ論理検証 100 回あたりの、同一コマンド・同一エラーの確認済み反復エピソードです。</target>
+</trans-unit>
+<trans-unit id="comparison.loopEvidence">
+  <source>outcome-known validations</source>
+  <target>結果既知の検証</target>
+</trans-unit>
+<trans-unit id="comparison.per100">
+  <source>per 100</source>
+  <target>100 回あたり</target>
+</trans-unit>
+<trans-unit id="comparison.improved">
+  <source>Improved</source>
+  <target>改善</target>
+</trans-unit>
+<trans-unit id="comparison.regressed">
+  <source>Regressed</source>
+  <target>悪化</target>
+</trans-unit>
+<trans-unit id="comparison.noChange">
+  <source>No change</source>
+  <target>変化なし</target>
+</trans-unit>
+<trans-unit id="comparison.notComparable">
+  <source>Not comparable</source>
+  <target>比較不可</target>
+</trans-unit>
+<trans-unit id="comparison.identityMismatch">
+  <source>Comparison identities do not match</source>
+  <target>比較対象の識別子が一致しません</target>
+</trans-unit>
+<trans-unit id="comparison.invalidTime">
+  <source>Conversation times are invalid</source>
+  <target>会話時刻が正しくありません</target>
+</trans-unit>
+<trans-unit id="comparison.baselineIneligible">
+  <source>Baseline is no longer eligible</source>
+  <target>基準は対象外になりました</target>
+</trans-unit>
+<trans-unit id="comparison.reportedRecords">
+  <source><x id="0" equiv-text="${reported}"/> / <x id="1" equiv-text="${eligible}"/> reported records</source>
+  <target>対象 <x id="1" equiv-text="${eligible}"/> 件中 <x id="0" equiv-text="${reported}"/> 件を報告</target>
+</trans-unit>
+<trans-unit id="comparison.scopeValue">
+  <source>scope <x id="0" equiv-text="${scope}"/></source>
+  <target>範囲 <x id="0" equiv-text="${scope}"/></target>
+</trans-unit>
+<trans-unit id="comparison.serverUnsupported">
+  <source>Server does not provide harness evidence</source>
+  <target>サーバーがハーネス根拠を提供していません</target>
+</trans-unit>
+<trans-unit id="comparison.invalidPayload">
+  <source>Invalid harness evidence response</source>
+  <target>ハーネス根拠レスポンスが不正です</target>
+</trans-unit>
+<trans-unit id="comparison.noEligibleRecords">
+  <source>No eligible records</source>
+  <target>対象レコードなし</target>
+</trans-unit>
+<trans-unit id="comparison.unreportedHarness">
+  <source>Harness fingerprint was not reported</source>
+  <target>ハーネス指紋は未報告です</target>
+</trans-unit>
+<trans-unit id="comparison.mixedHarness">
+  <source>Multiple fingerprints were reported</source>
+  <target>複数の指紋が報告されました</target>
+</trans-unit>
+<trans-unit id="comparison.incompleteHarness">
+  <source>Fingerprint reporting was incomplete</source>
+  <target>指紋の報告が不完全です</target>
+</trans-unit>
+<trans-unit id="comparison.invalidHarness">
+  <source>Invalid fingerprint metadata was observed</source>
+  <target>不正な指紋メタデータを観測しました</target>
+</trans-unit>
+<trans-unit id="range.1h">
+  <source>1h</source>
+  <target>1時間</target>
+</trans-unit>
+<trans-unit id="range.24h">
+  <source>24h</source>
+  <target>24時間</target>
+</trans-unit>
+<trans-unit id="range.7d">
+  <source>7d</source>
+  <target>7日</target>
+</trans-unit>
+<trans-unit id="trace.conversationCount.one">
+  <source><x id="0" equiv-text="${count}"/> conversation</source>
+  <target>会話 <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.conversationCount.other">
+  <source><x id="0" equiv-text="${count}"/> conversations</source>
+  <target>会話 <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.agentCount.one">
+  <source><x id="0" equiv-text="${count}"/> agent</source>
+  <target>エージェント <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.agentCount.other">
+  <source><x id="0" equiv-text="${count}"/> agents</source>
+  <target>エージェント <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.rootSpanCount.one">
+  <source><x id="0" equiv-text="${count}"/> root span</source>
+  <target>ルートスパン <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.rootSpanCount.other">
+  <source><x id="0" equiv-text="${count}"/> root spans</source>
+  <target>ルートスパン <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.missingParentCount.one">
+  <source><x id="0" equiv-text="${count}"/> missing parent</source>
+  <target>親不明 <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="trace.missingParentCount.other">
+  <source><x id="0" equiv-text="${count}"/> missing parents</source>
+  <target>親不明 <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="rework.uncorrelatedExcluded.one">
+  <source><x id="0" equiv-text="${count}"/> uncorrelated validation observation excluded</source>
+  <target>未関連の検証観測 <x id="0" equiv-text="${count}"/> 件を除外</target>
+</trans-unit>
+<trans-unit id="rework.uncorrelatedExcluded.other">
+  <source><x id="0" equiv-text="${count}"/> uncorrelated validation observations excluded</source>
+  <target>未関連の検証観測 <x id="0" equiv-text="${count}"/> 件を除外</target>
+</trans-unit>
+<trans-unit id="rework.resolvedLoops.one">
+  <source><x id="0" equiv-text="${resolved}"/> resolved loop · <x id="1" equiv-text="${unresolved}"/> unresolved</source>
+  <target>解決済みループ <x id="0" equiv-text="${resolved}"/> 件 · 未解決 <x id="1" equiv-text="${unresolved}"/> 件</target>
+</trans-unit>
+<trans-unit id="rework.resolvedLoops.other">
+  <source><x id="0" equiv-text="${resolved}"/> resolved loops · <x id="1" equiv-text="${unresolved}"/> unresolved</source>
+  <target>解決済みループ <x id="0" equiv-text="${resolved}"/> 件 · 未解決 <x id="1" equiv-text="${unresolved}"/> 件</target>
+</trans-unit>
+<trans-unit id="common.save">
+  <source>Save</source>
+  <target>保存</target>
+</trans-unit>
+<trans-unit id="common.cancel">
+  <source>Cancel</source>
+  <target>キャンセル</target>
+</trans-unit>
+<trans-unit id="saved.filter">
+  <source>Saved filter</source>
+  <target>保存済みフィルター</target>
+</trans-unit>
+<trans-unit id="saved.chooseOne">
+  <source>Choose a saved filter…</source>
+  <target>保存済みフィルターを選択…</target>
+</trans-unit>
+<trans-unit id="saved.update">
+  <source>Update saved filter</source>
+  <target>保存済みフィルターを更新</target>
+</trans-unit>
+<trans-unit id="saved.saveAs">
+  <source>Save current filters as…</source>
+  <target>現在のフィルターを別名で保存…</target>
+</trans-unit>
+<trans-unit id="saved.retry">
+  <source>Retry saved filters</source>
+  <target>保存済みフィルターを再試行</target>
+</trans-unit>
+<trans-unit id="saved.updated">
+  <source>Updated “<x id="0" equiv-text="${name}"/>”.</source>
+  <target>「<x id="0" equiv-text="${name}"/>」を更新しました。</target>
+</trans-unit>
+<trans-unit id="saved.noLongerExists">
+  <source>The saved filter no longer exists.</source>
+  <target>保存済みフィルターは存在しません。</target>
+</trans-unit>
+<trans-unit id="investigation.editConditions">
+  <source>Edit conditions</source>
+  <target>条件を編集</target>
+</trans-unit>
+<trans-unit id="investigation.applying">
+  <source>Applying…</source>
+  <target>適用中…</target>
+</trans-unit>
+<trans-unit id="investigation.apply">
+  <source>Apply filters</source>
+  <target>フィルターを適用</target>
+</trans-unit>
+</body>
+</file>
+</xliff>

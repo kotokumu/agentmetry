@@ -1,9 +1,11 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Session } from "../model/telemetry";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 @customElement("am-session-list")
-export class SessionList extends LitElement {
+export class SessionList extends LocalizedElement {
   @property({ attribute: false }) sessions: readonly Session[] = [];
   @property() selected = "";
   @property() selectedSource = "";
@@ -28,10 +30,10 @@ export class SessionList extends LitElement {
   `;
 
   render() {
-    if (this.loading) return html`<p class="empty" role="status">Loading conversations…</p>`;
-    if (this.unavailable) return html`<p class="empty" role="alert">Conversations unavailable.</p>`;
-    if (this.sessions.length === 0) return html`<p class="empty">${this.filterActive ? "No matching conversations." : "No conversations yet."}</p>`;
-    return html`<nav aria-label="Agent conversations">${this.sessions.map((session) => html`
+    if (this.loading) return html`<p class="empty" role="status">${localization.t("sessions.loading")}</p>`;
+    if (this.unavailable) return html`<p class="empty" role="alert">${localization.t("sessions.unavailable")}</p>`;
+    if (this.sessions.length === 0) return html`<p class="empty">${localization.t(this.filterActive ? "sessions.noMatching" : "sessions.none")}</p>`;
+    return html`<nav aria-label=${localization.t("sessions.navigation")}>${this.sessions.map((session) => html`
       <a
         href=${this.locationForSession(session.sourceId, session.id)}
         aria-current=${session.id === this.selected && session.sourceId === this.selectedSource ? "page" : "false"}
@@ -39,7 +41,7 @@ export class SessionList extends LitElement {
       >
         <span class="sources">${(session.sources ?? []).map((source) => html`<span class="source">${source.label}</span>`)}</span>
         <strong>${session.id}</strong>
-        <small>${session.agentCount ?? session.agents.length} agents · ${session.activityCount} activities</small>
+        <small>${localization.t("sessions.counts", { agents: localization.number(session.agentCount ?? session.agents.length), activities: localization.number(session.activityCount) })}</small>
       </a>
     `)}</nav>`;
   }

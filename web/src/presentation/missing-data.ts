@@ -1,4 +1,6 @@
-export const NOT_REPORTED = "Not reported";
+import { localization } from "../localization/localization";
+
 export const NOT_APPLICABLE = "—";
-export const NOT_CONNECTED = "Not connected";
-export const UNAVAILABLE = "Unavailable";
+export const notReported = () => localization.t("common.notReported");
+export const notConnected = () => localization.t("common.notConnected");
+export const unavailable = () => localization.t("common.unavailable");

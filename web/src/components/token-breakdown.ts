@@ -1,7 +1,9 @@
-import { LitElement, css, html } from "lit";
+import { css, html } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { TokenUsage } from "../model/telemetry";
-import { NOT_REPORTED } from "../presentation/missing-data";
+import { notReported } from "../presentation/missing-data";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 const emptyUsage: TokenUsage = {
   input: null,
@@ -13,7 +15,7 @@ const emptyUsage: TokenUsage = {
 };
 
 @customElement("am-token-breakdown")
-export class TokenBreakdown extends LitElement {
+export class TokenBreakdown extends LocalizedElement {
   @property({ attribute: false }) usage: TokenUsage = emptyUsage;
   @property({ type: Boolean, reflect: true }) compact = false;
 
@@ -35,12 +37,12 @@ export class TokenBreakdown extends LitElement {
   render() {
     const rows = tokenRows(this.usage);
     const hasUsage = rows.length > 0;
-    return html`<div class="summary" aria-label="Token usage">
+    return html`<div class="summary" aria-label=${localization.t("tokens.aria")}>
       <div class="total-line">
-        <strong class="total">${this.usage.total === null ? hasUsage ? "Partial" : NOT_REPORTED : this.usage.total.toLocaleString()}</strong>
-        ${this.usage.total !== null ? html`<span class="unit">tokens</span>` : hasUsage ? html`<span class="partial">usage</span>` : null}
+        <strong class="total">${this.usage.total === null ? hasUsage ? localization.t("common.partial") : notReported() : localization.number(this.usage.total)}</strong>
+        ${this.usage.total !== null ? html`<span class="unit">${localization.t("common.tokens")}</span>` : hasUsage ? html`<span class="partial">${localization.t("common.usage")}</span>` : null}
       </div>
-      ${hasUsage ? html`<details @toggle=${this.breakdownToggled}><summary>Breakdown</summary><div class="grid">${rows.map(([label, value]) => html`<span class="label">${label}</span><strong class="value">${value.toLocaleString()}</strong>`)}</div></details>` : null}
+      ${hasUsage ? html`<details @toggle=${this.breakdownToggled}><summary>${localization.t("common.breakdown")}</summary><div class="grid">${rows.map(([label, value]) => html`<span class="label">${localization.t(label)}</span><strong class="value">${localization.number(value)}</strong>`)}</div></details>` : null}
     </div>`;
   }
 
@@ -53,12 +55,12 @@ export class TokenBreakdown extends LitElement {
   }
 }
 
-const tokenRows = (usage: TokenUsage): readonly (readonly [string, number])[] => [
-  ["Input", usage.input],
-  ["Output", usage.output],
-  ["Cache read", usage.cacheRead],
-  ["Cache write", usage.cacheWrite],
-  ["Reasoning", usage.reasoning],
-].filter((entry): entry is [string, number] => entry[1] !== null);
+const tokenRows = (usage: TokenUsage): readonly (readonly ["common.input" | "common.output" | "common.cacheRead" | "common.cacheWrite" | "common.reasoning", number])[] => [
+  ["common.input", usage.input],
+  ["common.output", usage.output],
+  ["common.cacheRead", usage.cacheRead],
+  ["common.cacheWrite", usage.cacheWrite],
+  ["common.reasoning", usage.reasoning],
+].filter((entry): entry is ["common.input" | "common.output" | "common.cacheRead" | "common.cacheWrite" | "common.reasoning", number] => entry[1] !== null);
 
 declare global { interface HTMLElementTagNameMap { "am-token-breakdown": TokenBreakdown } }

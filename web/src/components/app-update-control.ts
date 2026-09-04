@@ -1,4 +1,4 @@
-import { LitElement, css, html, nothing } from "lit";
+import { css, html, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import {
   desktopUpdater,
@@ -6,11 +6,13 @@ import {
   type DesktopUpdater,
   type UpdatePhase,
 } from "../api/desktop-updater";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 type ControlPhase = "idle" | UpdatePhase;
 
 @customElement("am-app-update-control")
-export class AppUpdateControl extends LitElement {
+export class AppUpdateControl extends LocalizedElement {
   @property({ attribute: false }) updater: DesktopUpdater = desktopUpdater;
   @state() private phase: ControlPhase = "idle";
   @state() private currentVersion = "";
@@ -115,31 +117,31 @@ export class AppUpdateControl extends LitElement {
 
   private message() {
     switch (this.phase) {
-      case "checking": return html`<p class="message">Checking for updates…</p>`;
-      case "up-to-date": return html`<p class="message">v${this.currentVersion} is up to date</p>`;
-      case "available": return html`<p class="message available">v${this.availableVersion} available</p>`;
-      case "downloading": return html`<p class="message">Downloading v${this.availableVersion}${this.progress()}</p>`;
-      case "installing": return html`<p class="message">Installing v${this.availableVersion}…</p>`;
-      case "restarting": return html`<p class="message">Restarting Agentmetry…</p>`;
-      case "failed": return html`<p class="message error">${this.error || "Update failed"}</p>`;
+      case "checking": return html`<p class="message">${localization.t("update.checkingMessage")}</p>`;
+      case "up-to-date": return html`<p class="message">${localization.t("update.upToDate", { version: this.currentVersion })}</p>`;
+      case "available": return html`<p class="message available">${localization.t("update.available", { version: this.availableVersion })}</p>`;
+      case "downloading": return html`<p class="message">${localization.t("update.downloading", { version: this.availableVersion, progress: this.progress() })}</p>`;
+      case "installing": return html`<p class="message">${localization.t("update.installing", { version: this.availableVersion })}</p>`;
+      case "restarting": return html`<p class="message">${localization.t("update.restarting")}</p>`;
+      case "failed": return html`<p class="message error">${this.error || localization.t("update.failed")}</p>`;
       default: return nothing;
     }
   }
 
   private progress() {
     if (this.downloaded === undefined || !this.total) return "…";
-    return ` · ${Math.min(100, Math.round((this.downloaded / this.total) * 100))}%`;
+    return `${Math.min(100, Math.round((this.downloaded / this.total) * 100))}%`;
   }
 
   private actionLabel() {
     switch (this.phase) {
-      case "checking": return "Checking…";
-      case "available": return "Install & restart";
-      case "downloading": return "Downloading…";
-      case "installing": return "Installing…";
-      case "restarting": return "Restarting…";
-      case "failed": return "Try again";
-      default: return "Check for updates";
+      case "checking": return localization.t("update.checkingAction");
+      case "available": return localization.t("update.installAction");
+      case "downloading": return localization.t("update.downloadingAction");
+      case "installing": return localization.t("update.installingAction");
+      case "restarting": return localization.t("update.restartingAction");
+      case "failed": return localization.t("update.retryAction");
+      default: return localization.t("update.checkAction");
     }
   }
 }

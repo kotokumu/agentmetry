@@ -1,12 +1,14 @@
-import { LitElement, css, html, type PropertyValues } from "lit";
+import { css, html, type PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/telemetry";
 import type { TraceOverview } from "../model/trace-investigation";
 import { conversationHref, type ConversationTarget, tokenEvidence } from "../model/trace-analysis";
 import { agentDisplayLabel } from "../model/agent-label";
-import { NOT_APPLICABLE, NOT_REPORTED } from "../presentation/missing-data";
+import { NOT_APPLICABLE, notReported } from "../presentation/missing-data";
 import "./token-breakdown";
 import { readableActivityContent, contentAvailabilityLabel } from "./content-evidence";
+import { LocalizedElement } from "../localization/localized-element";
+import { localization } from "../localization/localization";
 
 type TraceRow = Readonly<{
   activity: Activity;
@@ -17,7 +19,7 @@ type TraceRow = Readonly<{
 }>;
 
 @customElement("am-trace-waterfall")
-export class TraceWaterfall extends LitElement {
+export class TraceWaterfall extends LocalizedElement {
   @property({ attribute: false }) trace?: Trace;
   @property({ attribute: false }) overview?: TraceOverview;
   @property() selectedSpanId = "";
@@ -87,16 +89,16 @@ export class TraceWaterfall extends LitElement {
     const hasNextWindow = this.renderOffset + 200 < trace.activities.length;
     const selectedVisible = Boolean(this.selectedSpanId && trace.activities.some((activity) => activity.signal === "trace" && activity.spanId === this.selectedSpanId));
     const selectedState = this.selectedSpanId && !selectedVisible ? this.selectedState() : null;
-    return html`${selectedState}${hasPreviousWindow ? this.windowNavigation("previous") : null}<div class="rows" role="list" aria-label="Trace timeline">${traceRows(trace, this.renderOffset, this.overview).map((row) => {
+    return html`${selectedState}${hasPreviousWindow ? this.windowNavigation("previous") : null}<div class="rows" role="list" aria-label=${localization.t("waterfall.timelineAria")}>${traceRows(trace, this.renderOffset, this.overview).map((row) => {
       const activity = withAgentEvidence(trace, row.activity);
       const selected = activity.signal === "trace" && activity.traceId === trace.traceId && activity.spanId === this.selectedSpanId;
       return html`
       <details class="row" role="listitem" aria-current=${selected ? "location" : "false"} style=${`--depth:${row.depth}`} .open=${selected || activity.status?.toLowerCase() === "error"}>
         <summary @click=${() => this.evidenceSelected(activity)}>
-        <div class="label">${selected ? html`<small>Selected evidence</small>` : null}<small>${activity.signal} · ${activity.source}</small><small class="agent">${agentLabel(activity)}</small><strong>${operationName(activity)}</strong>${activity.toolName && activity.toolName !== activity.name ? html`<small>${activity.name}</small>` : null}
-          ${row.missingParent === true ? html`<small class="missing">Missing parent ${row.activity.parentSpanId}</small>`
+        <div class="label">${selected ? html`<small>${localization.t("waterfall.selectedEvidence")}</small>` : null}<small>${activity.signal} · ${activity.source}</small><small class="agent">${agentLabel(activity)}</small><strong>${operationName(activity)}</strong>${activity.toolName && activity.toolName !== activity.name ? html`<small>${activity.name}</small>` : null}
+          ${row.missingParent === true ? html`<small class="missing">${localization.t("waterfall.missingParent", { id: row.activity.parentSpanId ?? "" })}</small>`
             : row.missingParent === undefined && row.activity.signal === "trace" && row.activity.parentSpanId
-              ? html`<small>Parent availability unknown ${row.activity.parentSpanId}</small>` : null}
+              ? html`<small>${localization.t("waterfall.parentUnknown", { id: row.activity.parentSpanId })}</small>` : null}
         </div>
         <div class="usage"><strong>${tokenTotal(activity)}</strong><small>${activityStatusLabel(activity.status) || activity.kind}</small><small>${durationLabel(activity)}</small></div>
         <div class="track" aria-label=${timingLabel(activity)}>${activity.signal === "trace"
@@ -106,7 +108,7 @@ export class TraceWaterfall extends LitElement {
         </summary>
         ${this.activityEvidence(activity)}
       </details>`;})}
-    </div>${hasNextWindow ? this.windowNavigation("next") : null}${this.hasMore && !hasNextWindow ? html`<div class="load-status" role="status" aria-live="polite">${this.loading ? "Loading more trace data…" : ""}</div>` : null}`;
+    </div>${hasNextWindow ? this.windowNavigation("next") : null}${this.hasMore && !hasNextWindow ? html`<div class="load-status" role="status" aria-live="polite">${this.loading ? localization.t("waterfall.loadingMore") : ""}</div>` : null}`;
   }
 
   protected willUpdate(changed: PropertyValues<this>) {
@@ -155,7 +157,7 @@ export class TraceWaterfall extends LitElement {
   }
 
   private windowNavigation(direction: "previous" | "next") {
-    return html`<div class="window-nav"><button type="button" @click=${() => this.moveWindow(direction)}>Show ${direction} loaded trace activities</button></div>`;
+    return html`<div class="window-nav"><button type="button" @click=${() => this.moveWindow(direction)}>${localization.t("waterfall.showWindow", { direction: localization.t(direction === "previous" ? "waterfall.previous" : "waterfall.next") })}</button></div>`;
   }
 
   private moveWindow(direction: "previous" | "next") {
@@ -177,12 +179,12 @@ export class TraceWaterfall extends LitElement {
 
   private selectedState() {
     const message = this.selectedAvailability === "outside_filters"
-      ? "Selected evidence is outside the current filters."
-      : "Selected evidence is not in the loaded trace window.";
+      ? localization.t("waterfall.outsideFilters")
+      : localization.t("waterfall.notLoaded");
     const selected = this.selectedActivity && withAgentEvidence(this.trace!, this.selectedActivity);
     return html`<aside class="selection-state" aria-live="polite">
       <p>${message}</p>
-      <div class="selection-actions"><button type="button" @click=${this.clearSelection}>Clear selection</button><button type="button" @click=${this.showSelection}>Show selected evidence</button></div>
+      <div class="selection-actions"><button type="button" @click=${this.clearSelection}>${localization.t("waterfall.clearSelection")}</button><button type="button" @click=${this.showSelection}>${localization.t("waterfall.showSelection")}</button></div>
       ${selected ? activityEvidence(selected) : null}
     </aside>`;
   }
@@ -253,7 +255,7 @@ export const traceRows = (trace: Trace, offset = 0, overview?: TraceOverview): r
 };
 
 const clamp = (value: number) => Math.max(0, Math.min(100, value));
-const activityStatusLabel = (value?: string) => value?.toLowerCase() === "error" ? "Error" : value;
+const activityStatusLabel = (value?: string) => value?.toLowerCase() === "error" ? localization.t("common.error") : value;
 const agentLabel = (activity: Activity) => {
   const source = agentDisplayLabel(activity);
   const target = activity.targetAgentId || activity.targetAgentType;
@@ -263,16 +265,16 @@ const agentLabel = (activity: Activity) => {
 const tokenTotal = (activity: Activity) => {
   const evidence = tokenEvidence(activity.tokens);
   const label = evidence.kind === "total"
-    ? `${evidence.total?.toLocaleString()} tokens`
+    ? `${localization.number(evidence.total ?? 0)} ${localization.t("common.tokens")}`
     : evidence.kind === "partial"
-      ? `Partial · ${evidence.components.map(([name, value]) => `${name} ${value.toLocaleString()}`).join(" · ")}`
-      : NOT_REPORTED;
-  if (evidence.kind !== "none" && !activity.contributesToTotal) return `Corroborating · ${label}`;
+      ? localization.t("waterfall.partialTokens", { components: evidence.components.map(([name, value]) => `${name} ${localization.number(value)}`).join(" · ") })
+      : notReported();
+  if (evidence.kind !== "none" && !activity.contributesToTotal) return localization.t("waterfall.corroborating", { label });
   if (evidence.kind !== "none") return label;
-  return NOT_REPORTED;
+  return notReported();
 };
 const durationLabel = (activity: Activity) => {
-  if (activity.signal !== "trace") return new Intl.DateTimeFormat(undefined, { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date(activity.observedAt));
+  if (activity.signal !== "trace") return localization.dateTime(new Date(activity.observedAt), { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   const start = new Date(activity.startedAt ?? activity.observedAt).getTime();
   const end = new Date(activity.endedAt ?? activity.observedAt).getTime();
   const milliseconds = Math.max(0, end - start);
@@ -280,33 +282,33 @@ const durationLabel = (activity: Activity) => {
 };
 const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => void, href = conversationHref(activity)) => {
   const facts = [
-    ["Kind", activity.kind],
-    ["Tool name", activity.toolName || NOT_APPLICABLE],
-    ["Telemetry name", activity.name],
-    ["Status", activityStatusLabel(activity.status) || NOT_REPORTED],
-    ["Source", activity.source || NOT_REPORTED],
-    ["Conversation", activity.runId || NOT_APPLICABLE],
-    ["Agent", agentDisplayLabel(activity)],
-    ["Runtime agent ID", activity.agentId || NOT_REPORTED],
-    ["Agent type", activity.agentType || NOT_REPORTED],
-    ["Parent agent", activity.parentAgentId || "Root"],
-    ["Model", activity.model || NOT_REPORTED],
-    ["Observed at", activity.observedAt],
-    ["Started at", activity.startedAt || NOT_APPLICABLE],
-    ["Ended at", activity.endedAt || NOT_APPLICABLE],
-    ["Trace ID", activity.traceId || NOT_APPLICABLE],
-    ["Linked trace", activity.relatedTraceId || NOT_APPLICABLE],
-    ["Span ID", activity.spanId || NOT_APPLICABLE],
-    ["Parent span", activity.parentSpanId || "Root"],
-    ["Target agent", activity.targetAgentId || activity.targetAgentType
+    [localization.t("waterfall.kind"), activity.kind],
+    [localization.t("waterfall.toolName"), activity.toolName || NOT_APPLICABLE],
+    [localization.t("waterfall.telemetryName"), activity.name],
+    [localization.t("activity.status"), activityStatusLabel(activity.status) || notReported()],
+    [localization.t("activity.source"), activity.source || notReported()],
+    [localization.t("activity.conversation"), activity.runId || NOT_APPLICABLE],
+    [localization.t("activity.agent"), agentDisplayLabel(activity)],
+    [localization.t("waterfall.runtimeAgentId"), activity.agentId || notReported()],
+    [localization.t("activity.agentType"), activity.agentType || notReported()],
+    [localization.t("waterfall.parentAgent"), activity.parentAgentId || localization.t("agentTree.root")],
+    [localization.t("activity.model"), activity.model || notReported()],
+    [localization.t("waterfall.observedAt"), activity.observedAt],
+    [localization.t("waterfall.startedAt"), activity.startedAt || NOT_APPLICABLE],
+    [localization.t("waterfall.endedAt"), activity.endedAt || NOT_APPLICABLE],
+    [localization.t("waterfall.traceId"), activity.traceId || NOT_APPLICABLE],
+    [localization.t("waterfall.linkedTrace"), activity.relatedTraceId || NOT_APPLICABLE],
+    [localization.t("waterfall.spanId"), activity.spanId || NOT_APPLICABLE],
+    [localization.t("waterfall.parentSpan"), activity.parentSpanId || localization.t("agentTree.root")],
+    [localization.t("activity.targetAgent"), activity.targetAgentId || activity.targetAgentType
       ? [activity.targetAgentId, activity.targetAgentType].filter(Boolean).join(" · ")
       : NOT_APPLICABLE],
-    ["Rollup", rollupLabel(activity)],
+    [localization.t("waterfall.rollup"), rollupLabel(activity)],
   ];
-  return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>Token breakdown</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
+  return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>${localization.t("waterfall.tokenBreakdown")}</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
     <am-content-evidence .evidence=${activity.contentEvidence} .activityContent=${activity.content ?? ""}></am-content-evidence>
     <pre class="message">${readableActivityContent(activity.contentEvidence, activity.content) || contentAvailabilityLabel(activity.contentEvidence, activity.content)}</pre>
-    ${href ? html`<a class="conversation" href=${href} @click=${navigate}>Open ${activity.spanId ? "span in" : ""} conversation</a>` : null}
+    ${href ? html`<a class="conversation" href=${href} @click=${navigate}>${localization.t(activity.spanId ? "waterfall.openSpanConversation" : "waterfall.openConversation")}</a>` : null}
   </div>`;
 };
 
@@ -326,8 +328,8 @@ const rollupLabel = (activity: Activity) => {
   const hasUsageEvidence = tokenEvidence(activity.tokens).kind !== "none" || activity.costUsd !== undefined;
   if (!hasUsageEvidence) return NOT_APPLICABLE;
   return activity.contributesToTotal
-    ? "Included in observed total"
-    : "Excluded from rollup as corroborating usage evidence";
+    ? localization.t("waterfall.included")
+    : localization.t("waterfall.excluded");
 };
 
 const withAgentEvidence = (trace: Trace, activity: Activity): Activity => {
@@ -343,7 +345,7 @@ const withAgentEvidence = (trace: Trace, activity: Activity): Activity => {
   };
 };
 const timingLabel = (activity: Activity) => activity.signal === "trace"
-  ? `${activity.startedAt ?? activity.observedAt} to ${activity.endedAt ?? activity.observedAt}`
-  : `Event at ${activity.observedAt}`;
+  ? localization.t("waterfall.timing", { start: activity.startedAt ?? activity.observedAt, end: activity.endedAt ?? activity.observedAt })
+  : localization.t("waterfall.eventAt", { time: activity.observedAt });
 
 declare global { interface HTMLElementTagNameMap { "am-trace-waterfall": TraceWaterfall } }

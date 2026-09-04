@@ -4,19 +4,23 @@
   "license": "Apache-2.0",
   "type": "module",
   "scripts": {
-    "test": "vitest run",
-    "build": "tsc -b && vite build",
-    "dev": "vite"
+    "i18n:extract": "lit-localize extract",
+    "i18n:build": "lit-localize build",
+    "test": "npm run i18n:build && vitest run",
+    "build": "npm run i18n:build && tsc -b && vite build",
+    "dev": "npm run i18n:build && vite"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.13.0",
     "@connectrpc/connect": "^2.1.0",
     "@connectrpc/connect-web": "^2.1.0",
+    "@lit/localize": "^0.12.2",
     "@lit/task": "^1.0.3",
     "@tauri-apps/api": "^2.11.1",
     "lit": "^3.3.3"
   },
   "devDependencies": {
+    "@lit/localize-tools": "^0.8.2",
     "happy-dom": "^20.11.2",
     "typescript": "^7.0.2",
     "vite": "^8.2.1",
