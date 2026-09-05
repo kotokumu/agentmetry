@@ -1,38 +1,97 @@
-schema: spec-driven
+# OpenSpec project configuration
+schema: quality-spec
 
 context: |
-  Agentmetry receives OTLP logs, metrics, and traces over HTTP and gRPC,
-  retains the original protobuf export, normalizes provider data into a
-  canonical model, and persists both raw and projected records in SQLite.
-  The backend uses Go 1.26.4. The desktop and documentation tooling use
-  Node.js 24 with npm. Changes use Conventional Commit titles.
-  Provider-emitted data is documented under docs/source-telemetry/. OpenSpec
-  capabilities describe Agentmetry product behavior and must not redefine the
-  upstream Claude Code or Codex wire formats.
-  Runtime facts must be verified against implementation and tests. Repository
-  references in authored documents use GitHub URLs on the main branch.
+  Project: Agentmetry
+  Product, service, library, or deliverable: A local observability application for AI coding agents that receives OTLP telemetry and exposes sessions, activities, token usage, costs, and diagnostics through a Web UI, HTTP API, and MCP
+  Primary consumers and actors: Agentmetry users, Claude Code and Codex OTLP exporters, HTTP API clients, and MCP clients
+  Scope boundary: Agentmetry owns local ingestion, lossless retention, canonical projection, querying, diagnostics, and presentation; upstream Claude Code, Codex, and OpenTelemetry wire formats are external dependencies
+  Authoritative terminology or glossary: README.md, docs/source-telemetry/
+  Authoritative interface, data, UI, and policy contracts: docs/design/api-proto-contract.md, internal/storage/sqlite/schema.hcl, implementation and tests
 
+  The backend uses Go 1.26.4. Desktop and documentation tooling use Node.js 24 with npm.
+  Changes use Conventional Commit titles. Repository references in authored documents use GitHub URLs on the main branch.
+  Runtime facts must be verified against implementation and tests. OpenSpec capabilities describe Agentmetry product behavior and must not redefine upstream Claude Code or Codex wire formats.
+
+  Knowledge index:
+  - Specification rules and publication protocol: openspec/specs/README.md
+  - Conceptual modeling method: openspec/specs/MODELING.md
+  - Artifact review criteria and severity: openspec/specs/REVIEW.md
+  - Main spec and interface contract examples: openspec/templates/
+
+# context only identifies references; it does not require agents to read or follow them.
+# rules are advisory instructions added to each artifact's generation instructions.
+# They define routing to the Core Methodology and completion checks.
+# The OpenSpec CLI does not verify execution of or compliance with rules.
+# Append target-specific rules to the corresponding artifact list.
 rules:
   proposal:
-    - Separate documentation of current behavior from proposals to change runtime behavior.
-    - Include an explicit Non-goals section.
-  design:
-    - Define the raw-retention boundary separately from canonical projection.
-    - Identify responsibility owners and dependency direction before implementation tasks.
+    - >-
+      Before creating the proposal, read affected existing main specs and follow `Artifact Responsibilities`, `Capability Boundaries and Paths`, and `Conceptual Model` in `openspec/specs/README.md`
+    - >-
+      Prefer existing capabilities and terminology. Do not add a new capability unless its reason for creation can be explained
+    - >-
+      Separate documentation of current behavior from proposals to change runtime behavior, and include an explicit Out of Scope section
+    - >-
+      Before completion, read `Priority` and review `Problem and Scope` in `openspec/specs/REVIEW.md`, resolve its P0 and P1 findings, and confirm that proposal.md records the scope, affected capabilities, key concepts, known Requirement IDs, and decisions required before modeling begins
+  model:
+    - >-
+      Before creating the model, read `proposal.md`, affected existing main specs, and `openspec/specs/MODELING.md` in full. Follow `Conceptual Model`, `Selecting a Specification Representation`, and `Deltas and Publication` in `openspec/specs/README.md`
+    - >-
+      Analyze in the order defined by `openspec/specs/MODELING.md`. Do not add unnecessary representations or concepts merely because the template contains a field for them
+    - >-
+      Keep Claude Code and Codex concepts separate when provider behavior differs, and distinguish the raw-retention boundary from canonical projection
+    - >-
+      Before completing model.md, provide complete Conceptual Model replacement text for every affected capability whose Requirements need a new or changed term, state, classification, value domain, relationship, unit, identity rule, or structural invariant
+    - >-
+      Before completion, read `Priority` and review `Conceptual Model` in `openspec/specs/REVIEW.md`, then resolve its P0 and P1 findings. Do not proceed to specs while an unresolved decision could change a Requirement's meaning, scope, or observable result
   specs:
-    - Use normative SHALL or MUST statements for observable product behavior.
-    - Give every requirement at least one Given-When-Then scenario.
-    - State whether unsupported data is rejected, retained raw, projected, or ignored.
-    - Keep Claude Code and Codex mappings separate when provider behavior differs.
+    - >-
+      Before creating specs, read `model.md` and affected existing main specs, then follow `Conceptual Model`, `Requirement`, `Selecting a Specification Representation`, `Scenario`, `External Contracts and Implementation SSOTs`, and `Deltas and Publication` in `openspec/specs/README.md`
+    - >-
+      If model.md retains an unresolved decision that could change a Requirement's meaning, scope, or observable result, do not create a delta spec; request a decision
+    - >-
+      Keep normative partitions, decisions, transitions, and operational invariants in the Requirement. Use Scenarios only to demonstrate and verify those rules; do not turn the specification into a Scenario catalog
+    - >-
+      State whether unsupported data is rejected, retained raw, projected, or ignored, and keep Claude Code and Codex mappings separate when provider behavior differs
+    - >-
+      Before completion, read `Priority` and review `Requirement`, `Representation Selection`, `Scenario`, and `SSOT and Interfaces` in `openspec/specs/REVIEW.md`, resolve their P0 and P1 findings, and strictly validate the change after creating all delta specs
+  design:
+    - >-
+      Before creating the design, read `proposal.md`, `model.md`, and all delta specs, then follow `Artifact Responsibilities` and `External Contracts and Implementation SSOTs` in `openspec/specs/README.md`
+    - >-
+      Map specification concepts to physical structures, but do not replace the Conceptual Model with database, API, UI, class, or package structures
+    - >-
+      Define the raw-retention boundary separately from canonical projection, and identify responsibility owners and dependency direction before implementation tasks
+    - >-
+      Treat design.md as scoped only to its Change. After archive, treat it as out of scope
+    - >-
+      Before completion, read `Priority` and review `Before Design Completes` in `openspec/specs/REVIEW.md`, resolve its P0 and P1 findings, and confirm that no unresolved decision could change the specification
   tasks:
-    - Include strict OpenSpec validation and existing repository tests.
-    - Keep documentation-only work separate from runtime behavior changes.
+    - >-
+      Before creating tasks, read `proposal.md`, `model.md`, all delta specs, and `design.md`
+    - >-
+      Do not convert unresolved decisions into implementation tasks. If a specification decision is required, stop creating tasks.md and request the decision
+    - >-
+      Do not include main spec Conceptual Model updates in apply implementation tasks. Publish the Conceptual Model and Requirement delta together with `node tools/archive-change.mjs <change-name>`
+    - >-
+      Keep documentation-only work separate from runtime behavior changes, and include strict OpenSpec validation and existing repository tests
+    - >-
+      Before completion, read `Priority` and review `Before Apply` in `openspec/specs/REVIEW.md`, then resolve its P0 and P1 findings
 
+# apply.instruction defines the operation goal; operation guidance adds operation-time guardrails.
+# Because a Custom Schema has no archive hook, publication rules are also injected here.
+# Operation guidance is advisory and does not execute or enforce these rules automatically.
 operations:
   apply:
     guidance:
-      - Preserve unrelated worktree changes.
-      - Use behavior tests before changing runtime ingestion behavior.
+      - Before apply, read proposal.md, model.md, all delta specs, design.md, and tasks.md
+      - If specification ambiguity or contradiction is discovered during implementation, do not guess; request a decision or an update to the relevant artifact
+      - Do not update a main spec's Conceptual Model during apply
+      - Preserve unrelated worktree changes
+      - Use behavior tests before changing runtime ingestion behavior
   archive:
     guidance:
-      - Sync validated delta specs into canonical specs before archiving.
+      - Before archiving a quality-spec change, read `Priority` and review `Before Publication` in `openspec/specs/REVIEW.md`, resolve its P0 and P1 findings, and confirm that model.md has no Unresolved Decisions
+      - Because a direct `openspec archive` does not apply the Conceptual Model, use `node tools/archive-change.mjs <change-name>`
+      - After publication, confirm `After Publication` in `openspec/specs/REVIEW.md`; the archive command must complete strict validation of the published main specs
