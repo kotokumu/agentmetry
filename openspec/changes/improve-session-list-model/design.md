@@ -155,7 +155,7 @@ None.
 
 ## Verification Results
 
-2026-09-06、実装・検証タスク完了。PR/CI/mainへの配送はtasks 4.4で追跡する。
+2026-09-06、実装・検証タスク完了。[PR #55](https://github.com/kotokumu/agentmetry/pull/55)はWeb・Go・統合テスト・Desktop build inputs成功後にmainへマージ済み。
 
 - `go test ./...`、`go test -tags=integration ./...`: pass。
 - `go test -race ./internal/query ./internal/storage/sqlite ./internal/transport/connectapi ./internal/transport/mcpserver`: pass。
