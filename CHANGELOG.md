@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.14.1](https://github.com/kotokumu/agentmetry/compare/v1.14.0...v1.14.1) (2026-09-06)
+
+
+### Bug Fixes
+
+* **web:** open activity details from the entire row ([6b425a6](https://github.com/kotokumu/agentmetry/commit/6b425a609a65c558ab7dfa02511184796a0eb7d2))
+* **web:** open activity details from the entire row ([926745d](https://github.com/kotokumu/agentmetry/commit/926745de1ea92bdeb2952e3431d3a7b535b17427))
+
 ## [1.14.0](https://github.com/kotokumu/agentmetry/compare/v1.13.0...v1.14.0) (2026-09-06)
 
 
