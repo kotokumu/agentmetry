@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.14.0](https://github.com/kotokumu/agentmetry/compare/v1.13.0...v1.14.0) (2026-09-06)
+
+
+### Features
+
+* **sessions:** add telemetry-only root and child list views ([431eb80](https://github.com/kotokumu/agentmetry/commit/431eb8011af15552c3ec5f7b847f0ddd8bc6e349))
+* **sessions:** add telemetry-only root and child list views ([439cfad](https://github.com/kotokumu/agentmetry/commit/439cfad7438d849e7d85e5c0169c4cc3b15afee9))
+
+
+### Bug Fixes
+
+* **web:** improve Japanese localization clarity ([b99463d](https://github.com/kotokumu/agentmetry/commit/b99463d1c1e26ea407741498a9f7af9ce9b45ba4))
+* **web:** improve Japanese localization clarity ([1538dad](https://github.com/kotokumu/agentmetry/commit/1538dadfe96320756fdd3f417cfcdfa696006e7e))
+* **web:** reflect initial locale selection ([37a9aba](https://github.com/kotokumu/agentmetry/commit/37a9aba36d3b20181f07b2103357c01edda81e01))
+* **web:** reflect initial locale selection ([ecc1add](https://github.com/kotokumu/agentmetry/commit/ecc1add282a7842e1aef02dfe78a77fce5d54511))
+
 ## [1.13.0](https://github.com/kotokumu/agentmetry/compare/v1.12.0...v1.13.0) (2026-09-04)
 
 
