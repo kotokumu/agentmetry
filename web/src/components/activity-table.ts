@@ -47,8 +47,8 @@ export class ActivityTable extends LocalizedElement {
     thead { position: sticky; top: 0; z-index: 1; background: rgba(9, 14, 20, .96); backdrop-filter: blur(12px); }
     th { color: var(--am-muted); font: 0.68rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
     th, td { padding: 9px 8px; border-bottom: 1px solid var(--am-border); vertical-align: top; }
-    tbody tr { transition: background .16s ease; }
-    tbody tr:hover td { background: rgba(255, 255, 255, .018); }
+    tbody tr { cursor: pointer; transition: background .16s ease; }
+    tbody tr:hover td, tbody tr:focus-within td, tr[data-selected="true"] td { background: var(--am-accent-soft); }
     tr[data-highlighted="true"] td { background: var(--am-accent-soft); box-shadow: inset 0 1px 0 rgba(var(--am-accent-rgb), .08), inset 0 -1px 0 rgba(var(--am-accent-rgb), .08); }
     th:nth-child(1) { width: 90px; }
     th:nth-child(2) { min-width: 180px; }
@@ -171,13 +171,18 @@ export class ActivityTable extends LocalizedElement {
           && activity.spanId === this.highlightedSpanId;
 	    const isSelected = activityIdentity(activity) === this.selectedActivityId;
 	    const content = readableActivityContent(activity.contentEvidence, activity.content);
-	    return html`<tr data-activity-id=${activityIdentity(activity)} data-activity-index=${this.renderOffset + index} data-highlighted=${String(highlighted)} data-selected=${String(isSelected)} aria-current=${highlighted ? "location" : "false"}>
+	    return html`<tr data-activity-id=${activityIdentity(activity)} data-activity-index=${this.renderOffset + index} data-highlighted=${String(highlighted)} data-selected=${String(isSelected)} aria-current=${highlighted ? "location" : "false"} @click=${(event: MouseEvent) => this.selectActivityFromRow(event, activity)}>
         <td>${formatTime(activity.observedAt)}</td>
         <td><button type="button" class="select-activity" aria-controls="activity-detail" aria-pressed=${String(isSelected)} @click=${() => this.selectActivity(activity)}><strong>${operationLabel(activity)}</strong><span class="preview">${content ? `${content.slice(0, 120)}${content.length > 120 ? "…" : ""}` : contentAvailabilityLabel(activity.contentEvidence, activity.content)}</span>${isSelected ? html`<span class="selected-label">${localization.t("activity.selected")}</span>` : null}</button><br><span class="kind">${activity.kind}</span>${activity.status ? html`<span class="status">${activityStatusLabel(activity.status)}</span>` : null}${correlationView(activity)}</td>
         <td><strong>${agentDisplayLabel(activity)}</strong><br><small>${localization.t("agentTree.runtimeId", { id: activity.agentId || "main" })}</small></td>
         <td>${this.traceView(activity)}</td>
       </tr>`;})}</tbody>
     </table></div>${this.continuation("older")}</div>${this.detailView(selected, selectedVisibility)}</div>`;
+  }
+
+  private selectActivityFromRow(event: MouseEvent, activity: Activity) {
+    if (event.defaultPrevented || (event.target instanceof Element && event.target.closest("a, button"))) return;
+    void this.selectActivity(activity);
   }
 
   private async selectActivity(activity: Activity) {
