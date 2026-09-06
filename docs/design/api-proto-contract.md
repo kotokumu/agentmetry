@@ -81,8 +81,8 @@ name displayed by either provider. The list therefore displays native IDs.
 Prompts, Codex slugs, and agent names are not substituted for session titles.
 Agentmetry does not consult SDKs, session files, app-server, or added hooks to
 fill this gap. Raw payload retention supports replay, not recovery of values
-that the provider never sent. See [Claude Code](../source-telemetry/claude-code.md)
-and [Codex](../source-telemetry/codex.md) for versioned source evidence.
+that the provider never sent. See [Claude Code](https://github.com/kotokumu/agentmetry/blob/main/docs/source-telemetry/claude-code.md)
+and [Codex](https://github.com/kotokumu/agentmetry/blob/main/docs/source-telemetry/codex.md) for versioned source evidence.
 
 ## MCP boundary
 
