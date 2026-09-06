@@ -12,6 +12,7 @@ type DashboardFilter struct {
 }
 
 type SessionListFilter struct {
+	View       SessionListView
 	Since      time.Time
 	SourceID   string
 	Search     string
@@ -21,7 +22,8 @@ type SessionListFilter struct {
 }
 
 type SessionPage struct {
-	Sessions          []Session
+	Sessions          []SessionListEntry
+	AppliedView       SessionListView
 	NextOffset        int
 	HasMore           bool
 	AppliedConditions *SessionConditions

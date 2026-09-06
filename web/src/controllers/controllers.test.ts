@@ -26,9 +26,13 @@ class ConversationsHost extends LitElement {
   readonly conversations: ConversationsController;
   filters: TelemetryFilters = { range: "24h", sourceId: "", search: "" };
   active = true;
+  view: "roots" | "all" = "roots";
   constructor() {
     super();
-    this.conversations = new ConversationsController(this, conversationsClient, () => this.filters, () => this.active);
+    // Keep older detail tests' bounded list fixture, while the production
+    // list controller consumes the page-oriented reader.
+    conversationsClient.listSessionsPage ??= async (query, signal) => ({ sessions: await conversationsClient.listSessions(query.range, query.sourceId, query.search, signal, query.conditions), nextPageToken: "" });
+    this.conversations = new ConversationsController(this, conversationsClient, () => this.filters, () => this.active, () => this.view);
   }
 }
 
@@ -46,6 +50,37 @@ customElements.define("test-trace-host", TraceHost);
 afterEach(() => document.body.replaceChildren());
 
 describe("Lit data controllers", () => {
+  it("does not reuse an old live detail when the all list selects a different root", async () => {
+    let rows = [session([])];
+    conversationsClient = {
+      listSessionsPage: vi.fn(async () => ({ sessions: rows, nextPageToken: "" })),
+      getSession: vi.fn(async (_source: string, id: string) => ({ ...session([]), id })),
+      getSessionRework: vi.fn().mockResolvedValue(undefined),
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-1"));
+    await host.conversations.applyLiveUpdate({ resyncRequired: true, throughCursor: "cursor", targets: [] });
+    rows = [{ ...session([]), id: "session-2" }];
+    host.view = "all"; host.requestUpdate();
+    await vi.waitFor(() => expect(host.conversations.sessions[0]?.id).toBe("session-2"));
+    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-2"));
+  });
+  it("keeps a child list row separate from its aggregate detail in all view", async () => {
+    const child = { ...session([]), id: "child", activityCount: 1, catalog: { role: "child" as const, rootSessionId: "root", parentSessionId: "root" } };
+    conversationsClient = {
+      listSessionsPage: vi.fn().mockResolvedValue({ sessions: [child], nextPageToken: "" }),
+      getSession: vi.fn().mockResolvedValue({ ...session([]), id: "root", activityCount: 20 }),
+      getSessionRework: vi.fn().mockResolvedValue(undefined),
+    } as unknown as AgentmetryClient;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    host.view = "all";
+    document.body.append(host);
+    host.conversations.select({ sourceId: "codex", conversationId: "child" });
+    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("root"));
+    expect(host.conversations.sessions.map(({ id, activityCount }) => ({ id, activityCount }))).toEqual([{ id: "child", activityCount: 1 }]);
+    expect(host.conversations.listSelection?.conversationId).toBe("child");
+  });
   it("allows paging a new target after cancelling an in-flight live refresh", async () => {
     let release!: (trace: Trace) => void;
     const pending = new Promise<Trace>((resolve) => { release = resolve; });

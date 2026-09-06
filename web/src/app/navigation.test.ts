@@ -7,6 +7,7 @@ import {
   navigationViewStateFromState,
   traceLocation,
   type NavigationFilters,
+  canonicalSessionListLocation,
 } from "./navigation";
 
 const filtered: NavigationFilters = {
@@ -16,6 +17,18 @@ const filtered: NavigationFilters = {
 };
 
 describe("Agentmetry navigation locations", () => {
+  it("round-trips all view independently of saved filter conditions", () => {
+    const filters = { ...filtered, sessionView: "all" as const };
+    const location = dashboardLocation(filters);
+    expect(location).toBe("/?range=1h&source=codex&q=tool+error&view=all");
+    expect(filtersFromLocation(new URL(location, "http://localhost"))).toEqual(filters);
+    expect(conversationLocation({ sourceId: "codex", conversationId: "child" }, filters)).toContain("view=all");
+  });
+  it.each(["view=all&view=all", "view=roots", "view=unknown", "view="])("canonicalizes invalid or duplicate view (%s)", (query) => {
+    const url = new URL(`/?q=keep&${query}`, "http://localhost");
+    expect(filtersFromLocation(url).sessionView).toBeUndefined();
+    expect(canonicalSessionListLocation(url)).toBe("/?q=keep");
+  });
   it("keeps the unfiltered dashboard URL compact", () => {
     expect(dashboardLocation({ range: "24h", sourceId: "", search: "" })).toBe("/");
   });

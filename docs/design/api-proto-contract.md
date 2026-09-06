@@ -14,6 +14,15 @@ The schema lives in
 - `GetDashboard` returns dashboard aggregates and bounded recent evidence only.
 - `ListSessions` returns bounded session summaries and never operation lists.
 - `ListSessions` may return `agent_count` without loading per-agent metadata.
+  Its optional `view` chooses `ROOTS` (also the omitted/unspecified default) or
+  `ALL`. ROOTS aggregates projected components; ALL returns each native
+  source-qualified conversation with its own activity. Metadata-only parents
+  can be ROOTS rows but do not become ALL rows without activity.
+  `applied_view` acknowledges the storage view. Unknown values are invalid.
+  Clients must require an ALL acknowledgement before presenting child rows;
+  an older server without it still supports the default ROOTS view.
+  List-only `catalog` carries observed root/child role, root ID, and direct
+  parent ID. It neither proves human creation nor contains a provider title.
 - `GetSession` returns one session summary and agent topology, without operations.
 - `ListSessionActivities` returns one bounded, opaque-cursor page of operations.
 - `GetTrace` returns trace-scoped evidence and remains separate from sessions.
@@ -45,7 +54,8 @@ internally; their summary responses do not return operation content.
 `ListSessions.conditions` combines observed failure, inclusive minimum/maximum
 elapsed milliseconds, exact model, and exact tool with the existing source,
 time, and text conditions. Model and tool may match different activities among
-the same canonical conversation's members. Each root appears once, and all
+the same list unit's members (a component in ROOTS, one native conversation in
+ALL). Each unit appears once, and all
 conditions apply before pagination. Duration is the earliest activity start to
 the latest activity end across those members, not summed activity effort. Missing
 or invalid endpoints exclude a conversation from a duration condition. Numeric
@@ -57,6 +67,22 @@ A non-default request succeeds as the requested query only when
 the storage acknowledgement rather than constructing it from the request. Old
 servers may ignore additive request fields; clients must treat absent or
 mismatched acknowledgement as unsupported. Default requests omit the new field.
+
+## Session list evidence boundary
+
+Agentmetry uses received telemetry only for session identity and relationships.
+Codex `conversation.id` and Claude Code `session.id` remain separate native
+identity contracts, qualified by their source. Claude agents sharing one
+`session.id` do not become separate sessions. A root means no resolved parent
+in the retained evidence, not proof that a person created it.
+
+The reviewed telemetry contracts do not establish a field equal to the session
+name displayed by either provider. The list therefore displays native IDs.
+Prompts, Codex slugs, and agent names are not substituted for session titles.
+Agentmetry does not consult SDKs, session files, app-server, or added hooks to
+fill this gap. Raw payload retention supports replay, not recovery of values
+that the provider never sent. See [Claude Code](../source-telemetry/claude-code.md)
+and [Codex](../source-telemetry/codex.md) for versioned source evidence.
 
 ## MCP boundary
 
@@ -81,7 +107,9 @@ their separate content opt-in and page-size limit of 100.
 
 `list_runs` and its `get_agent_sessions` alias accept the same `conditions` and
 return `appliedConditions`. These conditions apply to the listed sessions;
-dashboard aggregates retain their existing range/source/search scope.
+dashboard aggregates retain their existing range/source/search scope. MCP
+session lists explicitly use ROOTS. Detail, rework, and comparison endpoints
+continue to resolve canonical roots independently of the Web list view.
 
 ## Compatibility rules
 

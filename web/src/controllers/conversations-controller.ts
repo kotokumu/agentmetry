@@ -1,16 +1,17 @@
-import { conditionsKey, type SessionConditions } from "../model/investigation-conditions";
+import { sessionConditions } from "../model/investigation-conditions";
+import type { SessionListEntry, SessionListView } from "../model/session-catalog";
+import { SessionListController } from "./session-list-controller";
 import { Task, TaskStatus } from "@lit/task";
 import { Code, ConnectError } from "@connectrpc/connect";
 import type { ReactiveControllerHost } from "lit";
 import type { ActivityMutation, ActivityPage, AgentmetryClient } from "../api/agentmetry-client";
 import type { ConversationTarget } from "../model/trace-analysis";
-import type { ActivityDirection, ReworkAnalysis, Session, TimeRange } from "../model/telemetry";
+import type { ActivityDirection, ReworkAnalysis, Session } from "../model/telemetry";
 import { ProjectionTargetKind } from "../gen/agentmetry/v1/agentmetry_pb";
-import { telemetryFilterKey, type TelemetryFilters } from "./query-filters";
+import type { TelemetryFilters } from "./query-filters";
 import { affectsSession, affectsSessionList, type LiveUpdateWindow } from "./live-update-controller";
 
 type ConversationRef = Readonly<{ sourceId: string; conversationId: string }>;
-type SessionsResult = Readonly<{ key: string; sessions: readonly Session[] }>;
 type ConversationResult = Readonly<{ key: string; session?: Session }>;
 type ReworkResult = Readonly<{ key: string; analysis?: ReworkAnalysis }>;
 
@@ -33,12 +34,24 @@ export class ConversationsController {
   private readonly client: AgentmetryClient;
   private readonly filters: () => TelemetryFilters;
   private readonly isActive: () => boolean;
-  private readonly sessionsTask: Task<readonly [TimeRange, string, string, string], SessionsResult>;
+  readonly list: SessionListController;
   private readonly conversationTask: Task<readonly [boolean, string, string, string, string], ConversationResult>;
   private readonly reworkTask: Task<readonly [boolean, string, string], ReworkResult>;
   private requested?: ConversationTarget;
   private selectedRef?: ConversationRef;
-  private sessionOverride?: Session;
+  private detailOverride?: Session;
+  private detailOverrideTarget = "";
+
+  private get sessionOverride(): Session | undefined {
+    const target = this.taskTarget;
+    return target && this.detailOverrideTarget === sessionKey(target.sourceId, target.conversationId) ? this.detailOverride : undefined;
+  }
+
+  private set sessionOverride(value: Session | undefined) {
+    this.detailOverride = value;
+    const target = this.taskTarget;
+    this.detailOverrideTarget = value && target ? sessionKey(target.sourceId, target.conversationId) : "";
+  }
   private activityRequest = 0;
   private agentActivityRequest = 0;
   private activityAbort?: AbortController;
@@ -55,22 +68,13 @@ export class ConversationsController {
   selectedAgentId = "";
   agentActivityPage?: AgentActivityPage;
 
-  constructor(host: ReactiveControllerHost, client: AgentmetryClient, filters: () => TelemetryFilters, isActive: () => boolean = () => true) {
+  constructor(host: ReactiveControllerHost, client: AgentmetryClient, filters: () => TelemetryFilters, isActive: () => boolean = () => true, private readonly view: () => SessionListView = () => "roots") {
     this.host = host;
     this.client = client;
     this.filters = filters;
     this.isActive = isActive;
     host.addController(this);
-    this.sessionsTask = new Task(host, {
-      args: () => {
-        const value = filters();
-        return [value.range, value.sourceId, value.search, conditionsKey(value)] as const;
-      },
-      task: async ([range, sourceId, search, conditions], { signal }) => ({
-        key: telemetryFilterKey({ range, sourceId, search, ...JSON.parse(conditions) as SessionConditions }),
-        sessions: await client.listSessions(range, sourceId, search, signal, JSON.parse(conditions) as SessionConditions),
-      }),
-    });
+    this.list = new SessionListController(host, client, () => ({ ...filters(), conditions: sessionConditions(filters()), view: view() }));
     this.conversationTask = new Task(host, {
 	  args: () => {
 		const target = this.taskTarget;
@@ -108,7 +112,6 @@ export class ConversationsController {
     this.activityPage = undefined;
     this.selectedAgentId = "";
     this.agentActivityPage = undefined;
-    this.sessionsTask.abort();
     this.conversationTask.abort();
     this.reworkTask.abort();
   }
@@ -116,20 +119,20 @@ export class ConversationsController {
   hostConnected() {
     if (!this.wasDisconnected) return;
     this.wasDisconnected = false;
-    void this.sessionsTask.run();
     void this.conversationTask.run();
     void this.reworkTask.run();
   }
 
   private get listedSessions() {
-    const sessions = this.sessionsTask.value?.key === telemetryFilterKey(this.filters()) ? this.sessionsTask.value.sessions : [];
+    const sessions = this.list.sessions;
     return this.removedSessionKey
       ? sessions.filter(({ sourceId, id }) => sessionKey(sourceId, id) !== this.removedSessionKey)
       : sessions;
   }
 
-  get sessions(): readonly Session[] {
+  get sessions(): readonly SessionListEntry[] {
     const sessions = this.listedSessions;
+    if (this.view() === "all") return sessions;
     const selected = this.selected;
     return selected && !sessions.some(({ id, sourceId }) => id === selected.id && sourceId === selected.sourceId)
       ? [selected, ...sessions]
@@ -176,9 +179,10 @@ export class ConversationsController {
 	  return value?.sourceId === requested.sourceId ? value : undefined;
   }
 
-  get loadingList() { return this.sessionsTask.status === TaskStatus.PENDING && this.listedSessions.length === 0; }
-  get listError() { return this.sessionsTask.error; }
-  get listFailed() { return this.sessionsTask.status === TaskStatus.ERROR && this.listedSessions.length === 0; }
+  get listSelection() { return this.view() === "all" ? this.taskTarget : this.target; }
+  get loadingList() { return this.list.loading && this.listedSessions.length === 0; }
+  get listError() { return this.list.error; }
+  get listFailed() { return this.list.failed && this.listedSessions.length === 0; }
   get loadingConversation() { return this.conversationTask.status === TaskStatus.PENDING && this.selected === undefined; }
   get conversationFailed() { return this.conversationTask.status === TaskStatus.ERROR; }
   get conversationError() { return this.conversationTask.error; }
@@ -196,7 +200,7 @@ export class ConversationsController {
   get reworkFailed() { return this.reworkTask.status === TaskStatus.ERROR; }
   get reworkError() { return this.reworkTask.error; }
 
-  refreshList() { void this.sessionsTask.run(); }
+  refreshList() { void this.list.refresh(); }
   refreshSelected() {
     this.sessionOverride = undefined;
     void this.conversationTask.run();
@@ -212,8 +216,8 @@ export class ConversationsController {
   }
 
   private async refreshListForLive() {
-    await this.sessionsTask.run();
-    if (this.sessionsTask.status === TaskStatus.ERROR) throw this.sessionsTask.error;
+    await this.list.refresh();
+    if (this.list.failed) throw new Error("Session list unavailable");
   }
 
   private async applySelectedLiveUpdate(window: LiveUpdateWindow) {

@@ -202,6 +202,84 @@ afterEach(async () => {
 });
 
 describe("Agentmetry app composition", () => {
+  it("keeps comparisons root-based when all rows contain only an observed child of a baseline", async () => {
+    history.replaceState({}, "", "/?view=all");
+    const current: TestSession = {
+      id: "current", sourceId: "codex", sources: [], startedAt: "2026-08-11T10:00:00Z", endedAt: "2026-08-11T10:30:00Z",
+      activityCount: 4, tokens: emptyOverview.tokens, agents: [], activities: [],
+    };
+    const root: TestSession = { ...current, id: "baseline-root", startedAt: "2026-08-11T08:00:00Z", endedAt: "2026-08-11T09:00:00Z" };
+    const child = { ...root, id: "baseline-child" };
+    const fallback = overviewFetch({ ...emptyOverview, sessions: [current, root] });
+    const comparisons: Record<string, any>[] = [];
+    let releaseRoots!: () => void;
+    const rootsReady = new Promise<void>((resolve) => { releaseRoots = resolve; });
+    let failRoots = true;
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { body?: BodyInit | null }) => {
+      const request = JSON.parse(new TextDecoder().decode(init!.body as Uint8Array));
+      if (connectPath(url).endsWith("/CompareRework")) comparisons.push(request);
+      if (connectPath(url).endsWith("/GetSession") && request.sessionId === child.id) return connectResponse({ session: sessionSummary(root) });
+      if (!connectPath(url).endsWith("/ListSessions")) return fallback(url, init);
+      const all = request.view === "SESSION_LIST_VIEW_ALL";
+      if (!all) { await rootsReady; if (failRoots) throw new Error("private network details"); }
+      return connectResponse({
+        sessions: (all ? [current, child] : [current, root]).map((session) => ({ ...sessionSummary(session), catalog: {
+          role: session.id === child.id ? "SESSION_ROLE_CHILD" : "SESSION_ROLE_ROOT",
+          rootSessionId: session.id === child.id ? root.id : session.id,
+          parentSessionId: session.id === child.id ? root.id : "",
+        } })), page: { hasMore: false }, appliedView: request.view,
+      });
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    const comparisonPanel = () => workspaceRootOf(app)?.querySelector<ReworkComparison>("am-rework-comparison");
+    await vi.waitFor(() => expect(comparisonPanel()?.state.status).toBe("loading"));
+    releaseRoots();
+    await vi.waitFor(() => expect(comparisonPanel()?.state.status).toBe("failed"));
+    expect(comparisonPanel()?.shadowRoot?.textContent).not.toContain("private network details");
+    failRoots = false;
+    comparisonPanel()?.dispatchEvent(new CustomEvent("comparison-retry-requested", { bubbles: true, composed: true }));
+    await vi.waitFor(() => expect(comparisons.some((request) => request.baseline.sessionId === root.id)).toBe(true));
+    expect(comparisons.every((request) => request.baseline.sessionId !== child.id)).toBe(true);
+    expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.sessions.map((session) => session.id)).toEqual([current.id, child.id]);
+    workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.shadowRoot?.querySelector<HTMLAnchorElement>(`a[href*='${child.id}']`)?.click();
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain(root.id));
+    expect(location.pathname).toBe(`/conversations/codex/${child.id}`);
+    expect(new URL(location.href).searchParams.get("view")).toBe("all");
+    expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.selected).toBe(child.id);
+    const allLocation = location.pathname + location.search;
+    workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.shadowRoot?.querySelector<HTMLInputElement>("input")?.click();
+    await vi.waitFor(() => expect(workspaceOf(app)?.sessionView).toBe("roots"));
+    expect(new URL(location.href).searchParams.has("view")).toBe(false);
+    history.replaceState({}, "", allLocation);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: {} }));
+    await vi.waitFor(() => expect(workspaceOf(app)?.sessionView).toBe("all"));
+    expect(location.pathname).toBe(`/conversations/codex/${child.id}`);
+  });
+
+  it("preserves all view through structured filters and subsequent search changes", async () => {
+    history.replaceState({}, "", "/?view=all");
+    const requests: Record<string, any>[] = [];
+    const fallback = overviewFetch(emptyOverview);
+    vi.stubGlobal("fetch", vi.fn(async (url: string, init?: { body?: BodyInit | null }) => {
+      if (!connectPath(url).endsWith("/ListSessions")) return fallback(url, init);
+      const request = JSON.parse(new TextDecoder().decode(init!.body as Uint8Array));
+      requests.push(request);
+      return connectResponse({ sessions: [], page: { hasMore: false }, appliedView: request.view, appliedConditions: request.conditions });
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+    await vi.waitFor(() => expect(workspaceOf(app)?.sessionView).toBe("all"));
+    workspaceOf(app)!.dispatchEvent(new CustomEvent("investigation-filters-requested", { detail: { filters: { range: "24h", sourceId: "codex", search: "", model: "model-a" } }, bubbles: true, composed: true }));
+    await vi.waitFor(() => expect(workspaceOf(app)?.conditions.model).toBe("model-a"));
+    expect(new URL(location.href).searchParams.get("view")).toBe("all");
+    workspaceOf(app)!.dispatchEvent(new CustomEvent("search-submitted", { detail: { search: "needle" }, bubbles: true, composed: true }));
+    await vi.waitFor(() => expect(workspaceOf(app)?.search).toBe("needle"));
+    expect(workspaceOf(app)?.filterError).toBe("");
+    expect(requests.some((request) => request.view === "SESSION_LIST_VIEW_ALL" && request.filter?.search === "needle")).toBe(true);
+    expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.view).toBe("all");
+    expect(new URL(location.href).searchParams.get("view")).toBe("all");
+  });
   it("switches the application shell and document metadata to Japanese without reloading", async () => {
     vi.stubGlobal("fetch", overviewFetch(emptyOverview));
     await localization.select("en");

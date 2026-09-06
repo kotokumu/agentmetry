@@ -4,6 +4,8 @@ import "./activity-table";
 import { activityIdentity, type ActivityTable } from "./activity-table";
 import type { ReworkSummary } from "./rework-summary";
 import type { NavigationViewState } from "../app/navigation";
+import type { SessionListView } from "../model/session-catalog";
+import type { ReworkComparisonViewState } from "../model/rework-comparison";
 import "./agent-tree";
 import "./kpi-card";
 import "./rework-comparison";
@@ -17,6 +19,7 @@ import "./token-chart";
 import { agentmetryClient } from "../api/agentmetry-client";
 import { ConversationsController } from "../controllers/conversations-controller";
 import { SessionComparisonController } from "../controllers/session-comparison-controller";
+import { SessionListController } from "../controllers/session-list-controller";
 import { agentDisplayLabel } from "../model/agent-label";
 import type { ConversationTarget } from "../model/trace-analysis";
 import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../model/telemetry";
@@ -24,7 +27,7 @@ import { notReported } from "../presentation/missing-data";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
 import { featurePanelStyles } from "./feature-styles";
-import { LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
+import { affectsSessionList, LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 
 export type ConversationSummaryDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -37,6 +40,7 @@ export class ConversationWorkspace extends LocalizedElement {
   @property() range: TimeRange = "24h";
   @property() sourceId = "";
   @property() search = "";
+  @property() sessionView: SessionListView = "roots";
   @property({ attribute: false }) conditions: SessionConditions = {};
   @property() filterError = "";
   @property({ type: Boolean }) filterPending = false;
@@ -62,13 +66,20 @@ export class ConversationWorkspace extends LocalizedElement {
     agentmetryClient,
     () => this.investigationFilters,
     () => this.active,
+    () => this.sessionView,
+  );
+  private readonly comparisonRoots = new SessionListController(
+    this,
+    agentmetryClient,
+    () => ({ ...this.investigationFilters, conditions: this.conditions, view: "roots" }),
+    () => this.active && this.sessionView === "all",
   );
   private readonly comparison = new SessionComparisonController(
     this,
     {
       reader: agentmetryClient,
       current: () => this.conversations.selected,
-      sessions: () => this.conversations.sessions,
+      sessions: () => this.sessionView === "all" ? this.comparisonRoots.sessions : this.conversations.sessions,
       isActive: () => this.active,
     },
   );
@@ -164,12 +175,19 @@ export class ConversationWorkspace extends LocalizedElement {
   private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
     event.detail.waitUntil(Promise.all([
       this.conversations.applyLiveUpdate(event.detail),
+      this.refreshComparisonRoots(event.detail),
       this.comparison.applyLiveUpdate(event.detail),
     ]).then(() => {
       const removed = this.conversations.takeRemovedSession();
       if (removed) this.dispatchEvent(new CustomEvent("conversation-removed", { detail: removed, bubbles: true, composed: true }));
     }));
   };
+
+  private async refreshComparisonRoots(delivery: LiveUpdateDelivery) {
+    if (!this.active || this.sessionView !== "all" || (!delivery.resyncRequired && !affectsSessionList(delivery.targets, this.sourceId))) return;
+    await this.comparisonRoots.refresh();
+    if (this.comparisonRoots.failed) throw new Error("Session list unavailable");
+  }
 
   render() {
     const sessions = this.conversations.sessions;
@@ -188,11 +206,17 @@ export class ConversationWorkspace extends LocalizedElement {
         .search=${this.search}
       ></am-session-filter><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? localization.t("workspace.queryUnavailable")) : "")}></am-investigation-filter><am-session-list
         .sessions=${sessions}
+        .view=${this.sessionView}
+        .hasMore=${this.conversations.list.hasMore}
+        .loadingMore=${this.conversations.list.loadingMore}
+        .pageFailed=${this.conversations.list.failed}
+        @sessions-more-requested=${() => void this.conversations.list.loadMore()}
+        @sessions-retry-requested=${() => this.conversations.refreshList()}
         .loading=${this.conversations.loadingList}
         .unavailable=${this.conversations.listFailed}
         .filterActive=${Boolean(this.sourceId || this.search || hasSessionConditions(this.conditions))}
-        .selected=${this.conversations.target?.conversationId ?? ""}
-        .selectedSource=${this.conversations.target?.sourceId ?? ""}
+        .selected=${this.conversations.listSelection?.conversationId ?? ""}
+        .selectedSource=${this.conversations.listSelection?.sourceId ?? ""}
         .locationForSession=${this.locationForSession}
       ></am-session-list></aside>
       <div class="detail">${selected ? this.renderSelected(selected, selectedAgentId, visibleActivities)
@@ -224,6 +248,7 @@ export class ConversationWorkspace extends LocalizedElement {
 	}
 
 	private reportCanonicalConversation() {
+	  if (this.sessionView === "all") return;
 	  const requested = this.requestedConversation;
 	  const selected = this.conversations.selected;
 	  if (!requested || !selected || requested.sourceId !== selected.sourceId || requested.conversationId === selected.id) return;
@@ -254,7 +279,7 @@ export class ConversationWorkspace extends LocalizedElement {
       ></am-rework-summary>
       <am-rework-comparison
         ?hidden=${this.purpose !== "comparison"}
-        .state=${this.comparison.viewState()}
+        .state=${this.comparisonViewState()}
         @comparison-baseline-selected=${this.comparisonBaselineSelected}
         @comparison-retry-requested=${this.retryComparison}
       ></am-rework-comparison>
@@ -303,7 +328,19 @@ export class ConversationWorkspace extends LocalizedElement {
   private readonly retryConversation = () => this.conversations.refreshSelected();
   private readonly retryRework = () => this.conversations.refreshRework();
   private readonly comparisonBaselineSelected = (event: CustomEvent<ComparisonBaselineSelectedDetail>) => this.comparison.selectBaseline(event.detail.sessionId);
-  private readonly retryComparison = () => this.comparison.refresh();
+  private comparisonViewState(): ReworkComparisonViewState {
+    if (this.sessionView === "all") {
+      const context = { options: [], selectedBaselineId: "" };
+      if (this.comparisonRoots.loading) return { ...context, status: "loading" };
+      if (this.comparisonRoots.failed) return { ...context, status: "failed", message: localization.t("workspace.listUnavailable") };
+    }
+    return this.comparison.viewState();
+  }
+
+  private readonly retryComparison = async () => {
+    if (this.sessionView === "all" && this.comparisonRoots.failed) await this.comparisonRoots.refresh();
+    if (!this.comparisonRoots.failed) await this.comparison.refresh();
+  };
   private readonly returnToOrigin = (event: MouseEvent) => this.requestReturn(event, "origin");
   private readonly returnToList = (event: MouseEvent) => this.requestReturn(event, "list");
   private requestReturn(event: MouseEvent, to: "origin" | "list") {

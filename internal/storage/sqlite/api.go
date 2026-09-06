@@ -61,6 +61,11 @@ FROM grouped WHERE ended_at >= ?`, filter.SourceID, filter.SourceID, since).Scan
 }
 
 func (store *Store) ListSessions(ctx context.Context, filter query.SessionListFilter) (query.SessionPage, error) {
+	view, err := query.ParseSessionListView(string(filter.View))
+	if err != nil {
+		return query.SessionPage{}, err
+	}
+	filter.View = view
 	if err := query.ValidateSessionConditions(filter.Conditions); err != nil {
 		return query.SessionPage{}, err
 	}
@@ -71,9 +76,12 @@ func (store *Store) ListSessions(ctx context.Context, filter query.SessionListFi
 	defer func() { _ = transaction.Rollback() }()
 	var matchedRoots map[sessionRef]struct{}
 	if strings.TrimSpace(filter.Search) != "" {
-		graph, err := loadSessionGraphWithReader(ctx, transaction, filter.SourceID)
-		if err != nil {
-			return query.SessionPage{}, err
+		var graph sessionGraph
+		if filter.View == query.SessionListRoots {
+			graph, err = loadSessionGraphWithReader(ctx, transaction, filter.SourceID)
+			if err != nil {
+				return query.SessionPage{}, err
+			}
 		}
 		matchedRoots, err = store.searchSessionRoots(ctx, transaction, filter, graph)
 		if err != nil {
@@ -128,12 +136,13 @@ SELECT DISTINCT source, run_id FROM activity`, branches), args...)
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterate matching sessions: %w", err)
 	}
-	activeRows, err := reader.QueryContext(ctx, `SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id
+	unitID := sessionListUnitID(filter.View, "r")
+	activeRows, err := reader.QueryContext(ctx, fmt.Sprintf(`SELECT r.source, %s AS unit_id
 FROM session_rollups r
 LEFT JOIN session_memberships m ON m.source = r.source AND m.session_id = r.run_id
 WHERE (? = '' OR r.source = ?)
-GROUP BY r.source, COALESCE(m.root_session_id, r.run_id)
-HAVING MAX(r.ended_at) >= ?`, filter.SourceID, filter.SourceID, formatTime(filter.Since))
+GROUP BY r.source, %s
+HAVING MAX(r.ended_at) >= ?`, unitID, unitID), filter.SourceID, filter.SourceID, formatTime(filter.Since))
 	if err != nil {
 		return nil, fmt.Errorf("query active session roots: %w", err)
 	}
@@ -167,34 +176,37 @@ func (store *Store) listSessionsFromRollups(ctx context.Context, reader sqlReade
 		payload, _ := json.Marshal(keys)
 		matchedJSON = string(payload)
 	}
-	rows, err := reader.QueryContext(ctx, `WITH grouped AS (
-  SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id,
+	unitID := sessionListUnitID(filter.View, "r")
+	rows, err := reader.QueryContext(ctx, fmt.Sprintf(`WITH grouped AS (
+  SELECT r.source, %s AS unit_id,
     MIN(r.started_at) AS started_at, MAX(r.ended_at) AS ended_at,
     SUM(r.activity_count) AS activity_count, SUM(r.agent_count) AS agent_count
   FROM session_rollups r
   LEFT JOIN session_memberships m ON m.source = r.source AND m.session_id = r.run_id
   WHERE (? = '' OR r.source = ?)
-  GROUP BY r.source, COALESCE(m.root_session_id, r.run_id)
+  GROUP BY r.source, %s
 )
-SELECT source, root_id, started_at, ended_at, activity_count, agent_count
+SELECT grouped.source, unit_id, started_at, ended_at, activity_count, agent_count,
+  COALESCE(m.root_session_id, unit_id), COALESCE(m.parent_session_id, '')
 FROM grouped
+LEFT JOIN session_memberships m ON m.source = grouped.source AND m.session_id = unit_id
 WHERE ended_at >= ?
-  AND (? = '' OR root_id = ? OR root_id = COALESCE(
-    (SELECT root_session_id FROM session_memberships sm WHERE sm.source = grouped.source AND sm.session_id = ?), ?))
-  AND (? = '' OR source || char(0) || root_id IN (SELECT value FROM json_each(?)))
-ORDER BY ended_at DESC, source ASC, root_id ASC
-LIMIT ? OFFSET ?`, filter.SourceID, filter.SourceID, formatTime(filter.Since), requestedSession, requestedSession, requestedSession, requestedSession,
+  AND (? = '' OR unit_id = ? OR (? AND unit_id = COALESCE(
+    (SELECT root_session_id FROM session_memberships sm WHERE sm.source = grouped.source AND sm.session_id = ?), ?)))
+  AND (? = '' OR grouped.source || char(0) || unit_id IN (SELECT value FROM json_each(?)))
+ORDER BY ended_at DESC, grouped.source ASC, unit_id ASC
+LIMIT ? OFFSET ?`, unitID, unitID), filter.SourceID, filter.SourceID, formatTime(filter.Since), requestedSession, requestedSession, filter.View == query.SessionListRoots, requestedSession, requestedSession,
 		matchedJSON, matchedJSON, pageSize+1, offset)
 	if err != nil {
 		return query.SessionPage{}, fmt.Errorf("query session rollups: %w", err)
 	}
 	defer rows.Close()
-	sessions := make([]query.Session, 0, pageSize+1)
+	sessions := make([]query.SessionListEntry, 0, pageSize+1)
 	for rows.Next() {
-		var sourceID, sessionID string
+		var sourceID, sessionID, rootID, parentID string
 		var startedAt, endedAt string
 		var activityCount, agentCount int64
-		if err := rows.Scan(&sourceID, &sessionID, &startedAt, &endedAt, &activityCount, &agentCount); err != nil {
+		if err := rows.Scan(&sourceID, &sessionID, &startedAt, &endedAt, &activityCount, &agentCount, &rootID, &parentID); err != nil {
 			return query.SessionPage{}, fmt.Errorf("scan session rollup: %w", err)
 		}
 		started, err := parseStorageTime(startedAt)
@@ -205,16 +217,16 @@ LIMIT ? OFFSET ?`, filter.SourceID, filter.SourceID, formatTime(filter.Since), r
 		if err != nil {
 			return query.SessionPage{}, err
 		}
-		sessions = append(sessions, query.Session{
+		sessions = append(sessions, query.SessionListEntry{Session: query.Session{
 			ID: sessionID, SourceID: sourceID, Sources: []query.TelemetrySource{store.describeSource(sourceID)},
 			StartedAt: started, EndedAt: ended, ActivityCount: activityCount, AgentCount: agentCount,
 			Agents: make([]query.AgentSession, 0), Activities: make([]query.Activity, 0),
-		})
+		}, RootSessionID: rootID, ParentSessionID: parentID})
 	}
 	if err := rows.Err(); err != nil {
 		return query.SessionPage{}, fmt.Errorf("iterate session rollups: %w", err)
 	}
-	page := query.SessionPage{Sessions: sessions[:min(len(sessions), pageSize)]}
+	page := query.SessionPage{Sessions: sessions[:min(len(sessions), pageSize)], AppliedView: filter.View}
 	if len(sessions) > pageSize {
 		page.HasMore = true
 		page.NextOffset = filter.Page.NextOffset(len(page.Sessions))

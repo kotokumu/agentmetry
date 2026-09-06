@@ -4,6 +4,14 @@ export type MessageParameters = Readonly<Record<string, string | number>>;
 type SourceMessage = (parameters?: MessageParameters) => string;
 
 export const sourceMessages = {
+  "sessions.showAll": (_parameters: MessageParameters = {}) => msg("Show all, including child sessions", { id: "sessions.showAll" }),
+  "sessions.telemetryScope": (_parameters: MessageParameters = {}) => msg("About session grouping and names", { id: "sessions.telemetryScope" }),
+  "sessions.relationshipLimit": (_parameters: MessageParameters = {}) => msg("By default, sessions are grouped under observed roots. A root may have an unreported parent; it does not prove human creation. Claude agents sharing a session ID stay in one session.", { id: "sessions.relationshipLimit" }),
+  "sessions.nameLimit": (_parameters: MessageParameters = {}) => msg("Codex and Claude Code display names are not available from the supported telemetry. Native session IDs are shown instead.", { id: "sessions.nameLimit" }),
+  "sessions.child": (_parameters: MessageParameters = {}) => msg("Child session", { id: "sessions.child" }),
+  "sessions.root": (_parameters: MessageParameters = {}) => msg("Root session", { id: "sessions.root" }),
+  "sessions.loadMore": (_parameters: MessageParameters = {}) => msg("Load more sessions", { id: "sessions.loadMore" }),
+  "sessions.retry": (_parameters: MessageParameters = {}) => msg("Retry session list", { id: "sessions.retry" }),
   "language.label": (_parameters: MessageParameters = {}) => msg("Language", { id: "language.label" }),
   "app.backToDashboard": (_parameters: MessageParameters = {}) => msg("Back to Agentmetry dashboard", { id: "app.backToDashboard" }),
   "app.eyebrow": (_parameters: MessageParameters = {}) => msg("Local trace observatory // Live", { id: "app.eyebrow" }),

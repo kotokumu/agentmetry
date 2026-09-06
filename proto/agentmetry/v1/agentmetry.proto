@@ -172,6 +172,28 @@ message SessionSummary {
   repeated AgentSummary agents = 9;
   // ListSessions may return this count without loading agent metadata.
   int64 agent_count = 10;
+  // List-only relationship metadata; omitted by GetSession.
+  SessionCatalog catalog = 11;
+}
+
+// Roles describe projected telemetry relationships, not who created a session.
+enum SessionRole {
+  SESSION_ROLE_UNSPECIFIED = 0;
+  SESSION_ROLE_ROOT = 1;
+  SESSION_ROLE_CHILD = 2;
+}
+
+message SessionCatalog {
+  SessionRole role = 1;
+  // Related IDs belong to the summary's source_id.
+  string root_session_id = 2;
+  string parent_session_id = 3;
+}
+
+enum SessionListView {
+  SESSION_LIST_VIEW_UNSPECIFIED = 0;
+  SESSION_LIST_VIEW_ROOTS = 1;
+  SESSION_LIST_VIEW_ALL = 2;
 }
 
 message Dashboard {
@@ -213,12 +235,15 @@ message ListSessionsRequest {
   TimeFilter filter = 1;
   PageRequest page = 2;
   SessionConditions conditions = 3;
+  // Omitted or unspecified preserves the grouped ROOTS view.
+  SessionListView view = 4;
 }
 
 message ListSessionsResponse {
   repeated SessionSummary sessions = 1;
   PageInfo page = 2;
   SessionConditions applied_conditions = 3;
+  SessionListView applied_view = 4;
 }
 
 message SessionConditions {

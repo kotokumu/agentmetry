@@ -2,6 +2,38 @@
 <xliff version="1.2" xmlns="urn:oasis:names:tc:xliff:document:1.2">
 <file target-language="ja" source-language="en" original="lit-localize-inputs" datatype="plaintext">
 <body>
+<trans-unit id="sessions.showAll">
+  <source>Show all, including child sessions</source>
+  <target>子セッションを含めてすべてを表示</target>
+</trans-unit>
+<trans-unit id="sessions.telemetryScope">
+  <source>About session grouping and names</source>
+  <target>セッションのまとめ方と表示名について</target>
+</trans-unit>
+<trans-unit id="sessions.relationshipLimit">
+  <source>By default, sessions are grouped under observed roots. A root may have an unreported parent; it does not prove human creation. Claude agents sharing a session ID stay in one session.</source>
+  <target>通常は観測した親子関係のルートにまとめます。親の情報が届いていない場合もルートと表示され、人が作成したことを保証しません。Claudeで同じセッションIDを共有するエージェントは一つのセッションに含まれます。</target>
+</trans-unit>
+<trans-unit id="sessions.nameLimit">
+  <source>Codex and Claude Code display names are not available from the supported telemetry. Native session IDs are shown instead.</source>
+  <target>CodexとClaude Codeの表示名はテレメトリーから取得できないため、元のセッションIDを表示します。</target>
+</trans-unit>
+<trans-unit id="sessions.child">
+  <source>Child session</source>
+  <target>子セッション</target>
+</trans-unit>
+<trans-unit id="sessions.root">
+  <source>Root session</source>
+  <target>ルートセッション</target>
+</trans-unit>
+<trans-unit id="sessions.loadMore">
+  <source>Load more sessions</source>
+  <target>セッションをさらに表示</target>
+</trans-unit>
+<trans-unit id="sessions.retry">
+  <source>Retry session list</source>
+  <target>一覧を再取得</target>
+</trans-unit>
 <trans-unit id="language.label">
   <source>Language</source>
   <target>言語</target>
