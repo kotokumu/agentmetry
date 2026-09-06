@@ -812,7 +812,7 @@ func (service *Service) getOverview(ctx context.Context, _ *mcp.CallToolRequest,
 	if err != nil {
 		return nil, OverviewOutput{}, err
 	}
-	sessions, err := service.sessionReader.ListSessions(ctx, query.SessionListFilter{Since: filter.Since, SourceID: input.Source, Search: input.Search, Page: queryPage, Conditions: input.Conditions})
+	sessions, err := service.sessionReader.ListSessions(ctx, query.SessionListFilter{View: query.SessionListRoots, Since: filter.Since, SourceID: input.Source, Search: input.Search, Page: queryPage, Conditions: input.Conditions})
 	if err != nil {
 		return nil, OverviewOutput{}, err
 	}
@@ -951,11 +951,11 @@ func encodePageToken(offset int) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(fmt.Sprintf("agentmetry:v1:%d", offset)))
 }
 
-func mapDashboardAndSessions(overview query.Overview, sessions []query.Session) OverviewDataOutput {
+func mapDashboardAndSessions(overview query.Overview, sessions []query.SessionListEntry) OverviewDataOutput {
 	output := mapOverview(overview)
 	output.Sessions = make([]SessionOutput, 0, len(sessions))
 	for _, session := range sessions {
-		output.Sessions = append(output.Sessions, mapSessionSummary(session))
+		output.Sessions = append(output.Sessions, mapSessionSummary(session.Session))
 	}
 	return output
 }

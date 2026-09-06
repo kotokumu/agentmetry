@@ -165,7 +165,7 @@ func TestConnectServerMapsDashboardAndFilters(t *testing.T) {
 
 func TestConnectServerUsesOpaqueSessionPageToken(t *testing.T) {
 	reader := &readerStub{sessions: query.SessionPage{
-		Sessions:   []query.Session{{ID: "session-1", SourceID: "claude", ActivityCount: 101}},
+		Sessions:   []query.SessionListEntry{{Session: query.Session{ID: "session-1", SourceID: "claude", ActivityCount: 101}}},
 		NextOffset: 200, HasMore: true,
 	}}
 	_, handler := New(reader, nil, time.Now)

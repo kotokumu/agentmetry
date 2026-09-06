@@ -303,6 +303,10 @@ func (server *Server) GetDashboard(ctx context.Context, request *connect.Request
 }
 
 func (server *Server) ListSessions(ctx context.Context, request *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
+	view, err := sessionListView(request.Msg.GetView())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
 	conditions := sessionConditions(request.Msg.GetConditions())
 	if err := query.ValidateSessionConditions(conditions); err != nil {
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
@@ -324,6 +328,7 @@ func (server *Server) ListSessions(ctx context.Context, request *connect.Request
 		return nil, connect.NewError(connect.CodeInvalidArgument, err)
 	}
 	page, err := server.reader.ListSessions(ctx, query.SessionListFilter{
+		View:  view,
 		Since: filter.Since, SourceID: filter.SourceID, Search: filter.Search,
 		Page: queryPage, Conditions: conditions,
 	})
@@ -334,6 +339,7 @@ func (server *Server) ListSessions(ctx context.Context, request *connect.Request
 		Sessions:          mapSessions(page.Sessions),
 		Page:              pageInfo(page.HasMore, page.NextOffset, offset > 0, max(0, offset-pageSize), offset),
 		AppliedConditions: mapSessionConditions(page.AppliedConditions),
+		AppliedView:       mapSessionListView(page.AppliedView),
 	}), nil
 }
 
@@ -558,10 +564,16 @@ func mapDashboard(value query.Overview) *v1.Dashboard {
 	return result
 }
 
-func mapSessions(values []query.Session) []*v1.SessionSummary {
+func mapSessions(values []query.SessionListEntry) []*v1.SessionSummary {
 	result := make([]*v1.SessionSummary, 0, len(values))
 	for _, value := range values {
-		result = append(result, mapSession(value))
+		summary := mapSession(value.Session)
+		role := v1.SessionRole_SESSION_ROLE_ROOT
+		if value.Role() == query.SessionChild {
+			role = v1.SessionRole_SESSION_ROLE_CHILD
+		}
+		summary.Catalog = &v1.SessionCatalog{Role: role, RootSessionId: value.RootSessionID, ParentSessionId: value.ParentSessionID}
+		result = append(result, summary)
 	}
 	return result
 }

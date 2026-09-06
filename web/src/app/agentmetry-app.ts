@@ -23,6 +23,7 @@ import {
   conversationLocation,
   dashboardLocation,
   filtersFromLocation,
+  canonicalSessionListLocation,
   navigationOriginFromState,
   navigationViewStateFromState,
   traceLocation,
@@ -38,6 +39,7 @@ export class AgentmetryApp extends LocalizedElement {
   @state() private search = "";
   @state() private conditions: SessionConditions = {};
   @state() private filterError = "";
+  @state() private sessionView: "roots" | "all" = "roots";
   @state() private filterPending = false;
   private filterRequest = 0;
   private filterAbort?: AbortController;
@@ -175,6 +177,7 @@ export class AgentmetryApp extends LocalizedElement {
         @trace-view-state-changed=${this.traceViewStateChanged}
       ></am-trace-explorer>` : null}
       ${this.workspaceInitialized ? html`<am-conversation-workspace
+        .sessionView=${this.sessionView}
         .range=${this.range}
         .sourceId=${this.sourceId}
         .search=${this.search}
@@ -199,6 +202,7 @@ export class AgentmetryApp extends LocalizedElement {
         @source-selected=${this.sourceSelected}
         @search-submitted=${this.searchSubmitted}
         @session-selected=${this.sessionSelected}
+        @session-list-view-selected=${this.sessionListViewSelected}
         @trace-selected=${this.traceSelected}
 		@conversation-return-requested=${this.conversationReturnRequested}
 		@conversation-canonicalized=${this.conversationCanonicalized}
@@ -212,19 +216,19 @@ export class AgentmetryApp extends LocalizedElement {
   }
 
   private rangeSelected(event: CustomEvent<RangeSelectedDetail>) {
-    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.filters, range: event.detail.range }); return; }
+    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.investigationFilters, range: event.detail.range }); return; }
     this.range = event.detail.range;
     this.showFilteredDashboard();
   }
 
   private sourceSelected(event: CustomEvent<{ sourceId: string }>) {
-    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.filters, sourceId: event.detail.sourceId }); return; }
+    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.investigationFilters, sourceId: event.detail.sourceId }); return; }
     this.sourceId = event.detail.sourceId;
     this.showFilteredDashboard();
   }
 
   private searchSubmitted(event: CustomEvent<{ search: string }>) {
-    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.filters, search: event.detail.search.trim() }); return; }
+    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.investigationFilters, search: event.detail.search.trim() }); return; }
     this.search = event.detail.search.trim();
     if (this.requestedConversation) {
       const href = conversationLocation(this.requestedConversation, this.filters);
@@ -355,6 +359,8 @@ export class AgentmetryApp extends LocalizedElement {
   private readonly popState = () => this.readRoute(true);
 
   private readRoute(restoreContext = false, resetScroll = false) {
+    const canonical = canonicalSessionListLocation(new URL(window.location.href));
+    if (canonical !== location.pathname + location.search + location.hash) history.replaceState(history.state, "", canonical);
     this.filterRequest += 1;
     this.filterAbort?.abort();
     this.filterPending = false;
@@ -366,6 +372,7 @@ export class AgentmetryApp extends LocalizedElement {
     this.range = filters.range;
     this.sourceId = filters.sourceId;
     this.search = filters.search;
+    this.sessionView = filters.sessionView ?? "roots";
     const origin = navigationOriginFromState(history.state);
     const view = navigationViewStateFromState(history.state);
     this.requestedPurpose = view?.purpose ?? (restoreContext && view?.evidenceFocus?.kind === "episode" ? "rework" : "execution");
@@ -419,10 +426,10 @@ export class AgentmetryApp extends LocalizedElement {
     this.filterError = "";
     try {
       const filters = parseInvestigationFilters(input);
-      await agentmetryClient.listSessions(filters.range, filters.sourceId, filters.search, abort.signal, sessionConditions(filters));
+      await agentmetryClient.listSessionsPage({ ...filters, conditions: sessionConditions(filters), view: this.sessionView }, abort.signal);
       if (request !== this.filterRequest) return;
       this.beginNavigation();
-      history.pushState({}, "", dashboardLocation(filters));
+      history.pushState({}, "", dashboardLocation({ ...filters, sessionView: this.sessionView }));
       this.readRoute(true, true);
     } catch (error) {
       if (request === this.filterRequest) this.filterError = error instanceof Error ? error.message : localization.t("app.conditionsCouldNotApply");
@@ -438,8 +445,22 @@ export class AgentmetryApp extends LocalizedElement {
   }
 
   private get filters(): NavigationFilters {
+    return { ...this.investigationFilters, ...(this.sessionView === "all" ? { sessionView: "all" as const } : {}) };
+  }
+
+  private get investigationFilters(): InvestigationFilters {
     return { range: this.range, sourceId: this.sourceId, search: this.search, ...this.conditions };
   }
+
+  private readonly sessionListViewSelected = (event: CustomEvent<{ view: "roots" | "all" }>) => {
+    if (event.detail.view === this.sessionView) return;
+    this.beginNavigation();
+    const url = new URL(location.href);
+    url.searchParams.delete("view");
+    if (event.detail.view === "all") url.searchParams.set("view", "all");
+    history.pushState(history.state, "", canonicalSessionListLocation(url));
+    this.readRoute();
+  };
 
   protected updated(_changed: PropertyValues<this>) {
     this.syncDocumentMetadata();

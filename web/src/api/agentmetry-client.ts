@@ -1,4 +1,5 @@
 import { conditionsKey, hasSessionConditions, sessionConditions, type SessionConditions } from "../model/investigation-conditions";
+import type { SessionCatalog, SessionListPage, SessionListQuery, SessionListView as UiSessionListView } from "../model/session-catalog";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { timestampDate, timestampFromDate, type Timestamp } from "@bufbuild/protobuf/wkt";
@@ -8,6 +9,9 @@ import {
   PageDirection,
   ProjectionTargetKind,
   TimeRange,
+  SessionListView,
+  SessionRole,
+  type ListSessionsResponse,
   type Activity as ActivityMessage,
   type AgentSummary,
   type Dashboard,
@@ -98,12 +102,19 @@ export const agentmetryClient = {
   },
 
   async listSessions(range: UiTimeRange, sourceId: string, search: string, signal?: AbortSignal, conditions: SessionConditions = {}): Promise<readonly Session[]> {
+    return (await this.listSessionsPage({ range, sourceId, search, conditions, view: "roots" }, signal)).sessions;
+  },
+
+  async listSessionsPage(query: SessionListQuery & Readonly<{ pageToken?: string }>, signal?: AbortSignal): Promise<SessionListPage> {
     const response = await client.listSessions(
-      { filter: { range: toTimeRange(range), sourceId, search }, page: { pageSize: 100 }, conditions: hasSessionConditions(conditions) ? sessionConditions(conditions) : undefined },
+      { filter: { range: toTimeRange(query.range), sourceId: query.sourceId, search: query.search },
+        page: { pageSize: query.pageSize ?? 100, pageToken: query.pageToken },
+        view: query.view === "all" ? SessionListView.ALL : SessionListView.ROOTS,
+        conditions: hasSessionConditions(query.conditions) ? sessionConditions(query.conditions) : undefined },
       signal ? { signal } : undefined,
     );
-    assertSessionConditionsApplied(conditions, response.appliedConditions);
-    return response.sessions.map((session) => mapSession(session));
+    assertSessionConditionsApplied(query.conditions, response.appliedConditions);
+    return mapSessionListResponse(response, query.view);
   },
 
   async getSession(sourceId: string, sessionId: string, traceId?: string, spanId?: string, signal?: AbortSignal): Promise<Session> {
@@ -321,6 +332,35 @@ export const mapOptionalSessionTokens = (value: TokenUsageMessage | undefined, h
 const validHarnessScope = (value: string) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(value);
 const validHarnessFingerprint = (value: string) => /^sha256:[0-9a-f]{64}$/.test(value);
 const validHarnessLabel = (value: string) => value.trim() === value && Array.from(value).length <= 80 && !/[\p{Cc},]/u.test(value);
+
+export function mapSessionListResponse(response: ListSessionsResponse, view: UiSessionListView): SessionListPage {
+  const expected = view === "all" ? SessionListView.ALL : SessionListView.ROOTS;
+  if (response.appliedView !== expected && !(view === "roots" && response.appliedView === SessionListView.UNSPECIFIED)) {
+    throw new Error("Session list unavailable");
+  }
+  if (response.page?.hasMore && !response.page.nextPageToken) throw new Error("Session list unavailable");
+  return {
+    sessions: response.sessions.map((value) => {
+      const catalog = mapSessionCatalog(value, view);
+      if (view === "all" && !catalog) throw new Error("Session list unavailable");
+      return { ...mapSession(value), ...(catalog ? { catalog } : {}) };
+    }),
+    nextPageToken: response.page?.hasMore ? response.page.nextPageToken : "",
+  };
+}
+
+function mapSessionCatalog(value: SessionSummary, view: UiSessionListView): SessionCatalog | undefined {
+  const catalog = value.catalog;
+  if (!value.id || !value.sourceId || !catalog?.rootSessionId) return undefined;
+  if (catalog.role === SessionRole.ROOT && catalog.rootSessionId === value.id && !catalog.parentSessionId) {
+    return { role: "root", rootSessionId: catalog.rootSessionId, parentSessionId: "" };
+  }
+  if (view === "all" && catalog.role === SessionRole.CHILD && catalog.rootSessionId !== value.id
+    && catalog.parentSessionId && catalog.parentSessionId !== value.id) {
+    return { role: "child", rootSessionId: catalog.rootSessionId, parentSessionId: catalog.parentSessionId };
+  }
+  return undefined;
+}
 
 function mapSession(value: SessionSummary, traceIds: readonly string[] = []): Session {
   return {

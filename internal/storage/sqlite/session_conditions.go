@@ -13,7 +13,7 @@ import (
 // every canonical member before paging. It does not read content/body columns;
 // observed-outcome interpretation may inspect stored attributes.
 func matchSessionConditions(ctx context.Context, reader sqlReader, filter query.SessionListFilter) (map[sessionRef]struct{}, error) {
-	rows, err := reader.QueryContext(ctx, `WITH activity AS (
+	rows, err := reader.QueryContext(ctx, fmt.Sprintf(`WITH activity AS (
   SELECT source, run_id, name, status, model, tool_name, started_at, ended_at,
     CASE WHEN ? THEN attributes_json ELSE '{}' END AS attributes_json
   FROM spans WHERE activity_kind <> 'unknown' AND run_id <> '' AND (? = '' OR source = ?)
@@ -22,10 +22,10 @@ func matchSessionConditions(ctx context.Context, reader sqlReader, filter query.
     CASE WHEN ? THEN attributes_json ELSE '{}' END
   FROM logs WHERE activity_kind <> 'unknown' AND run_id <> '' AND (? = '' OR source = ?)
 )
-SELECT a.source, COALESCE(m.root_session_id, a.run_id), a.name, a.status,
+SELECT a.source, %s, a.name, a.status,
   a.model, a.tool_name, a.started_at, a.ended_at, a.attributes_json
 FROM activity a
-LEFT JOIN session_memberships m ON m.source = a.source AND m.session_id = a.run_id`,
+LEFT JOIN session_memberships m ON m.source = a.source AND m.session_id = a.run_id`, sessionListUnitID(filter.View, "a")),
 		filter.Conditions.ObservedFailure, filter.SourceID, filter.SourceID, filter.Conditions.ObservedFailure, filter.SourceID, filter.SourceID)
 	if err != nil {
 		return nil, fmt.Errorf("query session condition evidence: %w", err)
