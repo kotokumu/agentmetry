@@ -6,7 +6,7 @@ import { conversationHref, type ConversationTarget, tokenEvidence } from "../mod
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, notReported } from "../presentation/missing-data";
 import "./token-breakdown";
-import { readableActivityContent, contentAvailabilityLabel } from "./content-evidence";
+import { activityContentStyles, renderActivityContent } from "./activity-content";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
 
@@ -33,17 +33,17 @@ export class TraceWaterfall extends LocalizedElement {
   private loadMoreObserver?: IntersectionObserver;
   private renderOffset = 0;
 
-  static styles = css`
+  static styles = [activityContentStyles, css`
     :host { display: block; overflow: auto; }
     .rows { min-width: 900px; display: grid; gap: 1px; }
     .row { border-bottom: 1px solid var(--am-border); transition: background .18s ease; }
     .row[aria-current="location"] { border-left: 3px solid var(--am-accent); background: var(--am-accent-soft); }
-    summary:focus-visible { outline: 2px solid var(--am-accent); outline-offset: -2px; }
+    .row > summary:focus-visible { outline: 2px solid var(--am-accent); outline-offset: -2px; }
     .row:hover { background: rgba(255, 255, 255, .015); }
-    summary { position: relative; display: grid; grid-template-columns: minmax(280px, 36%) minmax(120px, 15%) minmax(360px, 1fr); gap: 10px; align-items: center; min-height: 54px; padding-left: 14px; cursor: pointer; list-style: none; }
-    summary::-webkit-details-marker { display: none; }
-    summary::before { content: "›"; position: absolute; color: var(--am-accent); transform: translateX(-12px); }
-    details[open] summary::before { transform: translateX(-12px) rotate(90deg); }
+    .row > summary { position: relative; display: grid; grid-template-columns: minmax(280px, 36%) minmax(120px, 15%) minmax(360px, 1fr); gap: 10px; align-items: center; min-height: 54px; padding-left: 14px; cursor: pointer; list-style: none; }
+    .row > summary::-webkit-details-marker { display: none; }
+    .row > summary::before { content: "›"; position: absolute; color: var(--am-accent); transform: translateX(-12px); }
+    .row[open] > summary::before { transform: translateX(-12px) rotate(90deg); }
     .label { min-width: 0; padding-left: calc(var(--depth) * 14px); }
     .label strong, .label small { display: block; overflow-wrap: anywhere; }
     .label small { color: var(--am-muted); font-size: .68rem; }
@@ -61,7 +61,6 @@ export class TraceWaterfall extends LocalizedElement {
     dl { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 8px 14px; margin: 0; }
     dt { color: var(--am-muted); font: .65rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; }
     dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: .78rem; }
-    .message { margin: 12px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--am-text); font: inherit; }
     .conversation { display: inline-block; margin-top: 12px; color: var(--am-accent); font-weight: 700; }
     .load-status { min-height: 24px; padding: 12px 0 4px; color: var(--am-muted); text-align: center; font-size: .76rem; }
     .window-nav { display: flex; justify-content: center; gap: 8px; padding: 10px; }
@@ -74,13 +73,13 @@ export class TraceWaterfall extends LocalizedElement {
     @media (max-width: 700px) {
       :host { overflow: visible; }
       .rows { min-width: 0; }
-      summary { grid-template-columns: 1fr; padding: 10px 8px 10px 18px; }
+      .row > summary { grid-template-columns: 1fr; padding: 10px 8px 10px 18px; }
       .track { width: 100%; }
       dl { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .evidence { margin-left: 0; }
     }
     @media (max-width: 430px) { dl { grid-template-columns: 1fr; } }
-  `;
+  `];
 
   render() {
     const trace = this.trace;
@@ -306,8 +305,7 @@ const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => 
     [localization.t("waterfall.rollup"), rollupLabel(activity)],
   ];
   return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>${localization.t("waterfall.tokenBreakdown")}</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
-    <am-content-evidence .evidence=${activity.contentEvidence} .activityContent=${activity.content ?? ""}></am-content-evidence>
-    <pre class="message">${readableActivityContent(activity.contentEvidence, activity.content) || contentAvailabilityLabel(activity.contentEvidence, activity.content)}</pre>
+    ${renderActivityContent(activity)}
     ${href ? html`<a class="conversation" href=${href} @click=${navigate}>${localization.t(activity.spanId ? "waterfall.openSpanConversation" : "waterfall.openConversation")}</a>` : null}
   </div>`;
 };

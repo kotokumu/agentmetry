@@ -20,6 +20,8 @@ const availability: Record<ContentEvidence["availability"], MessageKey> = {
 
 export const readableActivityContent = (evidence: ContentEvidence | undefined, content: string | undefined): string =>
   evidence?.availability === "redacted" || evidence?.availability === "not_returned" ? "" : content ?? "";
+export const contentKindLabel = (evidence: ContentEvidence | undefined): string =>
+  localization.t(kinds[evidence?.kind ?? "unknown"]);
 export const contentAvailabilityLabel = (evidence: ContentEvidence | undefined, content: string | undefined): string =>
   localization.t(availability[evidence?.availability ?? (content ? "available" : "not_reported")]);
 
@@ -38,7 +40,7 @@ export class ContentEvidencePanel extends LocalizedElement {
   render() {
     const evidence = this.evidence;
     return html`<dl>
-      <dt>${localization.t("content.kind")}</dt><dd>${localization.t(kinds[evidence?.kind ?? "unknown"])}</dd>
+      <dt>${localization.t("content.kind")}</dt><dd>${contentKindLabel(evidence)}</dd>
       <dt>${localization.t("content.evidence")}</dt><dd>${localization.t(strengths[evidence?.evidence ?? "unknown"])}</dd>
       <dt>${localization.t("content.availability")}</dt><dd>${contentAvailabilityLabel(evidence, this.activityContent)}</dd>
       ${evidence?.fields.length ? html`<dt>${localization.t("content.receivedFields")}</dt><dd>${evidence.fields.join(", ")}</dd>` : null}

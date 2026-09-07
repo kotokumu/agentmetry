@@ -1140,6 +1140,30 @@ describe("dashboard components", () => {
     expect(waterfall.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/conversations/codex/conversation-b?traceId=trace-123456789&spanId=child"]')).not.toBeNull();
   });
 
+  it("presents structured document references and preserves their raw waterfall evidence", async () => {
+    const raw = JSON.stringify({ file_paths: ["AGENTS.md", "docs/operations/runbook.md"], note: "keep exactly" });
+    const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
+    waterfall.trace = {
+      ...traceFixture,
+      activities: [{
+        ...traceFixture.activities[2],
+        content: raw,
+        contentEvidence: {
+          source: "codex", activityId: "document-input", signal: "log", kind: "tool_input", evidence: "unknown",
+          availability: "available", fields: ["tool_input"], truncated: false,
+        },
+      }],
+      activityCount: 1,
+    };
+    document.body.append(waterfall);
+    await waterfall.updateComplete;
+
+    const root = waterfall.shadowRoot!;
+    expect(Array.from(root.querySelectorAll(".document-name"), (node) => node.textContent)).toEqual(["AGENTS.md", "runbook.md"]);
+    expect(Array.from(root.querySelectorAll(".document-reference"), (node) => node.textContent)).toEqual(["AGENTS.md", "docs/operations/runbook.md"]);
+    expect(root.querySelector("pre.received-content")?.textContent).toBe(raw);
+  });
+
   it("emits a span-qualified conversation target from trace evidence", async () => {
     const waterfall = document.createElement("am-trace-waterfall") as TraceWaterfall;
     waterfall.trace = traceFixture;

@@ -1914,6 +1914,46 @@
   <source>Apply filters</source>
   <target>フィルターを適用</target>
 </trans-unit>
+<trans-unit id="activity.reportedFile">
+  <source>Reported file</source>
+  <target>報告されたファイル</target>
+</trans-unit>
+<trans-unit id="activity.reportedFiles">
+  <source>Reported files</source>
+  <target>報告されたファイル</target>
+</trans-unit>
+<trans-unit id="activity.requestBodyReference">
+  <source>Request body reference</source>
+  <target>リクエスト本文の参照先</target>
+</trans-unit>
+<trans-unit id="activity.reportedReference">
+  <source>Reported reference</source>
+  <target>報告された参照先</target>
+</trans-unit>
+<trans-unit id="activity.reportedReferences">
+  <source>Reported references</source>
+  <target>報告された参照先</target>
+</trans-unit>
+<trans-unit id="activity.filePath">
+  <source>File path</source>
+  <target>ファイルパス</target>
+</trans-unit>
+<trans-unit id="activity.reference">
+  <source>Reference</source>
+  <target>参照先</target>
+</trans-unit>
+<trans-unit id="activity.reportedVia">
+  <source>Telemetry field: <x id="0" equiv-text="${field}"/></source>
+  <target>Telemetryフィールド: <x id="0" equiv-text="${field}"/></target>
+</trans-unit>
+<trans-unit id="activity.toolInputKey">
+  <source>Tool input key: <x id="0" equiv-text="${key}"/></source>
+  <target>ツール入力キー: <x id="0" equiv-text="${key}"/></target>
+</trans-unit>
+<trans-unit id="activity.referenceContentNotReported">
+  <source>Only the reference was reported; the referenced content was not included.</source>
+  <target>参照先だけが報告され、参照先の内容は含まれていません。</target>
+</trans-unit>
 </body>
 </file>
 </xliff>
