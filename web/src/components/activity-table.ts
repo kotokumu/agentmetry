@@ -6,7 +6,8 @@ import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, notReported } from "../presentation/missing-data";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
-import { contentAvailabilityLabel, readableActivityContent } from "./content-evidence";
+import { activityContentPreview, activityContentStyles, renderActivityContent } from "./activity-content";
+import { contentAvailabilityLabel } from "./content-evidence";
 import "./token-breakdown";
 
 @customElement("am-activity-table")
@@ -38,7 +39,7 @@ export class ActivityTable extends LocalizedElement {
   private readingAnchor?: Readonly<{ activityId: string; top: number }>;
   private cachedSelectedActivity?: Activity;
 
-  static styles = css`
+  static styles = [activityContentStyles, css`
     :host { display: block; max-width: 100%; overflow: visible; }
     .table-scroll { max-width: 100%; overflow-x: auto; scrollbar-color: var(--am-border-strong) var(--am-track); }
     .reading-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
@@ -88,7 +89,7 @@ export class ActivityTable extends LocalizedElement {
       .activity-detail { position: static; max-height: none; overflow: visible; scrollbar-gutter: auto; }
     }
     @media (prefers-reduced-motion: reduce) { tbody tr { transition: none; } }
-  `;
+  `];
 
   connectedCallback() {
     super.connectedCallback();
@@ -170,7 +171,7 @@ export class ActivityTable extends LocalizedElement {
           && activity.traceId === this.highlightedTraceId
           && activity.spanId === this.highlightedSpanId;
 	    const isSelected = activityIdentity(activity) === this.selectedActivityId;
-	    const content = readableActivityContent(activity.contentEvidence, activity.content);
+	    const content = activityContentPreview(activity);
 	    return html`<tr data-activity-id=${activityIdentity(activity)} data-activity-index=${this.renderOffset + index} data-highlighted=${String(highlighted)} data-selected=${String(isSelected)} aria-current=${highlighted ? "location" : "false"} @click=${(event: MouseEvent) => this.selectActivityFromRow(event, activity)}>
         <td>${formatTime(activity.observedAt)}</td>
         <td><button type="button" class="select-activity" aria-controls="activity-detail" aria-pressed=${String(isSelected)} @click=${() => this.selectActivity(activity)}><strong>${operationLabel(activity)}</strong><span class="preview">${content ? `${content.slice(0, 120)}${content.length > 120 ? "…" : ""}` : contentAvailabilityLabel(activity.contentEvidence, activity.content)}</span>${isSelected ? html`<span class="selected-label">${localization.t("activity.selected")}</span>` : null}</button><br><span class="kind">${activity.kind}</span>${activity.status ? html`<span class="status">${activityStatusLabel(activity.status)}</span>` : null}${correlationView(activity)}</td>
@@ -212,12 +213,10 @@ export class ActivityTable extends LocalizedElement {
   }
 
   private detailView(activity?: Activity, visibility: "loaded" | "not_loaded" | "outside_agent_filter" = "loaded") {
-    const content = activity ? readableActivityContent(activity.contentEvidence, activity.content) : "";
     return html`<section class="activity-detail" id="activity-detail" tabindex="-1" aria-labelledby="activity-detail-heading">
       <h3 id="activity-detail-heading">${activity ? operationLabel(activity) : localization.t("activity.detail")}</h3>
       ${visibility === "outside_agent_filter" ? html`<p class="empty-detail" role="status">${localization.t("activity.outsideFilter")}</p>` : visibility === "not_loaded" && activity ? html`<p class="empty-detail" role="status">${localization.t("activity.notLoadedRetained")}</p>` : null}
-      ${activity ? html`${visibility === "loaded" ? html`<button type="button" class="return-to-activity" @click=${this.returnToActivity}>${localization.t("activity.back")}</button>` : null}<h4>${localization.t(activity.contentEvidence?.kind === "reference" ? "activity.receivedReference" : "activity.receivedBody")}</h4>${content ? html`<pre>${content}</pre>` : html`<p class="empty-detail">${localization.t(!activity.contentEvidence || activity.contentEvidence.availability === "not_reported" ? "activity.noBodyReported" : "activity.noReadableBody")}</p>`}
-        <am-content-evidence .evidence=${activity.contentEvidence} .activityContent=${activity.content ?? ""}></am-content-evidence>
+      ${activity ? html`${visibility === "loaded" ? html`<button type="button" class="return-to-activity" @click=${this.returnToActivity}>${localization.t("activity.back")}</button>` : null}${renderActivityContent(activity)}
         <h4>${localization.t("activity.metadata")}</h4><dl>
           <dt>${localization.t("activity.activity")}</dt><dd>${activityIdentity(activity)}</dd>
           <dt>${localization.t("activity.source")}</dt><dd>${activity.source || notReported()}</dd>

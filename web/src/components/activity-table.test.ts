@@ -12,6 +12,9 @@ const activity = (overrides: Partial<Activity> = {}): Activity => ({
   ...overrides,
 });
 
+const selectedBody = (table: ActivityTable): string | undefined =>
+  table.shadowRoot?.querySelector("#activity-detail pre.received-content")?.textContent ?? undefined;
+
 afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
@@ -37,7 +40,7 @@ describe("activity reading", () => {
     expect((selected.mock.calls[0][0] as CustomEvent).detail).toEqual({ activityId: "activity-a" });
     expect(button?.getAttribute("aria-pressed")).toBe("true");
     const detail = table.shadowRoot?.querySelector<HTMLElement>("#activity-detail");
-    expect(detail?.querySelector("pre")?.textContent).toBe(longBody);
+    expect(selectedBody(table)).toBe(longBody);
     expect(detail?.textContent).toContain("codex");
     expect(detail?.textContent).toContain("conversation-a");
     expect(detail?.textContent).toContain("received.tool_result");
@@ -64,7 +67,7 @@ describe("activity reading", () => {
 
     expect(detail?.scrollTop).toBe(0);
     expect(table.shadowRoot?.activeElement).toBe(detail);
-    expect(detail?.querySelector("pre")?.textContent).toBe("Second body");
+    expect(selectedBody(table)).toBe("Second body");
   });
 
   it("restores an offscreen selection and keeps its body selected during live arrivals", async () => {
@@ -78,11 +81,11 @@ describe("activity reading", () => {
 
     expect(table.shadowRoot?.querySelectorAll("tbody tr")).toHaveLength(100);
     expect(table.shadowRoot?.querySelector('tr[data-selected="true"]')?.getAttribute("data-activity-id")).toBe("activity-249");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Body 249");
+    expect(selectedBody(table)).toBe("Body 249");
     table.activities = [activity({ id: "new", content: "A new body" }), ...table.activities];
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("activity-249");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Body 249");
+    expect(selectedBody(table)).toBe("Body 249");
     expect(table.shadowRoot?.querySelector("tbody tr")?.getAttribute("data-activity-id")).toBe("activity-200");
   });
 
@@ -99,7 +102,7 @@ describe("activity reading", () => {
     const detail = table.shadowRoot?.querySelector("#activity-detail");
     expect(detail?.textContent).toContain("Selected activity is not in the loaded activity page");
     expect(detail?.textContent).toContain("activity-a");
-    expect(detail?.querySelector("pre")?.textContent).toBe("Received output");
+    expect(selectedBody(table)).toBe("Received output");
     expect(detail?.textContent).not.toContain("Replacement body");
   });
 
@@ -116,7 +119,7 @@ describe("activity reading", () => {
     table.activities = [activity({ source: "claude", content: "Other source" })];
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")).toBeNull();
+    expect(selectedBody(table)).toBeUndefined();
 
     table.selectionContext = "codex/conversation-b";
     table.pagingContext = "codex/conversation-b";
@@ -124,7 +127,7 @@ describe("activity reading", () => {
     table.selectedActivityId = "restored";
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("restored");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Restored body");
+    expect(selectedBody(table)).toBe("Restored body");
   });
 
   it("keeps legacy activity identities distinct across sources and conversations", async () => {
@@ -139,7 +142,7 @@ describe("activity reading", () => {
     const buttons = table.shadowRoot?.querySelectorAll<HTMLButtonElement>("button.select-activity");
     buttons?.[2]?.click();
     await table.updateComplete;
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Third body");
+    expect(selectedBody(table)).toBe("Third body");
     expect(table.shadowRoot?.querySelectorAll('button[aria-pressed="true"]')).toHaveLength(1);
   });
 
@@ -161,7 +164,7 @@ describe("activity reading", () => {
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("selected");
     expect(table.shadowRoot?.querySelector("#activity-detail")?.textContent).toContain("Outside current agent filter");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Selected reviewer body");
+    expect(selectedBody(table)).toBe("Selected reviewer body");
     expect(table.shadowRoot?.querySelector("#activity-detail")?.textContent).not.toContain("Other agent body");
 
     table.pagingContext = "codex:conversation-a:";
@@ -169,7 +172,7 @@ describe("activity reading", () => {
     table.selectedVisibility = "not_loaded";
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("selected");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Selected reviewer body");
+    expect(selectedBody(table)).toBe("Selected reviewer body");
   });
 
   it("retains an agent-page-only selection across another agent page and back", async () => {
@@ -191,7 +194,7 @@ describe("activity reading", () => {
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("agent-only");
     expect(table.shadowRoot?.querySelector("#activity-detail")?.textContent).toContain("Outside current agent filter");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Agent-only retained body");
+    expect(selectedBody(table)).toBe("Agent-only retained body");
     expect(table.shadowRoot?.querySelector("#activity-detail")?.textContent).not.toContain("Planner body");
 
     table.pagingContext = "codex:conversation-a:reviewer";
@@ -199,7 +202,7 @@ describe("activity reading", () => {
     table.activities = [agentOnly];
     await table.updateComplete;
     expect(table.shadowRoot?.querySelector('tr[data-selected="true"]')?.getAttribute("data-activity-id")).toBe("agent-only");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Agent-only retained body");
+    expect(selectedBody(table)).toBe("Agent-only retained body");
   });
 
   it("explains an empty body and returns keyboard focus to its selected row", async () => {
@@ -212,7 +215,7 @@ describe("activity reading", () => {
     button?.click();
     await table.updateComplete;
     const detail = table.shadowRoot?.querySelector<HTMLElement>("#activity-detail");
-    expect(detail?.textContent).toContain("No body was reported for this activity");
+    expect(table.shadowRoot?.querySelector("#activity-detail")?.textContent).toContain("No body was reported for this activity");
     expect(table.shadowRoot?.activeElement).toBe(detail);
     detail?.querySelector<HTMLButtonElement>("button.return-to-activity")?.click();
     await table.updateComplete;
@@ -232,7 +235,7 @@ describe("activity reading", () => {
     document.body.append(table);
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("activity-a");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Received output");
+    expect(selectedBody(table)).toBe("Received output");
     expect(table.focusTraceEvidence("trace-a", "span-a")).toBe(true);
     expect(table.shadowRoot?.activeElement?.closest("tr")?.getAttribute("data-activity-id")).toBe("activity-a");
 
@@ -241,7 +244,7 @@ describe("activity reading", () => {
     table.activities = [activity({ id: "new", spanId: "span-new" }), ...table.activities];
     await table.updateComplete;
     expect(table.selectedActivityId).toBe("other");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")?.textContent).toBe("Other selected body");
+    expect(selectedBody(table)).toBe("Other selected body");
   });
 
   it("shows producer-redacted metadata without exposing the marker as readable content", async () => {
@@ -254,11 +257,27 @@ describe("activity reading", () => {
     document.body.append(table);
     await table.updateComplete;
     expect(table.shadowRoot?.textContent).not.toContain("[REDACTED]");
-    expect(table.shadowRoot?.querySelector("#activity-detail pre")).toBeNull();
+    expect(selectedBody(table)).toBeUndefined();
     const evidence = table.shadowRoot?.querySelector<ContentEvidencePanel>("am-content-evidence");
     await evidence?.updateComplete;
     expect(evidence?.shadowRoot?.textContent).toContain("Producer-redacted");
     expect(table.shadowRoot?.querySelector("#activity-detail")?.textContent).not.toContain("No body was reported");
+  });
+
+  it("summarizes explicit document references by filename and opens the structured reference view", async () => {
+    const raw = JSON.stringify({ file_paths: ["AGENTS.md", "docs/runbook.md"] });
+    const table = new ActivityTable();
+    table.activities = [activity({
+      content: raw,
+      contentEvidence: { source: "claude", activityId: "activity-a", signal: "log", kind: "tool_input", evidence: "unknown", availability: "available", fields: ["tool_input"], truncated: false },
+    })];
+    table.selectedActivityId = "activity-a";
+    document.body.append(table);
+    await table.updateComplete;
+
+    expect(table.shadowRoot?.querySelector(".preview")?.textContent).toBe("AGENTS.md · runbook.md");
+    expect(table.shadowRoot?.querySelectorAll("#activity-detail .document-item")).toHaveLength(2);
+    expect(selectedBody(table)).toBe(raw);
   });
 
   it("presents canonical backend error status consistently", async () => {
