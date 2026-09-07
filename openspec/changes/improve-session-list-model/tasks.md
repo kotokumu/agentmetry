@@ -41,7 +41,9 @@
 - [x] 5.4 `[[session-catalog/telemetry-only-session-labels]]` 既存保存データのpage-scoped読取を実装し、ROOTS/ALL・source同ID・親子・旧データ・read query planを検証する。
 - [x] 5.5 `[[session-catalog/session-list-presentation]]` optional API metadata・安全な名前表示・由来/ID/時刻・日英説明をTDD実装し、旧peerと未知metadataを検証する。
 - [x] 5.6 `[change]` Go tests、対象race、Web tests/build、buf lint/breaking、OpenSpec strict、diff check、独立実装レビューを実施し記録する。
-- [ ] 5.7 `[change]` 対象変更をcommitし、残課題を明記したdraft PRを作成する。マージ・archive・release tag作成は行わない。
+- [x] 5.7 `[change]` 対象変更をcommitし、残課題を明記したdraft PRを作成する。マージ・archive・release tag作成は行わない。
+
+提出記録: [Draft PR #59](https://github.com/kotokumu/agentmetry/pull/59)。Claude生成名の実装・検証を提出済み。6.1とCodex/手動改名の未解決事項はPR本文にも明記した。
 
 ---
 
