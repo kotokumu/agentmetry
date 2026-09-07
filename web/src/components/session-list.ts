@@ -33,6 +33,8 @@ export class SessionList extends LocalizedElement {
     a:focus-visible { border-color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     strong { display: block; overflow: hidden; text-overflow: ellipsis; font: 0.76rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
     small { color: var(--am-muted); font-size: .68rem; }
+    .native-id { display: block; overflow-wrap: anywhere; }
+    .name-metadata { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0; }
     .sources { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
     .source { border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 .58rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .04em; }
     .empty { color: var(--am-muted); padding: 18px 0; }
@@ -66,7 +68,14 @@ export class SessionList extends LocalizedElement {
         @click=${(event: MouseEvent) => this.select(event, session.sourceId, session.id)}
       >
         <span class="sources">${(session.sources ?? []).map((source) => html`<span class="source">${source.label}</span>`)}${session.catalog ? html`<span class="source" title=${session.catalog.parentSessionId}>${localization.t(session.catalog.role === "child" ? "sessions.child" : "sessions.root")}</span>` : null}</span>
-        <strong>${session.id}</strong>
+        <strong title=${session.catalog?.name?.text ?? session.id}>${session.catalog?.name?.text ?? session.id}</strong>
+        ${session.catalog?.name ? html`
+          <small class="native-id">${session.id}</small>
+          <span class="name-metadata">
+            <span class="source name-origin" title=${session.catalog.name.origin}>${localization.t("sessions.generatedName")}</span>
+            ${session.catalog.name.observedAt ? html`<small>${localization.t("sessions.nameObserved")} <time datetime=${session.catalog.name.observedAt} title=${session.catalog.name.observedAt}>${localization.dateTime(new Date(session.catalog.name.observedAt))}</time></small>` : null}
+          </span>
+        ` : null}
         <small>${localization.t("sessions.counts", { agents: localization.number(session.agentCount ?? session.agents.length), activities: localization.number(session.activityCount) })}</small>
       </a>
     `)}</nav>`;

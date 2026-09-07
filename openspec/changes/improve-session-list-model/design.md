@@ -2,9 +2,9 @@
 
 ## Context
 
-- Risk: High（一覧の公開API追加）。入力はテレメトリーのみ。DBスキーマ・世代・取り込み動作は変更しない。
+- Risk: High（一覧の公開API追加）。入力はテレメトリーのみ。DBスキーマ・世代・取り込み動作は変更しない。名前は保存済みデータを読み取り時に解釈する。
 - Human direction: 「タスクをすべて終わらせてPR作ったらmainにマージして」に加え、2026-09-06の「テレメトリーデータ以外は使えない」「それ前提で進めて」を適用する。
-- Evidence packet v2は非テレメトリー補完案を無効とするmaterial revision。タイトル権威・収集worker・migrationの設計とタスクは削除する。
+- Evidence packet v4と2026-09-08のモデル・選択規則承認、PR作成指示を適用する。Claude生成名を実装し、Codex・改名追跡・実画面照合は未完了のdraft PRとする。
 
 ---
 
@@ -18,7 +18,7 @@
 
 ### Non-Goals
 
-- 表示名同期、タイトル用のDB、provider registry、SDK adapter、新しい詳細エンドポイント。
+- Codex名抽出、改名同期、タイトル用DB、別のprovider registry、SDK adapter、新しい詳細エンドポイント。
 
 ---
 
@@ -50,7 +50,7 @@
 ### Decision: Additive list contract
 
 - **Choice**: Proto SessionListViewはUNSPECIFIED=0、ROOTS=1、ALL=2。request field 4=view、response field 4=applied_view。SessionSummary field 11=catalog。SessionCatalogはrole=1、root_session_id=2、parent_session_id=3。SessionRoleはUNSPECIFIED=0、ROOT=1、CHILD=2。
-- **Rationale**: 旧clientは追加フィールドを無視し、旧serverはALLを確認できない。名前用の未使用fieldは作らない。
+- **Rationale**: 旧clientは追加フィールドを無視し、旧serverはALLを確認できない。名前metadataは後述の追加契約を使う。
 - **Consequences**: domain SessionPageは一覧専用SessionListEntry列とAppliedViewを持つ。詳細Sessionの表現は不変。旧Go呼び出しのゼロViewはROOTS。MCPは明示ROOTS。
 - **Errors**: 不明ViewはInvalidArgument。既存のfilter/page validationとエラー契約を維持する。
 
@@ -76,7 +76,7 @@
 | 最新要求 | list controller | UI、lifecycle／race | component→controller→reader | stateless関数では継続状態を守れない |
 | 表示／URL | component / navigation | 利用者、履歴とa11y | UI→list contract | controllerでhistory操作しない |
 
-SRP: provider・関係・一覧状態・表示を各所有者に置く。OCP: 未確定のprovider名対応には拡張点を作らない。LSP: wrapperと既定ROOTSを維持。ISP: 一覧readerは一操作。DIP: domainはSQL/proto/SDKに依存しない。
+SRP: provider・関係・一覧状態・表示を各所有者に置く。OCP: 名前解釈は既存registryのoptional拡張に限定し、別registryを作らない。LSP: wrapperと既定ROOTSを維持。ISP: 一覧readerは一操作。DIP: domainはSQL/proto/SDKに依存しない。
 
 ---
 
@@ -136,7 +136,7 @@ PlausibleはEvidence-backed plausibleを表す。適用後もconcept追加は不
 
 - 親イベント未観測で子がROOTに残る → 説明文に観測上の分類と明記する。
 - offsetページ間の更新で重複・抜けが発生し得る → 同一行をdedupし、ライブ更新では先頭から取得する。固定snapshot保証はしない。
-- 表示名は実現不能 → 別経路で補わずID表示と明示する。
+- 現在の製品名との一致は未検証 → Claude生成名と説明し、実画面照合を未完了で保持する。
 - 独立レビューは実装前と実装後に行い、blocking findingを解消する。
 
 ---
@@ -149,11 +149,11 @@ DBスキーマ・generationは不変。旧binaryは同じDBを使用できる。
 
 ## Open Questions
 
-None.
+ROOTS/ALLの未解決事項はない。追加の名前表示についてはmodel D-3〜D-5（Codex全件、手動改名、実画面照合）を未解決として維持する。
 
 ---
 
-## Verification Results
+## ROOTS/ALL Verification Results
 
 2026-09-06、実装・検証タスク完了。[PR #55](https://github.com/kotokumu/agentmetry/pull/55)はWeb・Go・統合テスト・Desktop build inputs成功後にmainへマージ済み。
 
@@ -165,3 +165,84 @@ None.
 - ローカルDBのread-only `EXPLAIN QUERY PLAN`: ROOTSはrollup走査＋membership主キー検索＋group/order用一時B-tree、ALLはrollup走査＋membership主キー検索＋order用一時B-tree。既定一覧はlog/bodyを走査せず、新indexやmigrationを追加する根拠はない。
 - 独立レビューはモデル・責務・境界・interface・tests・実装品質を確認。ALLでのfilter復元と比較候補の単位不一致を修正し、再レビューにblocking findingなし。比較のID整合性検証は緩和していない。
 - 変更依存のaudit: SDK、セッションファイル、app-server、hook、タイトル生成workerを追加していない。DB schema/generationは不変。
+
+---
+
+## Claude Generated Name Design
+
+この節は名前表示の構築前に承認した設計と実装時の境界判断を記録する。ROOTS/ALLの検証記録は名前表示の完了証拠にはならない。
+
+### Responsibility and Interface Mapping
+
+| Concept / contract | Owner / consumer | Signature or physical representation | Constraint / simpler alternative |
+|---|---|---|---|
+| 名前の観測 | Claude plugin / Registry | optional SessionNameExtractor: SessionName(Event) (SessionName, bool)。値はConversationID, Text, Origin, ObservedAt | provider解釈は既存pluginに置く。必須Plugin契約は変えない |
+| source選択 | Registry / SQLite | SessionName(sourceID, Event) (SessionName, bool) | 指定sourceだけへ委譲。非対応sourceはfalse。新registry不要 |
+| 名前選択 | query / SQLite | SelectSessionName([]SessionName) *SessionName。値はText, Origin, ObservedAt | pure function。SQLやUIに新旧判断を置かない |
+| 一覧結果 | query / Connect | SessionListEntry.Name *SessionName | 会話identityと詳細Sessionは不変 |
+| wire | Connect / Web | SessionCatalog field 4=name。SessionName: text=1, origin=2, observed_at=3 | additive。既存のrole/root/parentと独立 |
+| label | Web mapper / component | optional catalog.name | 名称・由来・ID・観測時刻を確認可能。URLと選択はID |
+
+処理の対応: `profiles.SessionName(row.SourceID, event)` → 対象会話ID照合 → `query.SelectSessionName(observations)`。
+
+### Decision: Read-time interpretation
+
+- Claude pluginはassistant_responseかつquery_source=generate_session_titleだけを解釈する。session.idが必須で、canonical conversation IDがある場合は一致が必要。
+- native OTLP EventNameだけを持つ入力は保存前にgen_ai.response.completedへ正規化される。event.name属性がない場合に限り、この保存形状も受理する。明示的な異なるevent.name属性は上書きしない。
+- responseは完結したJSON objectで、空白だけでないtitle文字列を持つこと。値を要約・加工しない。省略マーカー、重複titleキー、非文字列、壊れたJSONは無効。
+- 時刻はevent.timestampのRFC3339。欠落・不正・UTC換算で年1〜9999の範囲外なら不明であり、受信時刻で代替しない。originはclaude_code.generate_session_title。
+- 不正な名前は名前の根拠だけ無視する。既存のrawや活動の投影は変更しない。
+
+### Decision: Page-scoped lookup
+
+- 既存rollupでページを確定後、同じread transaction内で表示行のClaude sourceとIDに一致するlogs候補を取得する。期間より前の生成名も対象とする。
+- query_sourceのSQL絞り込みは取得量削減であり、結果はpluginで再検証する。wire形状変更時は候補queryとpluginの適合テストへの波及が必要。名前の有効性・選択規則はSQLに置かない。
+- 既存source/run indexを利用し、ページ外の会話を読まない。会話内検索の費用は残るため、代表query planと実データ読み取り時間を記録する。
+- DBエラーは一覧全体の失敗。子の名前をrootへ転用しない。backfill・DB migration・workerは不要。
+
+### Decision: Order-independent selection
+
+- 最新の既知時刻と時刻不明の候補を比較する。候補の名前・取得元が異なればnil。全て同名なら採用し、不明時刻を含めば返却時刻も不明とする。
+- 既知の古い候補は最新候補の競合に影響しない。重複・到着順に依存せず、入力を変更しない。
+- UIは「自動生成名」、native ID、観測時刻（あれば）を表示し、現在の画面名への同期は保証しない。未知origin・不正metadata・旧serverはID表示。HTMLではなくテキストとして描画する。
+
+### Independent Scenario Stress Test
+
+title_scenarios_v4は要件と実観測のみから15シナリオを生成し、初期minimality確認後に提示する。同じ外部変化は表内で集約する。
+
+| Scenarios / confidence | Owner | Expected propagation | Verdict |
+|---|---|---|---|
+| source同ID、Claude同会話、親活動なし / Committed | native identity / SQLite | 行の会話だけに名前を対応。ROOTS/ALL回帰 | Pass |
+| 生成応答・欠損・マスク・設定off / Observed・Evidence-backed plausible | Claude plugin | parserとfixture。設定変更なし | Pass |
+| 更新・同時刻競合・重複・逆順 / Committed・Evidence-backed plausible | query | 観測集合の選択テスト。SQL受信順を使わない | Pass |
+| 由来・未送信改名・部分Codex / Committed・Observed | UI / 対応範囲 | 自動生成名の説明、Codexと改名は未完了 | Pass for bounded PR |
+| 旧peer / Evidence-backed plausible | proto / mapper | additive metadata、detail省略、ID fallback | Pass |
+| 補完禁止・実DB不変・未完了PR / Committed | 入力 / 検証境界 | 一時DBテスト、実DB read-only、draft PR | Pass |
+
+全件性・異種根拠の優先権・将来providerの具体仕様には根拠がなく、同期機構や新しい拡張点を要求しない。責務と境界を変更せず全シナリオを再適用できる。構築前の独立設計レビューでP0/P1なしを確認済み。
+
+### Test Specification and TDD Plan
+
+| Unit / criterion | Given → When → Then | Construction / simplest representation |
+|---|---|---|
+| sourceplugin / Claude | 実観測形状・通常応答・無効JSON・重複titleキー・ID矛盾・時刻欠落 → extract → 正しい観測か無名 | gotests table Red→Green。値と既存pluginだけ |
+| query | 最新・古い競合・未知時刻・同時刻競合・再送 → select → 順序非依存の名前かnil | table Red→Green。pure function、状態manager不要 |
+| SQLite | 過去保存済みOTLP・同ID別source・親子 → ROOTS/ALL → 正しい名前と既存の行/集計 | integration Red→Green。既存transaction/index |
+| transport / Web | optional name・未知origin・旧peer・HTML文字列 → map/render → 名前・由来・ID、互換安全性 | mapper/UI Red→Green。生成コードは再生成 |
+| SC-7 | 実画面と同一会話のtelemetry → 照合 → 対応範囲の証明 | 未完了。匿名化構造fixtureでは代替しない |
+| SC-8 | PR/文書 → audit → Codex/改名/実画面照合を未完了で記載 | document verification |
+
+SC-1〜5は既存回帰、SC-6は上記automated testsで検証する。Go tests・Web tests/build・buf lint/breaking・OpenSpec strict・diff checkを実行する。新しいDB schema/世代/取り込み挙動はないためmigration検証はN/A。revertでID表示に戻り、保存済みtelemetryは不変。
+
+### Generated Name Verification Results
+
+2026-09-08、draft PR対象の検証結果。名前表示要望全体の完了記録ではない。
+
+- Registry 5、Claude抽出28、query選択22ケースでRed→Green。最新/未知時刻の全6順列、入力不変、重複・競合、異なるsourceへの委譲禁止を含む。
+- 一時DBのOTLP正規化→保存→再open→一覧でROOTS/ALL、同じIDの別source、親への子名転用禁止、期間外の生成時刻、native OTLP EventNameの保存互換性を確認。実データのID・タイトルはfixtureに含めていない。
+- `go test ./...`、`go test -tags=integration ./...`、SQLite/Connect/query/Claude/sourcepluginのrace: pass。
+- Web全28 files / 306 tests、production build: pass。HTML文字列の安全表示、日英、時刻の有無、名前更新後の選択・URL維持を含む。
+- `buf lint`、`buf breaking --against '.git#ref=origin/main'`、生成物再生成のSHA-256一致、OpenSpec strict、`git diff --check`: pass。
+- 独立実装レビューのP2を2件修正した。native EventNameの正規化後の取得漏れは統合テスト、UTC換算で範囲外になる時刻は抽出とprotojson往復テストで回帰を確認。再レビューで残る指摘なし。
+- 利用者DBのread-only EXPLAINは`logs_source_run_usage_idx (source=? AND run_id=?)`を使用し、logs全体を走査しなかった。最近のClaude native会話100件に絞った候補COUNTは91件、単回wall time 1.78秒。これは候補queryだけの参考値であり、API全体の性能保証ではない。会話内のログ量に比例する読取費用は残る。
+- DB・telemetry設定の書換え、SDK/セッションファイル/app-server/hookによる補完は行っていない。SC-7の実画面正解fixture、Codex全件名、手動改名追跡は未完了のまま維持する。

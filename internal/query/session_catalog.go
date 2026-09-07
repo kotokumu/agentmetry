@@ -35,6 +35,7 @@ type SessionListEntry struct {
 	Session
 	RootSessionID   string
 	ParentSessionID string
+	Name            *SessionName
 }
 
 func (entry SessionListEntry) Role() SessionRole {

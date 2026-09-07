@@ -1,0 +1,12 @@
+{
+  "Name": "gen_ai.response.completed",
+  "Attributes": {
+    "event.name": "assistant_response",
+    "query_source": "generate_session_title",
+    "session.id": "anonymous-conversation-001",
+    "gen_ai.conversation.id": "anonymous-conversation-001",
+    "response": "{\"title\":\"セッション一覧を改善\"}",
+    "event.timestamp": "2026-09-06T03:04:05.123456789Z",
+    "request_id": "anonymous-request-001"
+  }
+}

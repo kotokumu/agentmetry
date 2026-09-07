@@ -1,5 +1,5 @@
 import { conditionsKey, hasSessionConditions, sessionConditions, type SessionConditions } from "../model/investigation-conditions";
-import type { SessionCatalog, SessionListPage, SessionListQuery, SessionListView as UiSessionListView } from "../model/session-catalog";
+import type { SessionCatalog, SessionName, SessionListPage, SessionListQuery, SessionListView as UiSessionListView } from "../model/session-catalog";
 import { createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { timestampDate, timestampFromDate, type Timestamp } from "@bufbuild/protobuf/wkt";
@@ -352,14 +352,24 @@ export function mapSessionListResponse(response: ListSessionsResponse, view: UiS
 function mapSessionCatalog(value: SessionSummary, view: UiSessionListView): SessionCatalog | undefined {
   const catalog = value.catalog;
   if (!value.id || !value.sourceId || !catalog?.rootSessionId) return undefined;
+  const name = mapSessionName(value);
   if (catalog.role === SessionRole.ROOT && catalog.rootSessionId === value.id && !catalog.parentSessionId) {
-    return { role: "root", rootSessionId: catalog.rootSessionId, parentSessionId: "" };
+    return { role: "root", rootSessionId: catalog.rootSessionId, parentSessionId: "", ...(name ? { name } : {}) };
   }
   if (view === "all" && catalog.role === SessionRole.CHILD && catalog.rootSessionId !== value.id
     && catalog.parentSessionId && catalog.parentSessionId !== value.id) {
-    return { role: "child", rootSessionId: catalog.rootSessionId, parentSessionId: catalog.parentSessionId };
+    return { role: "child", rootSessionId: catalog.rootSessionId, parentSessionId: catalog.parentSessionId, ...(name ? { name } : {}) };
   }
   return undefined;
+}
+
+function mapSessionName(value: SessionSummary): SessionName | undefined {
+  const name = value.catalog?.name;
+  if (value.sourceId !== "claude" || name?.origin !== "claude_code.generate_session_title" || !name.text.trim()) return undefined;
+  const time = name.observedAt;
+  if (time && (time.seconds < -62135596800n || time.seconds > 253402300799n
+    || !Number.isInteger(time.nanos) || time.nanos < 0 || time.nanos > 999999999)) return undefined;
+  return { text: name.text, origin: name.origin, ...(time ? { observedAt: timestampDate(time).toISOString() } : {}) };
 }
 
 function mapSession(value: SessionSummary, traceIds: readonly string[] = []): Session {

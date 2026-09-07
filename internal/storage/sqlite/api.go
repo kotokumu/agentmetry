@@ -106,6 +106,9 @@ func (store *Store) ListSessions(ctx context.Context, filter query.SessionListFi
 	if err != nil {
 		return query.SessionPage{}, err
 	}
+	if err := store.populateSessionNames(ctx, transaction, page.Sessions); err != nil {
+		return query.SessionPage{}, err
+	}
 	if !filter.Conditions.Empty() {
 		page.AppliedConditions = &filter.Conditions
 	}

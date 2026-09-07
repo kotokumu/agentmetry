@@ -573,6 +573,9 @@ func mapSessions(values []query.SessionListEntry) []*v1.SessionSummary {
 			role = v1.SessionRole_SESSION_ROLE_CHILD
 		}
 		summary.Catalog = &v1.SessionCatalog{Role: role, RootSessionId: value.RootSessionID, ParentSessionId: value.ParentSessionID}
+		if value.Name != nil {
+			summary.Catalog.Name = &v1.SessionName{Text: value.Name.Text, Origin: value.Name.Origin, ObservedAt: timestamp(value.Name.ObservedAt)}
+		}
 		result = append(result, summary)
 	}
 	return result

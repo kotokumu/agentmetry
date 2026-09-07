@@ -2,10 +2,16 @@ import type { SessionConditions } from "./investigation-conditions";
 import type { Session, TimeRange } from "./telemetry";
 
 export type SessionListView = "roots" | "all";
+export type SessionName = Readonly<{
+  text: string;
+  origin: "claude_code.generate_session_title";
+  observedAt?: string;
+}>;
 export type SessionCatalog = Readonly<{
   role: "root" | "child";
   rootSessionId: string;
   parentSessionId: string;
+  name?: SessionName;
 }>;
 export type SessionListEntry = Session & Readonly<{ catalog?: SessionCatalog }>;
 export type SessionListPage = Readonly<{ sessions: readonly SessionListEntry[]; nextPageToken: string }>;
