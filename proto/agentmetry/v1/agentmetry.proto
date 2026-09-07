@@ -188,6 +188,16 @@ message SessionCatalog {
   // Related IDs belong to the summary's source_id.
   string root_session_id = 2;
   string parent_session_id = 3;
+  // Optional name observed for this row's native conversation, not its children.
+  SessionName name = 4;
+}
+
+// A telemetry-derived label; it is not a guarantee of the current provider UI name.
+message SessionName {
+  string text = 1;
+  string origin = 2;
+  // Absent when the producer observation time is unknown.
+  google.protobuf.Timestamp observed_at = 3;
 }
 
 enum SessionListView {

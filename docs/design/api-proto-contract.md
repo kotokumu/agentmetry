@@ -22,7 +22,9 @@ The schema lives in
   Clients must require an ALL acknowledgement before presenting child rows;
   an older server without it still supports the default ROOTS view.
   List-only `catalog` carries observed root/child role, root ID, and direct
-  parent ID. It neither proves human creation nor contains a provider title.
+  parent ID, and an optional telemetry-derived name. It does not prove human
+  creation. A name carries text, origin, and an optional observation timestamp;
+  it does not guarantee the provider's current UI name.
 - `GetSession` returns one session summary and agent topology, without operations.
 - `ListSessionActivities` returns one bounded, opaque-cursor page of operations.
 - `GetTrace` returns trace-scoped evidence and remains separate from sessions.
@@ -76,8 +78,22 @@ identity contracts, qualified by their source. Claude agents sharing one
 `session.id` do not become separate sessions. A root means no resolved parent
 in the retained evidence, not proof that a person created it.
 
-The reviewed telemetry contracts do not establish a field equal to the session
-name displayed by either provider. The list therefore displays native IDs.
+The list can display Claude-generated names from received title-generation
+responses (`assistant_response`, `query_source=generate_session_title`, and a
+complete JSON `response.title`). The stored Claude conversation ID must agree
+with `session.id`. The latest unambiguous observation is selected; differing
+latest or unknown-time candidates keep the ID fallback. ROOTS never borrows a
+child's name. The generated-name badge and native ID remain visible.
+
+Names are read from existing stored logs for the current page, in the same read
+snapshot as the summaries, without a migration or re-ingestion. The producer's
+`event.timestamp`, not storage arrival time, determines order; absent or invalid
+times remain unknown. Non-name activity, totals, filtering, and identity-based
+navigation are unchanged. Older clients ignore the additive metadata; newer
+clients retain ID labels for absent or unsupported name evidence.
+
+This does not establish equality with the provider's current UI name. Real-UI
+acceptance evidence, Codex-wide names, and manual rename tracking remain open.
 Prompts, Codex slugs, and agent names are not substituted for session titles.
 Agentmetry does not consult SDKs, session files, app-server, or added hooks to
 fill this gap. Raw payload retention supports replay, not recovery of values
