@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.15.0](https://github.com/kotokumu/agentmetry/compare/v1.14.1...v1.15.0) (2026-09-07)
+
+
+### Features
+
+* **sessions:** display Claude generated names from telemetry ([bd43698](https://github.com/kotokumu/agentmetry/commit/bd43698cbdcbfb0da70dfb1b4a8b6a11c40d7434))
+* **sessions:** display Claude generated names from telemetry ([2b97ecb](https://github.com/kotokumu/agentmetry/commit/2b97ecba4460d9a5b5a613fcf0d8daeeb77fbffc))
+* **web:** clarify reported file evidence ([10fb6da](https://github.com/kotokumu/agentmetry/commit/10fb6da5becc618490dbef5866898264d2e20b74))
+* **web:** clarify reported file evidence ([97e0ed9](https://github.com/kotokumu/agentmetry/commit/97e0ed9cbecd9fada14d2b2574e90acecc651b98))
+
 ## [1.14.1](https://github.com/kotokumu/agentmetry/compare/v1.14.0...v1.14.1) (2026-09-06)
 
 
