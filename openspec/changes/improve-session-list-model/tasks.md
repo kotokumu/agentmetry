@@ -65,6 +65,8 @@ Codex全セッション名取得と手動改名追跡はmodel D-3/D-4の未解�
 - [x] 7.6 `[[session-catalog/session-list-presentation]]` API/WebでCodex観測名を受理し、日英の由来表示・元ID・時刻・HTML安全・旧peer/未知origin/source不一致・最新UIの選択/URLを検証する。
 - [x] 7.7 `[change]` Go全体/統合/race、Web tests/build、buf lint/breaking、OpenSpec strict、diff checkと独立実装レビューを通す。非telemetry入力と利用者DB更新がないことをauditする。
 
-- [ ] 7.8 `[change]` Conventional CommitとPRを作成し、対象checks成功後にmainへマージする。release tagは作らない。
+- [x] 7.8 `[change]` 検証済み実装をConventional Commitにまとめ、取得制限とmigrationの注意点を記したPRを作成する。
 
 7章は承認済みのCodex観測名の範囲であり、D-3の全件保証を実装済みとは扱わない。2026-09-09のユーザー指示によりPR作成・マージまで含む。D-3〜D-5を維持しarchiveしない。
+
+配信先は[PR #69](https://github.com/kotokumu/agentmetry/pull/69)。mainへのマージは対象checks成功後に実行し、結果はGitHubのPR状態を完了記録とする。release tagは作らない。

@@ -280,7 +280,7 @@ codex_name_scenarios_v5は凍結packet v5だけからシナリオを作成し、
 
 ### Codex Construction and Verification
 
-- Go全体、integration全体、sourceplugin/Codex/Claude/query/SQLite/Connect/compactionのrace、Web 37 files / 383 tests・production build、buf lint/breaking、OpenSpec strict、diff checkは成功。
+- Go全体、integration全体、sourceplugin/Codex/Claude/query/SQLite/Connect/compactionのrace、buf lint/breaking、OpenSpec strict、diff checkは成功。main a9146e40を取り込んだ状態でGo全体・integrationを再確認し、Web 37 files / 388 testsとproduction buildも成功。
 
 | Unit | Red | Green / refactor evidence |
 |---|---|---|
