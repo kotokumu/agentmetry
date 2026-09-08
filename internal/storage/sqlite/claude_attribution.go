@@ -182,14 +182,23 @@ func canonicalUsageRole(attributes map[string]any) string {
 }
 
 func addClaudeModelCallTargets(ctx context.Context, transaction *sql.Tx, targets *query.ChangeTargetSet, batch canonical.Batch, previous map[storedSpanKey]storedSpanScope) error {
+	for _, log := range batch.Logs {
+		if (normalizeSource(log.Source) == claudeSource || normalizeSource(log.Source) == "codex") && canonicalUsageRole(log.Attributes) == "authoritative_call" {
+			targets.Add(query.AllTracesTarget())
+		}
+	}
 	for key, usageIDs := range groupClaudeModelCallKeys(claudeModelCallKeys(batch, previous)) {
 		payload, err := json.Marshal(usageIDs)
 		if err != nil {
 			return fmt.Errorf("encode Claude model-call target usage IDs: %w", err)
 		}
-		rows, err := transaction.QueryContext(ctx, `SELECT DISTINCT trace_id FROM logs
-WHERE source = ? AND run_id = ? AND usage_id IN (SELECT value FROM json_each(?)) AND trace_id <> ''`,
-			key.source, key.runID, string(payload))
+		rows, err := transaction.QueryContext(ctx, `SELECT DISTINCT trace_id FROM (
+  SELECT trace_id FROM logs
+  WHERE source = ? AND run_id = ? AND usage_id IN (SELECT value FROM json_each(?)) AND trace_id <> ''
+  UNION
+  SELECT trace_id FROM spans
+  WHERE source = ? AND run_id = ? AND usage_id IN (SELECT value FROM json_each(?)) AND trace_id <> ''
+)`, key.source, key.runID, string(payload), key.source, key.runID, string(payload))
 		if err != nil {
 			return fmt.Errorf("load Claude model-call trace targets: %w", err)
 		}

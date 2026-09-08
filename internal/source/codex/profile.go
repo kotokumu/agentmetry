@@ -16,6 +16,18 @@ func (Plugin) ID() string { return "codex" }
 
 func (Plugin) DisplayName() string { return "Codex" }
 
+func IsAuthoritativeModelCall(sourceEvent, canonicalName, role string) bool {
+	return role == "authoritative_call" && sourceEvent == "codex.sse_event" && canonicalName == "gen_ai.response.completed"
+}
+
+func BillingMode(attributes map[string]any) string {
+	mode := firstString(attributes, "gen_ai.request.service_tier", "service_tier")
+	if mode == "" || mode == "default" {
+		return "standard"
+	}
+	return mode
+}
+
 func (Plugin) Match(event source.Event) bool {
 	combined := strings.ToLower(event.Name + " " + stringValue(event.Attributes["event.name"]) + " " + stringValue(event.Attributes["service.name"]))
 	return strings.Contains(combined, "codex")
@@ -61,7 +73,7 @@ func (Plugin) Normalize(input source.Event) source.Event {
 	copyFirstAlias(normalized, "gen_ai.agent.definition", "agent_definition", "agent.name", "subagent_type")
 	copyAlias(normalized, "gen_ai.agent.type", "agent_type")
 	copyAlias(normalized, "gen_ai.agent.target.id", "receiver_thread_id")
-	if hasUsage(normalized) {
+	if name == "gen_ai.response.completed" || hasUsage(normalized) {
 		role := "corroborating"
 		if name == "gen_ai.response.completed" {
 			role = "authoritative_call"

@@ -8,7 +8,7 @@ import { notReported, unavailable } from "../presentation/missing-data";
 const dashboard = (overrides: Partial<DashboardSummary> = {}): DashboardSummary => ({
   sources: [], signalCounts: { traces: 100, logs: 200, metrics: 300 }, runCount: 7, agentCount: 4,
   tokens: { input: 10, output: 20, cacheRead: 30, cacheWrite: 40, reasoning: 50, total: 150 },
-  recentActivity: [], planUsage: [], ...overrides,
+  recentActivity: [], planUsage: [], costSummary: { amountMicroUsd: 12_500n, basis: "mixed", coverage: "complete", eligibleCalls: 2n, pricedCalls: 2n, unpricedReasons: [] }, ...overrides,
 });
 
 const cards = (element: DashboardSummaryElement) => [...element.shadowRoot!.querySelectorAll<HTMLElement>("am-kpi-card")].map((card) => card as HTMLElement & { value: string; label: string });
@@ -26,8 +26,8 @@ describe("am-dashboard-summary", () => {
     document.body.append(element);
 
     await vi.waitFor(() => expect(getDashboard).toHaveBeenCalledWith("7d", "codex", "", expect.any(AbortSignal)));
-    await vi.waitFor(() => expect(cards(element)).toHaveLength(3));
-    expect(cards(element).map((card) => card.value)).toEqual(["7", "4", "150"]);
+    await vi.waitFor(() => expect(cards(element)).toHaveLength(4));
+    expect(cards(element).map((card) => card.value)).toEqual(["7", "4", "150", "$0.0125"]);
   });
 
   it("does not replace period aggregates with small loaded-list counts", async () => {
@@ -36,8 +36,8 @@ describe("am-dashboard-summary", () => {
     Object.assign(element, { active: true, conversationStatus: "ready", conversationCount: 2, activityCount: 3 });
     document.body.append(element);
 
-    await vi.waitFor(() => expect(cards(element)).toHaveLength(3));
-    expect(cards(element).map((card) => card.value)).toEqual(["48", "19", notReported()]);
+    await vi.waitFor(() => expect(cards(element)).toHaveLength(4));
+    expect(cards(element).map((card) => card.value)).toEqual(["48", "19", notReported(), "$0.0125"]);
   });
 
   it("does not turn a missing aggregate token total into zero", async () => {
@@ -45,7 +45,7 @@ describe("am-dashboard-summary", () => {
     const element = document.createElement("am-dashboard-summary") as DashboardSummaryElement;
     document.body.append(element);
 
-    await vi.waitFor(() => expect(cards(element)).toHaveLength(3));
+    await vi.waitFor(() => expect(cards(element)).toHaveLength(4));
     expect(cards(element)[2].value).toBe(notReported());
     expect(cards(element)[2].value).not.toBe("0");
   });
@@ -56,8 +56,8 @@ describe("am-dashboard-summary", () => {
     document.body.append(element);
 
     await vi.waitFor(() => expect(getDashboard).toHaveBeenCalled());
-    await vi.waitFor(() => expect(cards(element)).toHaveLength(3));
-    expect(cards(element).map((card) => card.value)).toEqual([unavailable(), unavailable(), unavailable()]);
+    await vi.waitFor(() => expect(cards(element)).toHaveLength(4));
+    expect(cards(element).map((card) => card.value)).toEqual([unavailable(), unavailable(), unavailable(), unavailable()]);
     expect(cards(element).map((card) => card.value)).not.toContain("Loading");
   });
 });

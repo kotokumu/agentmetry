@@ -33,7 +33,7 @@ func (server *Server) GetTraceOverview(ctx context.Context, request *connect.Req
 			Name: activity.Name, Kind: string(activity.Kind), Status: activity.Status, StartedAt: timestamp(activity.StartedAt), EndedAt: timestamp(activity.EndedAt), MissingParent: activity.MissingParent})
 	}
 	return connect.NewResponse(&v1.GetTraceOverviewResponse{TraceId: overview.TraceID, StartedAt: timestamp(overview.StartedAt), EndedAt: timestamp(overview.EndedAt), TotalActivities: overview.TotalActivities,
-		ReturnedActivities: overview.ReturnedActivities, Coverage: overview.Coverage, Activities: activities}), nil
+		ReturnedActivities: overview.ReturnedActivities, Coverage: overview.Coverage, Activities: activities, CostSummary: mapCostSummary(overview.CostSummary)}), nil
 }
 
 func (server *Server) GetTraceWindow(ctx context.Context, request *connect.Request[v1.GetTraceWindowRequest]) (*connect.Response[v1.GetTraceWindowResponse], error) {

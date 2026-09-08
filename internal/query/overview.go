@@ -54,6 +54,8 @@ type Activity struct {
 	Status             string                 `json:"status,omitempty"`
 	Tokens             canonical.TokenUsage   `json:"tokens"`
 	CostUSD            *float64               `json:"costUsd,omitempty"`
+	ModelCallCost      *ModelCallCost         `json:"modelCallCost,omitempty"`
+	ModelCallRef       *ModelCallRef          `json:"modelCallRef,omitempty"`
 	ContributesToTotal bool                   `json:"contributesToTotal"`
 	PromptID           string                 `json:"promptId,omitempty"`
 	UsageID            string                 `json:"usageId,omitempty"`
@@ -87,6 +89,7 @@ type Session struct {
 	HasMore        bool                 `json:"hasMore,omitempty"`
 	Tokens         canonical.TokenUsage `json:"tokens"`
 	CostUSD        *float64             `json:"costUsd,omitempty"`
+	CostSummary    CostSummary          `json:"costSummary"`
 	Agents         []AgentSession       `json:"agents"`
 	Activities     []Activity           `json:"activities"`
 }
@@ -100,6 +103,7 @@ type Overview struct {
 	RecentActivity []Activity           `json:"recentActivity"`
 	Sessions       []Session            `json:"sessions"`
 	PlanUsage      []planusage.Snapshot `json:"planUsage"`
+	CostSummary    CostSummary          `json:"costSummary"`
 }
 
 type OverviewReader interface {

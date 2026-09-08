@@ -15,6 +15,10 @@ func (Plugin) ID() string { return "claude" }
 
 func (Plugin) DisplayName() string { return "Claude Code" }
 
+func IsAuthoritativeModelCall(sourceEvent, canonicalName, role string) bool {
+	return role == "authoritative_call" && (sourceEvent == "api_request" || sourceEvent == "claude_code.api_request") && canonicalName == "gen_ai.model.request"
+}
+
 func (Plugin) NormalizeAgentMetadata(metadata source.AgentMetadata) source.AgentMetadata {
 	if metadata.Definition == "" {
 		metadata.Definition = definitionFromRuntimeAgentID(metadata.ID)
@@ -65,9 +69,11 @@ func (Plugin) Normalize(input source.Event) source.Event {
 		copyFirstAlias(event.Attributes, "gen_ai.usage.cache_read.input_tokens", "cache_read_tokens", "cache_read_input_tokens")
 		copyFirstAlias(event.Attributes, "gen_ai.usage.cache_write.input_tokens", "cache_creation_tokens", "cache_creation_input_tokens")
 		copyFirstAlias(event.Attributes, "gen_ai.usage.id", "client_request_id", "request_id")
+		annotateUsageIdentity(event.Attributes)
 	} else if sourceName == "llm_request" {
 		event.Attributes["gen_ai.usage.role"] = "corroborating"
 		copyFirstAlias(event.Attributes, "gen_ai.usage.id", "client_request_id", "request_id")
+		annotateUsageIdentity(event.Attributes)
 	}
 	if _, exists := event.Attributes["gen_ai.agent.type"]; !exists {
 		switch querySource := text(event.Attributes["query_source"]); querySource {
@@ -91,6 +97,20 @@ func (Plugin) Normalize(input source.Event) source.Event {
 		}
 	}
 	return event
+}
+
+func annotateUsageIdentity(attributes map[string]any) {
+	usageID := text(attributes["gen_ai.usage.id"])
+	if usageID == "" {
+		return
+	}
+	basis := "opaque"
+	if clientID := text(attributes["gen_ai.client.request.id"]); clientID != "" && clientID == usageID {
+		basis = "claude_client_request_id"
+	} else if requestID := text(attributes["gen_ai.request.id"]); requestID != "" && requestID == usageID {
+		basis = "claude_request_id"
+	}
+	attributes["gen_ai.usage.id.basis"] = basis
 }
 
 func definitionFromRuntimeAgentID(agentID string) string {

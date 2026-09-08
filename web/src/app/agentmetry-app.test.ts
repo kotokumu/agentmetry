@@ -41,6 +41,7 @@ type TestSession = {
   activityCount: number;
   tokens: TokenUsage;
   costUsd?: number;
+  costSummary?: Record<string, unknown>;
   agents: readonly object[];
   activities: readonly object[];
   traceIds?: readonly string[];
@@ -77,8 +78,9 @@ const sessionSummary = (session: TestSession) => {
     activityCount: session.activityCount,
     tokens: session.tokens,
     agents: session.agents,
-  } as { id: string; sourceId: string; sources: readonly object[]; startedAt: string; endedAt: string; activityCount: number; tokens: TokenUsage; agents: readonly object[]; costUsd?: number };
+  } as { id: string; sourceId: string; sources: readonly object[]; startedAt: string; endedAt: string; activityCount: number; tokens: TokenUsage; agents: readonly object[]; costUsd?: number; costSummary?: Record<string, unknown> };
   if (session.costUsd !== undefined) summary.costUsd = session.costUsd;
+  if (session.costSummary !== undefined) summary.costSummary = session.costSummary;
   return summary;
 };
 
@@ -1015,6 +1017,7 @@ describe("Agentmetry app composition", () => {
         activityCount: 1,
         tokens: { input: 120, output: 30, cacheRead: null, cacheWrite: null, reasoning: null, total: 150 },
         costUsd: 0.0125,
+        costSummary: { amountMicroUsd: "12500", basis: "COST_SUMMARY_BASIS_PROVIDER_REPORTED", coverage: "COST_COVERAGE_COMPLETE", eligibleCalls: "1", pricedCalls: "1" },
         agents: [],
         activities: [],
       }],

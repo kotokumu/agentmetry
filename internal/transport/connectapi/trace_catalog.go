@@ -109,7 +109,7 @@ func mapTraceSummaries(values []query.TraceListEntry) []*v1.TraceSummary {
 	for _, value := range values {
 		entry := &v1.TraceSummary{
 			TraceId: value.TraceID, Status: string(value.Status), ActivityCount: value.ActivityCount,
-			RootSpanCount: value.RootSpanCount, MissingParentCount: value.MissingParentCount,
+			RootSpanCount: value.RootSpanCount, MissingParentCount: value.MissingParentCount, CostSummary: mapCostSummary(value.CostSummary),
 		}
 		if value.StartedAt != nil {
 			entry.StartedAt = timestamppb.New(*value.StartedAt)

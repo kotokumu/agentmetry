@@ -104,6 +104,91 @@ message TokenUsage {
   optional int64 total = 6;
 }
 
+enum CallIdentityBasis {
+  CALL_IDENTITY_BASIS_UNSPECIFIED = 0;
+  CALL_IDENTITY_BASIS_CLAUDE_CLIENT_REQUEST_ID = 1;
+  CALL_IDENTITY_BASIS_CLAUDE_REQUEST_ID = 2;
+  CALL_IDENTITY_BASIS_CLAUDE_EVENT_SEQUENCE = 3;
+  CALL_IDENTITY_BASIS_JOURNAL_EVIDENCE_FALLBACK = 4;
+}
+
+enum CallCostBasis {
+  CALL_COST_BASIS_UNSPECIFIED = 0;
+  CALL_COST_BASIS_PROVIDER_REPORTED = 1;
+  CALL_COST_BASIS_RATE_CARD_ESTIMATE = 2;
+  CALL_COST_BASIS_UNAVAILABLE = 3;
+}
+
+enum CostSummaryBasis {
+  COST_SUMMARY_BASIS_UNSPECIFIED = 0;
+  COST_SUMMARY_BASIS_PROVIDER_REPORTED = 1;
+  COST_SUMMARY_BASIS_RATE_CARD_ESTIMATE = 2;
+  COST_SUMMARY_BASIS_MIXED = 3;
+  COST_SUMMARY_BASIS_UNAVAILABLE = 4;
+}
+
+enum CostCoverage {
+  COST_COVERAGE_UNSPECIFIED = 0;
+  COST_COVERAGE_COMPLETE = 1;
+  COST_COVERAGE_PARTIAL = 2;
+  COST_COVERAGE_UNAVAILABLE = 3;
+}
+
+enum ModelCallEvidenceRole {
+  MODEL_CALL_EVIDENCE_ROLE_UNSPECIFIED = 0;
+  MODEL_CALL_EVIDENCE_ROLE_DUPLICATE_AUTHORITATIVE = 1;
+  MODEL_CALL_EVIDENCE_ROLE_CORROBORATING = 2;
+}
+
+enum CostUnavailableReason {
+  COST_UNAVAILABLE_REASON_UNSPECIFIED = 0;
+  COST_UNAVAILABLE_REASON_CONFLICTING_AUTHORITATIVE_EVIDENCE = 1;
+  COST_UNAVAILABLE_REASON_INVALID_PROVIDER_AMOUNT = 2;
+  COST_UNAVAILABLE_REASON_MISSING_MODEL = 3;
+  COST_UNAVAILABLE_REASON_MISSING_OCCURRED_AT = 4;
+  COST_UNAVAILABLE_REASON_MISSING_TOKEN_USAGE = 5;
+  COST_UNAVAILABLE_REASON_UNSUPPORTED_BILLING_MODE = 6;
+  COST_UNAVAILABLE_REASON_UNSUPPORTED_USAGE_CONDITION = 7;
+  COST_UNAVAILABLE_REASON_RATE_NOT_FOUND = 8;
+  COST_UNAVAILABLE_REASON_RATE_CONFLICT = 9;
+  COST_UNAVAILABLE_REASON_CALCULATION_ERROR = 10;
+}
+
+enum CostAggregationError {
+  COST_AGGREGATION_ERROR_UNSPECIFIED = 0;
+  COST_AGGREGATION_ERROR_CALCULATION_ERROR = 1;
+}
+
+message ModelCallCost {
+  string call_id = 1;
+  CallIdentityBasis identity_basis = 2;
+  CallCostBasis basis = 3;
+  optional int64 amount_micro_usd = 4;
+  optional CostUnavailableReason primary_reason = 5;
+  optional string rate_entry_id = 6;
+}
+
+message ModelCallRef {
+  string call_id = 1;
+  CallIdentityBasis identity_basis = 2;
+  ModelCallEvidenceRole evidence_role = 3;
+}
+
+message CostReasonCount {
+  CostUnavailableReason reason = 1;
+  int64 count = 2;
+}
+
+message CostSummary {
+  optional int64 amount_micro_usd = 1;
+  CostSummaryBasis basis = 2;
+  CostCoverage coverage = 3;
+  int64 eligible_calls = 4;
+  int64 priced_calls = 5;
+  repeated CostReasonCount unpriced_reasons = 6;
+  optional CostAggregationError aggregate_error = 7;
+}
+
 message Activity {
   // Stable opaque identity used for idempotent live replacement.
   string id = 29;
@@ -140,6 +225,10 @@ message Activity {
   // means the parent was retained (or the activity is a root); absent means
   // this relationship was not assessed by the endpoint.
   optional bool missing_parent = 31;
+  oneof model_call_relation {
+    ModelCallCost model_call_cost = 32;
+    ModelCallRef model_call_ref = 33;
+  }
 }
 
 // Bounded description of received projected content, never the original
@@ -180,6 +269,7 @@ message SessionSummary {
   int64 agent_count = 10;
   // List-only relationship metadata; omitted by GetSession.
   SessionCatalog catalog = 11;
+  CostSummary cost_summary = 12;
 }
 
 // Roles describe projected telemetry relationships, not who created a session.
@@ -220,6 +310,7 @@ message Dashboard {
   TokenUsage tokens = 5;
   repeated Activity recent_activity = 6;
   repeated PlanUsageSnapshot plan_usage = 7;
+  CostSummary cost_summary = 8;
 }
 
 message PlanUsageSnapshot {
@@ -483,6 +574,7 @@ message GetTraceResponse {
   repeated Activity activities = 9;
   PageInfo page = 10;
   int64 total_activities = 11;
+  CostSummary cost_summary = 12;
 }
 
 message TraceWindow {
@@ -503,7 +595,9 @@ message GetTraceWindowResponse {
   int64 matching_activities = 2;
 }
 
-message GetTraceOverviewRequest { string trace_id = 1; }
+message GetTraceOverviewRequest {
+  string trace_id = 1;
+}
 
 message TraceOverviewActivity {
   string id = 1;
@@ -527,6 +621,7 @@ message GetTraceOverviewResponse {
   int64 returned_activities = 5;
   string coverage = 6;
   repeated TraceOverviewActivity activities = 7;
+  CostSummary cost_summary = 8;
 }
 
 enum ProjectionTargetKind {
@@ -647,6 +742,7 @@ message TraceSummary {
   int64 root_span_count = 7;
   int64 missing_parent_count = 8;
   repeated ConversationRef conversations = 9;
+  CostSummary cost_summary = 10;
 }
 
 message ListTracesResponse {

@@ -114,6 +114,9 @@ LIMIT ? OFFSET ?`
 	if err := rows.Close(); err != nil {
 		return query.Trace{}, fmt.Errorf("close trace activities: %w", err)
 	}
+	if err := store.hydrateModelCallRelations(ctx, transaction, activities); err != nil {
+		return query.Trace{}, err
+	}
 	activities = enrichActivityRelationships(enrichAgentEvidence(activities))
 	usageContributions := selectUsageContributions(activities)
 	for index := range activities {
@@ -132,6 +135,10 @@ LIMIT ? OFFSET ?`
 		ActivityOffset:     offset,
 		ActivityCount:      summary.ActivityCount,
 		HasMore:            int64(offset+len(activities)) < summary.ActivityCount,
+	}
+	trace.CostSummary, err = traceCostSummary(ctx, transaction, traceID)
+	if err != nil {
+		return query.Trace{}, err
 	}
 	if err := transaction.Commit(); err != nil {
 		return query.Trace{}, fmt.Errorf("commit trace snapshot: %w", err)

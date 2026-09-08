@@ -76,6 +76,7 @@ type TraceListEntry struct {
 	RootSpanCount      int64
 	MissingParentCount int64
 	Conversations      []ConversationRef
+	CostSummary        CostSummary
 }
 
 type TracePage struct {
@@ -98,6 +99,7 @@ type Trace struct {
 	ActivityOffset     int               `json:"activityOffset"`
 	ActivityCount      int64             `json:"activityCount"`
 	HasMore            bool              `json:"hasMore"`
+	CostSummary        CostSummary       `json:"costSummary"`
 }
 
 type TraceReader interface {
@@ -126,6 +128,7 @@ type TraceOverview struct {
 	TotalActivities, ReturnedActivities int64
 	Coverage                            string
 	Activities                          []TraceOverviewActivity
+	CostSummary                         CostSummary
 }
 
 type TraceWindow struct {

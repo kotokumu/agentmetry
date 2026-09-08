@@ -585,6 +585,10 @@ table "otlp_exports" {
     default = "identity"
   }
   column "payload_sha256"      { type = text }
+  column "payload_occurrence" {
+    type    = integer
+    default = 0
+  }
   column "payload_size"        { type = integer }
   column "source"              { type = text }
   column "normalizer_version"  { type = integer }
@@ -618,6 +622,10 @@ table "otlp_exports" {
   }
   index "otlp_exports_source_idx" {
     columns = [table.otlp_exports.column.source]
+  }
+  index "otlp_exports_payload_occurrence_uq" {
+    unique = true
+    columns = [table.otlp_exports.column.signal, table.otlp_exports.column.payload_sha256, table.otlp_exports.column.payload_occurrence]
   }
 }
 
@@ -750,5 +758,214 @@ table "plan_usage_snapshots" {
   }
   index "plan_usage_snapshots_captured_at_idx" {
     columns = [table.plan_usage_snapshots.column.captured_at]
+  }
+}
+
+table "model_rates" {
+  schema = schema.main
+  column "rate_id"        { type = text }
+  column "provider"       { type = text }
+  column "model"          { type = text }
+  column "mode"           { type = text }
+  column "max_input_tokens_inclusive" {
+    type = integer
+    null = true
+  }
+  column "effective_from" { type = text }
+  column "effective_to" {
+    type = text
+    null = true
+  }
+  column "input_micro_usd_per_million"       { type = integer }
+  column "cache_read_micro_usd_per_million"  { type = integer }
+  column "cache_write_micro_usd_per_million" { type = integer }
+  column "output_micro_usd_per_million"      { type = integer }
+  column "source_url"   { type = text }
+  column "evidence_id"  { type = text }
+  column "retrieved_at" { type = text }
+  column "applied_at"   { type = text }
+  primary_key { columns = [table.model_rates.column.rate_id] }
+  index "model_rates_natural_key_uq" {
+    unique = true
+    columns = [table.model_rates.column.provider, table.model_rates.column.model, table.model_rates.column.mode, table.model_rates.column.max_input_tokens_inclusive, table.model_rates.column.effective_from]
+  }
+  index "model_rates_lookup_idx" {
+    columns = [table.model_rates.column.provider, table.model_rates.column.model, table.model_rates.column.mode, table.model_rates.column.effective_from]
+  }
+  check "model_rates_identity_nonempty" {
+    expr = "provider <> '' AND model <> '' AND mode <> '' AND source_url <> '' AND evidence_id <> ''"
+  }
+  check "model_rates_values_nonnegative" {
+    expr = "(max_input_tokens_inclusive IS NULL OR max_input_tokens_inclusive >= 0) AND input_micro_usd_per_million >= 0 AND cache_read_micro_usd_per_million >= 0 AND cache_write_micro_usd_per_million >= 0 AND output_micro_usd_per_million >= 0"
+  }
+  check "model_rates_interval_nonempty" {
+    expr = "effective_to IS NULL OR effective_to > effective_from"
+  }
+}
+
+table "model_calls" {
+  schema = schema.main
+  column "call_id"                    { type = text }
+  column "source"                     { type = text }
+  column "identity_basis"             { type = text }
+  column "representative_activity_id" { type = text }
+  column "native_session_id"          { type = text }
+  column "filter_at"                   { type = text }
+  column "occurred_at"                 { type = text }
+  column "model"                       { type = text }
+  column "mode"                        { type = text }
+  column "input_tokens"                { type = integer }
+  column "output_tokens"               { type = integer }
+  column "cache_read_tokens"           { type = integer }
+  column "cache_write_tokens"          { type = integer }
+  column "reasoning_tokens"            { type = integer }
+  column "input_reported"              { type = integer }
+  column "output_reported"             { type = integer }
+  column "cache_read_reported"         { type = integer }
+  column "cache_write_reported"        { type = integer }
+  column "reasoning_reported"          { type = integer }
+  column "projection_sequence"         { type = integer }
+  primary_key { columns = [table.model_calls.column.call_id] }
+  index "model_calls_representative_uq" {
+    unique = true
+    columns = [table.model_calls.column.representative_activity_id]
+  }
+  index "model_calls_session_filter_idx" { columns = [table.model_calls.column.source, table.model_calls.column.native_session_id, table.model_calls.column.filter_at] }
+  check "model_calls_identity_nonempty" {
+    expr = "source <> '' AND identity_basis <> '' AND representative_activity_id <> ''"
+  }
+  check "model_calls_tokens_nonnegative" {
+    expr = "input_tokens >= 0 AND output_tokens >= 0 AND cache_read_tokens >= 0 AND cache_write_tokens >= 0 AND reasoning_tokens >= 0"
+  }
+  check "model_calls_reported_boolean" {
+    expr = "input_reported IN (0, 1) AND output_reported IN (0, 1) AND cache_read_reported IN (0, 1) AND cache_write_reported IN (0, 1) AND reasoning_reported IN (0, 1)"
+  }
+}
+
+table "model_call_evidence" {
+  schema = schema.main
+  column "activity_id"      { type = text }
+  column "source"           { type = text }
+  column "native_session_id" { type = text }
+  column "trace_id"          { type = text }
+  column "locator"           { type = blob }
+  column "filter_at"         { type = text }
+  column "model"             { type = text }
+  column "occurred_at"       { type = text }
+  column "mode"              { type = text }
+  column "input_tokens"      { type = integer }
+  column "output_tokens"     { type = integer }
+  column "cache_read_tokens" { type = integer }
+  column "cache_write_tokens" { type = integer }
+  column "reasoning_tokens"  { type = integer }
+  column "input_reported"    { type = integer }
+  column "output_reported"   { type = integer }
+  column "cache_read_reported" { type = integer }
+  column "cache_write_reported" { type = integer }
+  column "reasoning_reported" { type = integer }
+  column "provider_amount_state" { type = text }
+  column "provider_amount_micro_usd" {
+    type = integer
+    null = true
+  }
+  primary_key { columns = [table.model_call_evidence.column.activity_id] }
+  index "model_call_evidence_source_session_idx" { columns = [table.model_call_evidence.column.source, table.model_call_evidence.column.native_session_id] }
+  check "model_call_evidence_tokens_nonnegative" {
+    expr = "input_tokens >= 0 AND output_tokens >= 0 AND cache_read_tokens >= 0 AND cache_write_tokens >= 0 AND reasoning_tokens >= 0"
+  }
+  check "model_call_evidence_amount_nonnegative" {
+    expr = "provider_amount_micro_usd IS NULL OR provider_amount_micro_usd >= 0"
+  }
+}
+
+table "model_call_evidence_aliases" {
+  schema = schema.main
+  column "activity_id" { type = text }
+  column "alias_basis" { type = text }
+  column "alias_value" { type = text }
+  primary_key { columns = [table.model_call_evidence_aliases.column.activity_id, table.model_call_evidence_aliases.column.alias_basis, table.model_call_evidence_aliases.column.alias_value] }
+  foreign_key "model_call_evidence_alias_activity" {
+    columns = [table.model_call_evidence_aliases.column.activity_id]
+    ref_columns = [table.model_call_evidence.column.activity_id]
+    on_delete = CASCADE
+  }
+  index "model_call_evidence_alias_lookup_idx" { columns = [table.model_call_evidence_aliases.column.alias_basis, table.model_call_evidence_aliases.column.alias_value] }
+}
+
+table "model_call_attributions" {
+  schema = schema.main
+  column "call_id"          { type = text }
+  column "source"           { type = text }
+  column "basis"            { type = text }
+  column "amount_micro_usd" {
+    type = integer
+    null = true
+  }
+  column "primary_reason"   { type = text }
+  column "rate_entry_id" {
+    type = text
+    null = true
+  }
+  column "input_micro_usd"       { type = integer }
+  column "cache_read_micro_usd"  { type = integer }
+  column "cache_write_micro_usd" { type = integer }
+  column "output_micro_usd"      { type = integer }
+  primary_key { columns = [table.model_call_attributions.column.call_id] }
+  foreign_key "model_call_attribution_call" {
+    columns = [table.model_call_attributions.column.call_id]
+    ref_columns = [table.model_calls.column.call_id]
+    on_delete = CASCADE
+  }
+  foreign_key "model_call_attribution_rate" {
+    columns = [table.model_call_attributions.column.rate_entry_id]
+    ref_columns = [table.model_rates.column.rate_id]
+  }
+  check "model_call_attributions_amounts_nonnegative" {
+    expr = "(amount_micro_usd IS NULL OR amount_micro_usd >= 0) AND input_micro_usd >= 0 AND cache_read_micro_usd >= 0 AND cache_write_micro_usd >= 0 AND output_micro_usd >= 0"
+  }
+}
+
+table "model_call_activity_links" {
+  schema = schema.main
+  column "activity_id"   { type = text }
+  column "call_id"       { type = text }
+  column "evidence_role" { type = text }
+  primary_key { columns = [table.model_call_activity_links.column.activity_id] }
+  foreign_key "model_call_activity_call" {
+    columns = [table.model_call_activity_links.column.call_id]
+    ref_columns = [table.model_calls.column.call_id]
+    on_delete = CASCADE
+  }
+  index "model_call_activity_call_idx" { columns = [table.model_call_activity_links.column.call_id] }
+}
+
+table "model_call_trace_memberships" {
+  schema = schema.main
+  column "call_id"  { type = text }
+  column "trace_id" { type = text }
+  primary_key { columns = [table.model_call_trace_memberships.column.call_id, table.model_call_trace_memberships.column.trace_id] }
+  foreign_key "model_call_trace_call" {
+    columns = [table.model_call_trace_memberships.column.call_id]
+    ref_columns = [table.model_calls.column.call_id]
+    on_delete = CASCADE
+  }
+  index "model_call_trace_trace_idx" { columns = [table.model_call_trace_memberships.column.trace_id] }
+}
+
+table "model_call_trace_supports" {
+  schema = schema.main
+  column "call_id"     { type = text }
+  column "trace_id"    { type = text }
+  column "activity_id" { type = text }
+  column "support_kind" { type = text }
+  primary_key { columns = [table.model_call_trace_supports.column.call_id, table.model_call_trace_supports.column.trace_id, table.model_call_trace_supports.column.activity_id, table.model_call_trace_supports.column.support_kind] }
+  foreign_key "model_call_trace_support_call" {
+    columns = [table.model_call_trace_supports.column.call_id]
+    ref_columns = [table.model_calls.column.call_id]
+    on_delete = CASCADE
+  }
+  index "model_call_trace_support_trace_idx" { columns = [table.model_call_trace_supports.column.trace_id] }
+  check "model_call_trace_support_kind" {
+    expr = "support_kind IN ('direct', 'corroborating')"
   }
 }

@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/kotokumu/agentmetry/internal/billing"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/ingest/otel"
 	"github.com/kotokumu/agentmetry/internal/journal"
@@ -142,13 +144,40 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		_ = closeSource()
 		return fail(err)
 	}
-	destination, err := store.Open(candidatePath, profiles)
+	rateHistory, hasRateHistory, err := readRateHistory(ctx, tx)
+	if err != nil {
+		_ = reader.Close()
+		_ = closeSource()
+		return fail(err)
+	}
+	destination, err := store.OpenReplayCandidate(candidatePath, profiles)
 	if err != nil {
 		_ = reader.Close()
 		_ = closeSource()
 		return fail(fmt.Errorf("create Atlas-schema candidate: %w", err))
 	}
+	if hasRateHistory {
+		if err := destination.ReplaceRateHistoryForReplay(ctx, rateHistory); err != nil {
+			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("copy rate history: %w", err))
+		}
+	} else {
+		rates := billing.BuiltinOpenAIRates()
+		evaluatedAt := time.Now().UTC()
+		for _, rate := range rates {
+			if rate.RetrievedAt.After(evaluatedAt) {
+				evaluatedAt = rate.RetrievedAt
+			}
+		}
+		if err := destination.ApplyRateManifest(ctx, rates, evaluatedAt); err != nil {
+			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("seed legacy rate history: %w", err))
+		}
+	}
 	expected := validationExpectation{journals: make([]journalIdentity, 0, reader.Total())}
+	if hasRateHistory {
+		expected.rates = int64(len(rateHistory))
+	} else {
+		expected.rates = int64(len(billing.BuiltinOpenAIRates()))
+	}
 	for reader.Next() {
 		record, err := reader.Export()
 		if err != nil {

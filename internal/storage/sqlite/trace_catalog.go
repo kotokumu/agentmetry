@@ -84,6 +84,10 @@ LIMIT ? OFFSET ?`
 		if err != nil {
 			return query.TracePage{}, err
 		}
+		entry.CostSummary, err = traceCostSummary(ctx, transaction, traceID)
+		if err != nil {
+			return query.TracePage{}, err
+		}
 		entries = append(entries, entry)
 	}
 	if err := rows.Err(); err != nil {

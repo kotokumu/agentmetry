@@ -1,4 +1,5 @@
 import type { ContentEvidence } from "./telemetry";
+import type { CostSummary } from "./cost";
 
 export type TraceCatalogFailure = "observed" | "not_observed" | "not_reported";
 export type TraceCatalogConditions = Readonly<{
@@ -16,6 +17,7 @@ export type TraceCatalogEntry = Readonly<{
   rootSpanCount: number;
   missingParentCount: number;
   conversations: readonly { sourceId: string; id: string }[];
+  costSummary?: CostSummary;
 }>;
 
 export type TraceCatalogPage = Readonly<{

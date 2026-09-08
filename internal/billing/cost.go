@@ -69,6 +69,10 @@ func Calculate(usage canonical.TokenUsage, pricing Pricing) (CostBreakdown, erro
 	if err != nil {
 		return CostBreakdown{}, fmt.Errorf("output: %w", err)
 	}
+	total, err := addCharges(inputCost, cacheReadCost, cacheWriteCost, outputCost)
+	if err != nil {
+		return CostBreakdown{}, err
+	}
 
 	return CostBreakdown{
 		InputTokens:         usage.Input,
@@ -80,8 +84,19 @@ func Calculate(usage canonical.TokenUsage, pricing Pricing) (CostBreakdown, erro
 		CacheReadMicroUSD:   cacheReadCost,
 		CacheWriteMicroUSD:  cacheWriteCost,
 		OutputMicroUSD:      outputCost,
-		TotalMicroUSD:       inputCost + cacheReadCost + cacheWriteCost + outputCost,
+		TotalMicroUSD:       total,
 	}, nil
+}
+
+func addCharges(values ...int64) (int64, error) {
+	var total int64
+	for _, value := range values {
+		if value < 0 || total > math.MaxInt64-value {
+			return 0, fmt.Errorf("component sum overflows int64")
+		}
+		total += value
+	}
+	return total, nil
 }
 
 func validate(usage canonical.TokenUsage, pricing Pricing) error {

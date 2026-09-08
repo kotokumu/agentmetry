@@ -194,15 +194,16 @@ type RunReference struct {
 }
 
 type ComparedRunOutput struct {
-	SourceID       string    `json:"sourceId"`
-	RunID          string    `json:"runId"`
-	StartedAt      time.Time `json:"startedAt"`
-	EndedAt        time.Time `json:"endedAt"`
-	WallDurationMs int64     `json:"wallDurationMs"`
-	ActivityCount  int64     `json:"activityCount"`
-	AgentCount     int64     `json:"agentCount"`
-	TotalTokens    *int64    `json:"totalTokens"`
-	CostUSD        *float64  `json:"costUsd,omitempty"`
+	SourceID       string            `json:"sourceId"`
+	RunID          string            `json:"runId"`
+	StartedAt      time.Time         `json:"startedAt"`
+	EndedAt        time.Time         `json:"endedAt"`
+	WallDurationMs int64             `json:"wallDurationMs"`
+	ActivityCount  int64             `json:"activityCount"`
+	AgentCount     int64             `json:"agentCount"`
+	TotalTokens    *int64            `json:"totalTokens"`
+	CostUSD        *float64          `json:"costUsd,omitempty"`
+	CostSummary    CostSummaryOutput `json:"costSummary"`
 }
 
 type CompareRunsOutput struct {
@@ -312,6 +313,8 @@ type ActivityOutput struct {
 	Status             string                `json:"status,omitempty"`
 	Tokens             TokenUsageOutput      `json:"tokens"`
 	CostUSD            *float64              `json:"costUsd,omitempty"`
+	ModelCallCost      *ModelCallCostOutput  `json:"modelCallCost,omitempty"`
+	ModelCallRef       *ModelCallRefOutput   `json:"modelCallRef,omitempty"`
 	ContributesToTotal bool                  `json:"contributesToTotal"`
 }
 
@@ -335,6 +338,7 @@ type SessionOutput struct {
 	ActivityCount int64                   `json:"activityCount"`
 	Tokens        TokenUsageOutput        `json:"tokens"`
 	CostUSD       *float64                `json:"costUsd,omitempty"`
+	CostSummary   CostSummaryOutput       `json:"costSummary"`
 	Agents        []AgentSessionOutput    `json:"agents"`
 	Activities    []ActivityOutput        `json:"activities"`
 }
@@ -354,6 +358,7 @@ type OverviewDataOutput struct {
 	RecentActivity []ActivityOutput        `json:"recentActivity"`
 	Sessions       []SessionOutput         `json:"sessions"`
 	PlanUsage      []planusage.Snapshot    `json:"planUsage"`
+	CostSummary    CostSummaryOutput       `json:"costSummary"`
 }
 
 type OverviewOutput struct {
@@ -378,6 +383,39 @@ type TraceDataOutput struct {
 	HasMore            bool                    `json:"hasMore"`
 	NextPageToken      string                  `json:"nextPageToken,omitempty"`
 	PreviousPageToken  string                  `json:"previousPageToken,omitempty"`
+	CostSummary        CostSummaryOutput       `json:"costSummary"`
+}
+
+type ModelCallCostOutput struct {
+	CallID         string `json:"callId"`
+	IdentityBasis  string `json:"identityBasis"`
+	Basis          string `json:"basis"`
+	AmountMicroUSD string `json:"amountMicroUsd,omitempty"`
+	AmountUSD      string `json:"amountUsd,omitempty"`
+	PrimaryReason  string `json:"primaryReason,omitempty"`
+	RateEntryID    string `json:"rateEntryId,omitempty"`
+}
+
+type ModelCallRefOutput struct {
+	CallID        string `json:"callId"`
+	IdentityBasis string `json:"identityBasis"`
+	EvidenceRole  string `json:"evidenceRole"`
+}
+
+type CostReasonCountOutput struct {
+	Reason string `json:"reason"`
+	Count  string `json:"count"`
+}
+
+type CostSummaryOutput struct {
+	AmountMicroUSD  string                  `json:"amountMicroUsd,omitempty"`
+	AmountUSD       string                  `json:"amountUsd,omitempty"`
+	Basis           string                  `json:"basis"`
+	Coverage        string                  `json:"coverage"`
+	EligibleCalls   string                  `json:"eligibleCalls"`
+	PricedCalls     string                  `json:"pricedCalls"`
+	UnpricedReasons []CostReasonCountOutput `json:"unpricedReasons"`
+	AggregateError  string                  `json:"aggregateError,omitempty"`
 }
 
 type TraceOutput struct {
@@ -645,7 +683,7 @@ func (service *Service) compareRuns(ctx context.Context, _ *mcp.CallToolRequest,
 			value := *summary.CostUSD
 			cost = &value
 		}
-		output.Runs = append(output.Runs, ComparedRunOutput{SourceID: summary.SourceID, RunID: summary.ID, StartedAt: summary.StartedAt, EndedAt: summary.EndedAt, WallDurationMs: summary.EndedAt.Sub(summary.StartedAt).Milliseconds(), ActivityCount: summary.ActivityCount, AgentCount: summary.AgentCount, TotalTokens: total, CostUSD: cost})
+		output.Runs = append(output.Runs, ComparedRunOutput{SourceID: summary.SourceID, RunID: summary.ID, StartedAt: summary.StartedAt, EndedAt: summary.EndedAt, WallDurationMs: summary.EndedAt.Sub(summary.StartedAt).Milliseconds(), ActivityCount: summary.ActivityCount, AgentCount: summary.AgentCount, TotalTokens: total, CostUSD: cost, CostSummary: mapCostSummaryOutput(summary.CostSummary)})
 		output.Evidence = append(output.Evidence, summaryEvidence(summary)...)
 	}
 	return nil, output, nil
@@ -968,7 +1006,7 @@ func mapSession(session query.Session) SessionOutput {
 	return SessionOutput{
 		ID: session.ID, SourceID: session.SourceID, Sources: session.Sources, TraceIDs: session.TraceIDs,
 		StartedAt: session.StartedAt, EndedAt: session.EndedAt, ActivityCount: session.ActivityCount,
-		Tokens: mapTokens(session.Tokens), CostUSD: session.CostUSD,
+		Tokens: mapTokens(session.Tokens), CostUSD: session.CostUSD, CostSummary: mapCostSummaryOutput(session.CostSummary),
 		Agents: mapAgents(session.Agents), Activities: make([]ActivityOutput, 0),
 	}
 }
@@ -988,7 +1026,7 @@ func mapOverview(overview query.Overview) OverviewDataOutput {
 			Traces: overview.SignalCounts.Traces, Logs: overview.SignalCounts.Logs, Metrics: overview.SignalCounts.Metrics,
 		},
 		RunCount: overview.RunCount, AgentCount: overview.AgentCount, Tokens: mapTokens(overview.Tokens),
-		PlanUsage: overview.PlanUsage,
+		PlanUsage: overview.PlanUsage, CostSummary: mapCostSummaryOutput(overview.CostSummary),
 	}
 	for _, activity := range overview.RecentActivity {
 		output.RecentActivity = append(output.RecentActivity, mapActivity(activity))
@@ -1020,7 +1058,7 @@ func mapTrace(trace query.Trace, includeContent bool) TraceDataOutput {
 		Conversations:  append([]query.ConversationRef{}, trace.Conversations...),
 		Agents:         append([]query.TraceAgent{}, trace.Agents...),
 		Activities:     make([]ActivityOutput, 0, len(trace.Activities)),
-		ActivityOffset: trace.ActivityOffset, ActivityCount: trace.ActivityCount, HasMore: trace.HasMore,
+		ActivityOffset: trace.ActivityOffset, ActivityCount: trace.ActivityCount, HasMore: trace.HasMore, CostSummary: mapCostSummaryOutput(trace.CostSummary),
 	}
 	if trace.HasMore {
 		output.NextPageToken = encodePageToken(trace.ActivityOffset + len(trace.Activities))
@@ -1043,7 +1081,7 @@ func mapActivityWithContent(activity query.Activity, includeContent bool) Activi
 	if !includeContent {
 		evidence.Availability = "not_returned"
 	}
-	return ActivityOutput{
+	result := ActivityOutput{
 		ContentEvidence: evidence,
 		Source:          activity.Source, Signal: string(activity.Signal), TraceID: activity.TraceID, SpanID: activity.SpanID,
 		ParentSpanID: activity.ParentSpanID, Name: activity.Name, Kind: string(activity.Kind),
@@ -1054,6 +1092,37 @@ func mapActivityWithContent(activity query.Activity, includeContent bool) Activi
 		ObservedAt: activity.ObservedAt, Status: activity.Status,
 		Tokens: mapTokens(activity.Tokens), CostUSD: activity.CostUSD, ContributesToTotal: activity.ContributesToTotal,
 	}
+	if activity.ModelCallCost != nil {
+		result.ModelCallCost = mapModelCallCostOutput(*activity.ModelCallCost)
+	} else if activity.ModelCallRef != nil {
+		result.ModelCallRef = &ModelCallRefOutput{CallID: activity.ModelCallRef.CallID, IdentityBasis: activity.ModelCallRef.IdentityBasis, EvidenceRole: activity.ModelCallRef.EvidenceRole}
+	}
+	return result
+}
+
+func mapModelCallCostOutput(value query.ModelCallCost) *ModelCallCostOutput {
+	result := &ModelCallCostOutput{CallID: value.CallID, IdentityBasis: value.IdentityBasis, Basis: value.Basis, PrimaryReason: value.PrimaryReason, RateEntryID: value.RateEntryID}
+	if value.AmountMicroUSD != nil {
+		result.AmountMicroUSD = strconv.FormatInt(*value.AmountMicroUSD, 10)
+		result.AmountUSD = formatMicroUSD(*value.AmountMicroUSD)
+	}
+	return result
+}
+
+func mapCostSummaryOutput(value query.CostSummary) CostSummaryOutput {
+	result := CostSummaryOutput{Basis: value.Basis, Coverage: value.Coverage, EligibleCalls: strconv.FormatInt(value.EligibleCalls, 10), PricedCalls: strconv.FormatInt(value.PricedCalls, 10), AggregateError: value.AggregateError, UnpricedReasons: make([]CostReasonCountOutput, len(value.UnpricedReasons))}
+	if value.AmountMicroUSD != nil {
+		result.AmountMicroUSD = strconv.FormatInt(*value.AmountMicroUSD, 10)
+		result.AmountUSD = formatMicroUSD(*value.AmountMicroUSD)
+	}
+	for index, reason := range value.UnpricedReasons {
+		result.UnpricedReasons[index] = CostReasonCountOutput{Reason: reason.Reason, Count: strconv.FormatInt(reason.Count, 10)}
+	}
+	return result
+}
+
+func formatMicroUSD(value int64) string {
+	return fmt.Sprintf("%d.%06d", value/1_000_000, value%1_000_000)
 }
 
 func content(value string, include bool) string {

@@ -29,6 +29,7 @@ describe("trace investigation API mapping", () => {
         name: "long operation", kind: "tool", status: "error",
         startedAt: "2026-08-11T00:00:00.000Z", endedAt: "2026-08-11T00:20:00.000Z", missingParent: true,
       }],
+	  costSummary: { amountMicroUsd: null, basis: "unknown", coverage: "unknown", eligibleCalls: 0n, pricedCalls: 0n, unpricedReasons: [] },
     });
   });
 

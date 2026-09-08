@@ -3,6 +3,7 @@ import { customElement, property } from "lit/decorators.js";
 import type { Trace } from "../model/telemetry";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
+import { costCoverageHint, formatCostSummary } from "../presentation/cost";
 
 @customElement("am-trace-summary")
 export class TraceSummary extends LocalizedElement {
@@ -35,6 +36,7 @@ export class TraceSummary extends LocalizedElement {
       <span class="fact">${localization.t("trace.rootSpanCount", { count: localization.number(trace.rootSpanCount) })}</span>
       <span class="fact">${localization.t("trace.missingParentCount", { count: localization.number(trace.missingParentCount) })}</span>
       <span class="fact">${localization.t("trace.showingActivities", { shown: localization.number(trace.activities.length), total: localization.number(activityCount) })}</span>
+      <span class="fact">${formatCostSummary(trace.costSummary)} · ${costCoverageHint(trace.costSummary)}</span>
     </div>`;
   }
 }

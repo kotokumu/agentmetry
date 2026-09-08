@@ -2,12 +2,42 @@ package otel
 
 import (
 	"testing"
+	"time"
 
+	"go.opentelemetry.io/collector/pdata/pcommon"
+	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
 	"go.opentelemetry.io/collector/pdata/ptrace"
 
 	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
+
+func TestLogObservationPricingTimePrefersProducerThenOTLPTimestamp(t *testing.T) {
+	logs := plog.NewLogs()
+	records := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords()
+	producer := records.AppendEmpty()
+	producer.SetEventName("gen_ai.response.completed")
+	producer.SetTimestamp(pcommon.NewTimestampFromTime(time.Date(2026, 9, 9, 2, 0, 0, 0, time.UTC)))
+	producer.Attributes().PutStr("event.timestamp", "2026-09-09T01:00:00Z")
+	otlp := records.AppendEmpty()
+	otlp.SetEventName("gen_ai.response.completed")
+	otlp.SetTimestamp(pcommon.NewTimestampFromTime(time.Date(2026, 9, 9, 3, 0, 0, 0, time.UTC)))
+
+	projection, err := NewNormalizer(source.NewRegistry()).NormalizeLogs(logs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations, err := BuildLogObservations(logs, projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := observations[0].OccurredAt; !got.Equal(time.Date(2026, 9, 9, 1, 0, 0, 0, time.UTC)) {
+		t.Fatalf("producer occurred_at = %s", got)
+	}
+	if got := observations[1].OccurredAt; !got.Equal(time.Date(2026, 9, 9, 3, 0, 0, 0, time.UTC)) {
+		t.Fatalf("OTLP occurred_at = %s", got)
+	}
+}
 
 func TestTraceObservationsProjectSemanticMetadataWithoutDuplicatingPayload(t *testing.T) {
 	traces := ptrace.NewTraces()

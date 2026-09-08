@@ -114,6 +114,10 @@ func (store *Store) GetTraceOverview(ctx context.Context, traceID query.TraceID)
 	}
 	result := query.TraceOverview{TraceID: traceID.String(), StartedAt: summary.StartedAt, EndedAt: summary.EndedAt,
 		TotalActivities: summary.ActivityCount, ReturnedActivities: int64(len(activities)), Coverage: query.TraceOverviewCoverageComplete, Activities: activities}
+	result.CostSummary, err = traceCostSummary(ctx, transaction, traceID.String())
+	if err != nil {
+		return query.TraceOverview{}, err
+	}
 	if result.ReturnedActivities < result.TotalActivities {
 		result.Coverage = query.TraceOverviewCoveragePartial
 	}
