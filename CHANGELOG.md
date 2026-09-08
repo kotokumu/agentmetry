@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.16.0](https://github.com/kotokumu/agentmetry/compare/v1.15.0...v1.16.0) (2026-09-08)
+
+
+### Features
+
+* **web:** redesign session investigation and trace navigation ([2c1ec78](https://github.com/kotokumu/agentmetry/commit/2c1ec78c776bf6a0b7c46e46095e74bdd42baa5b))
+* **web:** redesign session investigation and trace navigation ([b2c6546](https://github.com/kotokumu/agentmetry/commit/b2c6546724d0dd6200f41ad2af896314a113a16f))
+
 ## [1.15.0](https://github.com/kotokumu/agentmetry/compare/v1.14.1...v1.15.0) (2026-09-07)
 
 
