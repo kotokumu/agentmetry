@@ -1,7 +1,7 @@
 # Provider OpenTelemetry Data Specifications
 
 - Status: Current
-- Last reviewed: 2026-08-17
+- Last reviewed: 2026-09-09
 
 This directory contains dated data specifications for the OpenTelemetry data
 exported by Claude Code and Codex. It describes provider output only. It does

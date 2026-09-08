@@ -7,7 +7,7 @@
 | Field | Value |
 | --- | --- |
 | Provider | Claude Code |
-| Snapshot date | 2026-08-17 |
+| Snapshot date | 2026-09-09 |
 | Evidence boundary | Official published documentation |
 | Primary source | `CLAUDE-MONITORING` |
 
@@ -17,7 +17,7 @@
 
 | ID | Authority | Requested URL | Final URL | Retrieved | Content-Type | SHA-256 | Pinned commit | Scope |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `CLAUDE-MONITORING` | Anthropic official documentation | [Monitoring Markdown](https://code.claude.com/docs/en/monitoring-usage.md) | `https://code.claude.com/docs/en/monitoring-usage.md` | `2026-08-17T18:06:14+09:00` | `text/markdown` | `37897e0deab05447a92714045067fed5b43e703f9b4d079c6bc6d5fe89b51423` | — | Export configuration, OTLP signals, attributes, metrics, log events, traces, and privacy controls |
+| `CLAUDE-MONITORING` | Anthropic official documentation | [Monitoring Markdown](https://code.claude.com/docs/en/monitoring-usage.md) | `https://code.claude.com/docs/en/monitoring-usage.md` | `2026-09-09T02:30:28+09:00` | `text/markdown` | `03ae53b71fc0d8adb3264e0376942037557201d4a2fe0be1c7a8df2d12c74e98` | — | Export configuration, OTLP signals, attributes, metrics, log events, traces, and privacy controls |
 
 The hash covers the exact bytes retrieved from the final URL.
 
@@ -35,6 +35,13 @@ The shared endpoint is `OTEL_EXPORTER_OTLP_ENDPOINT`. Per-signal endpoint,
 protocol, and header variables override or extend the shared settings. HTTP
 uses `/v1/logs`, `/v1/metrics`, and `/v1/traces` in the documented examples.
 For HTTP protocols, v2.1.212 and later sends `Content-Length`.
+
+Managed settings can pin generic destinations, protocols, and credentials by
+removing conflicting developer-set per-signal values. Detailed beta tracing
+uses `BETA_TRACING_ENDPOINT`; from v2.1.251, managed log or trace destination
+policy also prevents a developer-set beta endpoint from redirecting those
+signals. Desktop and self-hosted launchers apply the same destination pinning
+when they provide an OTLP endpoint from v2.1.251.
 
 Agentmetry optionally reads the allowlisted request metadata
 `x-agentmetry-harness-scope`, `x-agentmetry-harness-fingerprint`, and
@@ -88,6 +95,11 @@ apply to metric data points. Event-only keys never appear on metrics.
 | Log/span attributes | `workspace.host_paths` | string array | — | Desktop selection | Host workspace paths | Event only | Published | `CLAUDE-MONITORING` |
 | Log/span attributes | `workflow.run_id` | string | — | Workflow-owned agent events | `wf_`-prefixed run ID | v2.1.202+ | Published | `CLAUDE-MONITORING` |
 | Log/span attributes | `workflow.name` | string | — | With `workflow.run_id` | Built-in name or `custom`; raw authored name when details enabled | v2.1.202+, `OTEL_LOG_TOOL_DETAILS` | Published | `CLAUDE-MONITORING` |
+
+User-defined `OTEL_RESOURCE_ATTRIBUTES` keys are copied to every event record
+and, by default, every metric data point in addition to the resource block.
+They cannot replace built-in standard attributes. Gateway-provided `user.*`
+and `identity.*` values are applied last.
 
 ---
 
@@ -157,7 +169,7 @@ from the later `tool_result` value.
 | `claude_code.auth` | `action`, `success`, `auth_method`, `error_category`, `status_code` string | Action: `login`, `logout`; success is string boolean; error fields conditional | Authentication action completes | Published | `CLAUDE-MONITORING` |
 | `claude_code.internal_error` | `error_name`, `error_code` string | Message and stack are never included | Unexpected internal error; excluded providers/settings apply | Published | `CLAUDE-MONITORING` |
 | `claude_code.plugin_installed` | Marketplace, trigger, plugin name/version strings | `marketplace.is_official` string boolean; trigger `cli` or `ui`; third-party identity gated | Plugin installation finishes | Published | `CLAUDE-MONITORING` |
-| `claude_code.plugin_loaded` | `plugin.name`, `marketplace.name`, `plugin.version`, `plugin.scope`, `enabled_via`, `plugin_id_hash`; `has_hooks`, `has_mcp`, `host_owned_mcp` boolean; path counts; `safe_mode` string boolean | Scope: `official`, `org`, `user-local`, `default-bundle`; enabled via: `default-enable`, `org-policy`, `seed-mount`, `user-install`; identity/version redaction applies; `host_owned_mcp` v2.1.172+ | Once per enabled plugin at session start | Published | `CLAUDE-MONITORING` |
+| `claude_code.plugin_loaded` | `plugin.name`, `marketplace.name`, `plugin.version`, `plugin.scope`, `enabled_via`, `plugin_id_hash`; `has_hooks`, `has_mcp`, `host_owned_mcp` boolean; path counts; `safe_mode` string boolean | Scope: `official`, `community`, `org`, `user-local`, `default-bundle`; enabled via: `default-enable`, `org-policy`, `admin-install`, `seed-mount`, `user-install`; identity/version redaction applies; `host_owned_mcp` v2.1.172+; `admin-install` and synced-marketplace hashing behavior v2.1.246+ | Once per enabled plugin at session start | Published | `CLAUDE-MONITORING` |
 | `claude_code.skill_activated` | `skill.name`, `invocation_trigger`, `skill.source`, `skill.kind`, `plugin.name`, `marketplace.name` string | Trigger: `user-slash`, `claude-proactive`, `nested-skill`; `skill.kind=workflow` or absent; custom/third-party skill names become `custom_skill` unless details enabled | Skill invocation | Published | `CLAUDE-MONITORING` |
 | `claude_code.hook_registered` | `hook_event`, `hook_type`, `hook_source`, `hook_matcher`, plugin identity; `safe_mode` string boolean | Hook type: `command`, `prompt`, `mcp_tool`, `http`, `agent`; source: `userSettings`, `projectSettings`, `localSettings`, `flagSettings`, `policySettings`, `pluginHook`; matcher gated | Once per configured hook at session start | Published | `CLAUDE-MONITORING` |
 | `claude_code.hook_execution_start` | `hook_event`, `hook_name`, `hook_source`, `hook_definitions`; `num_hooks`; `managed_only`, `safe_mode` string boolean | `hook_source`: `policySettings` or `merged`; `safe_mode` v2.1.169+; definitions require both detailed beta tracing and `OTEL_LOG_TOOL_DETAILS=1` | Matching hook group begins | Published | `CLAUDE-MONITORING` |
@@ -166,7 +178,7 @@ from the later `tool_result` value.
 | `claude_code.compaction` | `trigger`, `success`, `error`, `precompute_reuse`; duration/token values | Trigger: `auto`, `manual`; success is string boolean; manual-only reuse: `hit`, `miss_custom_instructions`, `miss_hook`, `miss_not_ready`; reuse v2.1.153+ | Compaction completes | Published | `CLAUDE-MONITORING` |
 | `claude_code.subagent_completed` | `agent_type`, `agent.source`, `model`, `final_model`, `plugin_id_hash`, `plugin.name`; `is_built_in`, `is_async`, `model_swapped` boolean; `total_tokens`, `total_tool_uses`, `duration_ms` | `total_tokens` is only the final API request footprint, never the run total; final model/swap fields v2.1.212+ | Subagent returns its result | Published | `CLAUDE-MONITORING` |
 | `claude_code.feedback_survey` | `event_type`, `appearance_id`, `survey_type`, `response`; `enabled_via_override` boolean | Event type includes `appeared`, `responded`, `transcript_prompt_appeared`; override is a native boolean | Survey is shown or answered | Published | `CLAUDE-MONITORING` |
-| `claude_code.retention_sweep` | `result`, `used_default`, `skip_reason`; `period_days`, `transcripts_deleted`, `session_files_deleted`, `artifacts_deleted`, `files_retained_fresh`, `files_past_cutoff`, `error_count` | Result: `complete`, `skipped`; skip reason is `user_source_disabled`, `settings_unknowable`, or `settings_invalid_key_set`; deletion/retention counters only on complete | Retention sweep runs; v2.1.227+ | Published | `CLAUDE-MONITORING` |
+| `claude_code.retention_sweep` | `result`, `used_default`, `skip_reason`; `period_days`, `transcripts_deleted`, `transcripts_exempted_desktop`, `session_files_deleted`, `artifacts_deleted`, `files_retained_fresh`, `files_past_cutoff`, `error_count` | Result: `complete`, `skipped`; skip reason is `user_source_disabled`, `settings_unknowable`, or `settings_invalid_key_set`; deletion/retention counters only on complete; desktop exemption counter v2.1.248+ | Retention sweep runs; v2.1.227+ | Published | `CLAUDE-MONITORING` |
 
 ---
 
@@ -191,6 +203,11 @@ definition.
 Every data point can also carry the shared attributes from section 4. Metric
 data-point custom resource keys are controlled by
 `OTEL_METRICS_INCLUDE_RESOURCE_ATTRIBUTES`.
+
+When Prometheus is the only selected metrics exporter, Claude Code omits the
+`USD`, `tokens`, and `s` unit strings without changing metric names. Combined
+exporters retain the units. Before v2.1.216, Prometheus output included
+OpenMetrics-only `# UNIT` lines.
 
 ---
 
@@ -232,6 +249,10 @@ receive it. Inbound context can still attach `trace_id` and `span_id` to event
 log records when the trace exporter is disabled. Event-context behavior differs
 before v2.1.212 and v2.1.214 as documented by the source.
 
+When a `PreToolUse` hook defers a tool call, Claude Code preserves the
+originating turn's trace context. A resumed execution joins the earlier
+interaction span rather than the interaction that resumes the session.
+
 ### 7-2. Span attribute inventory
 
 | Span or event | Exact additional attribute keys | Gate/condition | Evidence | Source |
@@ -256,7 +277,7 @@ before v2.1.212 and v2.1.214 as documented by the source.
 | `OTEL_LOG_TOOL_DETAILS` | Tool parameters/input, names, errors, workflow names | Omitted or generalized | Includes documented details | — | Published | `CLAUDE-MONITORING` |
 | `OTEL_LOG_TOOL_CONTENT` | `tool.output` span event | Omitted | Includes tool input/output bodies | — | Published | `CLAUDE-MONITORING` |
 | `OTEL_LOG_RAW_API_BODIES` | Request/response body log events | No events | Inline truncated body or file reference | — | Published | `CLAUDE-MONITORING` |
-| `CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH` | Content-bearing attributes | 61,440 UTF-16 code units | Configures truncation ceiling | v2.1.214+ | Published | `CLAUDE-MONITORING` |
+| `CLAUDE_CODE_OTEL_CONTENT_MAX_LENGTH` | Content-bearing attributes | 61,440 UTF-16 code units | Configures the truncation ceiling including the marker; a lower applicable OTel SDK attribute limit takes precedence | v2.1.214+ | Published | `CLAUDE-MONITORING` |
 
 ---
 

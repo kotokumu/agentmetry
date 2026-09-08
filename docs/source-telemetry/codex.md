@@ -7,7 +7,7 @@
 | Field | Value |
 | --- | --- |
 | Provider | Codex |
-| Snapshot date | 2026-08-17 |
+| Snapshot date | 2026-09-09 |
 | Evidence boundary | Official documentation plus pinned first-party implementation |
 | Primary source | `CODEX-ADVANCED` |
 
@@ -20,16 +20,18 @@ because OpenAI does not publish a complete stable event and span schema.
 
 | ID | Authority | Requested URL | Final URL | Retrieved | Content-Type | SHA-256 | Pinned commit | Scope |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `CODEX-ADVANCED` | Official OpenAI documentation | [Advanced configuration](https://developers.openai.com/codex/config-advanced/#observability-and-telemetry) | `https://learn.chatgpt.com/docs/config-file/config-advanced` | `2026-08-17T18:06:14+09:00` | `text/html` | `aca543c6c62798507e5f11f7bfd8248f88812e958c25e8ec56d98b8099d499b5` | — | OTel configuration, representative events, and published metric catalog |
-| `CODEX-CONFIG` | Official OpenAI documentation | [Configuration reference](https://developers.openai.com/codex/config-reference/) | `https://learn.chatgpt.com/docs/config-file/config-reference` | `2026-08-17T18:06:14+09:00` | `text/html` | `cc3593215e1d2ad8f95589c3d2819b0063de2d114a515f86ec9148ae2b312692` | — | Exporter keys and accepted values |
-| `CODEX-EVENTS-IMPL` | OpenAI first-party implementation | [Pinned session telemetry](https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/events/session_telemetry.rs) | `https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/events/session_telemetry.rs` | `2026-08-17T18:06:14+09:00` | `text/plain` | `b71995c35cfb42978b8100091af064a8d311cc74a3476ada13dfa68921703d53` | `c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc` | Central session log and trace events and their field types |
-| `CODEX-EVENT-MACROS-IMPL` | OpenAI first-party implementation | [Pinned event macros](https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/events/shared.rs) | `https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/events/shared.rs` | `2026-08-17T18:06:14+09:00` | `text/plain` | `51f87632e384a0a4c728ffa533ecd5c4afe8615ee3bdd5edeb2e55fadd73ac91` | `c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc` | Signal-specific shared attributes |
-| `CODEX-PROVIDER-IMPL` | OpenAI first-party implementation | [Pinned OTel provider](https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/provider.rs) | `https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/provider.rs` | `2026-08-17T18:06:14+09:00` | `text/plain` | `8d68b8335937156509a8ae3f84e8d8e754677b900b2db973467bdba2c44c7c51` | `c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc` | Resources, exporters, filters, and span attributes |
-| `CODEX-METRICS-IMPL` | OpenAI first-party implementation | [Pinned metric client](https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/metrics/client.rs) | `https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/metrics/client.rs` | `2026-08-17T18:06:14+09:00` | `text/plain` | `b381b27bd09ca44fcc549ce742d638c0bc45b6e71b1ae1473d7ebd3fbb740cee` | `c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc` | Instrument types, meter, units, boundaries, and data-point types |
-| `CODEX-METRIC-NAMES-IMPL` | OpenAI first-party implementation | [Pinned metric names](https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/metrics/names.rs) | `https://raw.githubusercontent.com/openai/codex/c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc/codex-rs/otel/src/metrics/names.rs` | `2026-08-17T18:06:14+09:00` | `text/plain` | `f5a979d97486476392fa5d2cd8dc26f12aefcd18f69b5271593a147ab15e8902` | `c6058ccaa91ab17159cf805bf4d6d4edd87fe5fc` | Central metric-name constants |
+| `CODEX-ADVANCED` | Official OpenAI documentation | [Advanced configuration Markdown](https://developers.openai.com/codex/config-advanced.md) | `https://learn.chatgpt.com/docs/config-file/config-advanced.md` | `2026-09-09T02:30:28+09:00` | `text/markdown` | `6b2e6132e2eb0506231005c1d55f46fdd462e0d876de363ed3213b621756a751` | — | OTel configuration, representative events, and published metric catalog |
+| `CODEX-CONFIG` | Official OpenAI documentation | [Configuration reference Markdown](https://developers.openai.com/codex/config-reference.md) | `https://learn.chatgpt.com/docs/config-file/config-reference.md` | `2026-09-09T02:30:28+09:00` | `text/markdown` | `0576a4f234a1ac1e4b046b689076c1242e5b4585b0f316bc7219e42159a172e7` | — | Exporter keys and accepted values |
+| `CODEX-EVENTS-IMPL` | OpenAI first-party implementation | [Pinned session telemetry](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/events/session_telemetry.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/events/session_telemetry.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `e4f48558a2853efe0441fc464b41f7a7dd6545ab0ad6e4bce72cdbf48bdd3f76` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Central session log and trace events and their field types |
+| `CODEX-EVENT-MACROS-IMPL` | OpenAI first-party implementation | [Pinned event macros](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/events/shared.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/events/shared.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `a1faa6568bccf8ffe0db78518758744af54e7a94ea2b324a66cd31349fd0eda6` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Signal-specific shared attributes and tool namespace normalization |
+| `CODEX-PROVIDER-IMPL` | OpenAI first-party implementation | [Pinned OTel provider](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/provider.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/provider.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `b892d1f53eda11b06dd311fb479426318ba29d1f783f0665b85dca80f179f9b2` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Resources, exporters, filters, and span attributes |
+| `CODEX-METRICS-IMPL` | OpenAI first-party implementation | [Pinned metric client](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/metrics/client.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/metrics/client.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `349aa9f5db2f276c7db09d0e96bbd235ba87d2c61bba588411ab7b68b91b33fd` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Instrument types, meter, units, boundaries, and data-point types |
+| `CODEX-METRIC-NAMES-IMPL` | OpenAI first-party implementation | [Pinned metric names](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/metrics/names.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/metrics/names.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `eec8dc800383e3b2b4947b8d00607fe4b17d098dbdb18d6d582d4717829509c4` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Central metric-name constants |
+| `CODEX-TOOL-RESULT-IMPL` | OpenAI first-party implementation | [Pinned tool-result telemetry](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/tool_result.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/otel/src/tool_result.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `27b0a55a3c4536c4fb13a7f30a78023ab53e5a5626a84ef6c6ae5512ae2f07e3` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Tool-result log and trace-event fields, sequencing, and output truncation |
+| `CODEX-CONFIG-TYPES-IMPL` | OpenAI first-party implementation | [Pinned configuration types](https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/protocol/src/config_types.rs) | `https://raw.githubusercontent.com/openai/codex/ce254df05a3162a93d8f3357ff4dd86582c534b7/codex-rs/protocol/src/config_types.rs` | `2026-09-09T02:30:28+09:00` | `text/plain` | `96b4050a2498275ba5a11da0021bc75d5fb2fd2c50802f0930629aa7716a282a` | `ce254df05a3162a93d8f3357ff4dd86582c534b7` | Tool-result log limit and default |
 
 The two documentation URLs currently redirect to `learn.chatgpt.com`. Their
-hashes cover the retrieved canonical HTML. Implementation hashes cover the
+hashes cover the retrieved canonical Markdown. Implementation hashes cover the
 exact raw bytes at the pinned commit.
 
 ---
@@ -138,9 +140,10 @@ integer` mean formatting converts the value to an OTLP string.
 | `codex.auth_recovery` | `auth.mode`, `.step`, `.outcome`, request/CF/error/reason strings; `auth.state_changed` boolean | Optional values omitted | Authentication recovery step recorded | Implemented | `CODEX-EVENTS-IMPL` |
 | `codex.sse_event` | `event.kind`, `duration_ms`, `error.message`; completed-response token fields, `ttft_ms`, `service_tier`, `model_reasoning_effort` | Kind/error/usage fields depend on stream outcome | SSE message processed or failed | Implemented | `CODEX-ADVANCED`, `CODEX-EVENTS-IMPL` |
 | `codex.user_prompt` | `prompt_length` string integer; `prompt` string | Prompt is `[REDACTED]` unless enabled | User prompt recorded | Implemented | `CODEX-ADVANCED`, `CODEX-EVENTS-IMPL` |
-| `codex.tool_decision` | `tool_name`, `call_id`, `decision`, `source` string | Source conditional | Tool approval decision recorded | Implemented | `CODEX-ADVANCED`, `CODEX-EVENTS-IMPL` |
+| `codex.tool_decision` | `tool_name`, `tool_namespace`, `call_id`, `decision`, `source` string | Namespace defaults to `functions`; source conditional | Tool approval decision recorded | Implemented | `CODEX-ADVANCED`, `CODEX-EVENTS-IMPL`, `CODEX-EVENT-MACROS-IMPL` |
 | `codex.sandbox_outcome` | `tool_name`, `call_id`, `outcome` string; initial/escalated duration integer | Escalated duration conditional | Sandbox execution outcome recorded | Implemented | `CODEX-EVENTS-IMPL` |
-| `codex.tool_result` | `tool_name`, `call_id`, `arguments`, `duration_ms`, `success`, `output`, `mcp_server`, `mcp_server_origin` string | `call_id`/arguments can be absent on immediate failure | Tool execution finishes or fails before execution | Implemented | `CODEX-ADVANCED`, `CODEX-EVENTS-IMPL` |
+| `codex.tool_result` | `tool_result_seq` integer; `tool_name`, `tool_namespace`, `call_id`, `duration_ms`, `success`, `agent_name`, `arguments`, `output`, `mcp_server`, `mcp_server_origin` string; `output_truncated` boolean | Namespace defaults to `functions`; sequence orders process-wide completions; agent name is the canonical agent path when available; output is a bounded preview | Tool execution finishes | Implemented | `CODEX-ADVANCED`, `CODEX-EVENTS-IMPL`, `CODEX-TOOL-RESULT-IMPL`, `CODEX-CONFIG-TYPES-IMPL` |
+| `codex.turn_cost` | `turn.id`, `usage.estimated_usd` string; `turn.interrupted` boolean; `speed`, `reasoning_effort` string | Speed and reasoning effort conditional | Estimated turn cost recorded; log emission does not depend on successful numeric conversion | Implemented | `CODEX-EVENTS-IMPL` |
 
 For `codex.sse_event` with `event.kind=response.completed`, the pinned field
 types are:
@@ -174,7 +177,7 @@ sources do not establish a log-record field set for it.
 | Unit | Unset | Unset | `ms` or `s` | — | Implemented | `CODEX-METRICS-IMPL` |
 | Value | Non-negative integer increment | Integer converted to float | Floating duration | — | Implemented | `CODEX-METRICS-IMPL` |
 | Temporality | Delta | Delta | Delta | OTLP export | Implemented | `CODEX-METRICS-IMPL` |
-| Histogram boundaries | — | SDK default | Fixed provider boundaries | — | Implemented | `CODEX-METRICS-IMPL` |
+| Histogram boundaries | — | SDK default or caller-supplied explicit boundaries | Fixed provider boundaries | — | Implemented | `CODEX-METRICS-IMPL` |
 
 The same client also implements `Gauge<i64>` and `ObservableGauge<i64>`, which
 serialize as OTLP Gauge data. Temporality does not apply to gauges.
@@ -224,6 +227,7 @@ is not a stable OTLP compatibility contract.
 | `codex.turn.memory` | Counter | unset | `read_allowed`, `feature_enabled`, `config_use_memories`, `has_citations` | Per-turn memory state | Published | `CODEX-ADVANCED` |
 | `codex.turn.tool.call` | Histogram | unset | `tmp_mem_enabled` | Tool calls in a turn | Implemented | `CODEX-ADVANCED`, `CODEX-METRIC-NAMES-IMPL` |
 | `codex.turn.token_usage` | Histogram | unset | `token_type`, `tmp_mem_enabled` | Token usage; type is `total`, `input`, `cached_input`, `output`, or `reasoning_output` | Implemented | `CODEX-ADVANCED`, `CODEX-METRIC-NAMES-IMPL` |
+| `codex.turn.cost_microusd` | Counter | unset | `turn.id`, `conversation.id`, `turn.interrupted`; optional `speed`, `reasoning_effort` | Estimated turn cost rounded to millionths of a US dollar | Implemented | `CODEX-EVENTS-IMPL`, `CODEX-METRIC-NAMES-IMPL` |
 | `codex.tool.call`, `codex.tool.call.duration_ms` | Counter, histogram | unset, `ms` | `tool`, `success` | Tool volume and duration | Implemented | `CODEX-ADVANCED`, `CODEX-METRICS-IMPL` |
 | `codex.tool.unified_exec` | Counter | unset | `tty` | Unified exec calls | Implemented | `CODEX-ADVANCED`, `CODEX-METRIC-NAMES-IMPL` |
 | `codex.approval.requested` | Counter | unset | `tool`, `approved` | Approval outcome | Published | `CODEX-ADVANCED` |
@@ -246,7 +250,7 @@ is not a stable OTLP compatibility contract.
 The pinned central name file additionally defines metrics not present in the
 retrieved published catalog, including `codex.process.start`,
 `codex.artifact.operation.*`, `codex.guardian.review*`, `codex.goal.*`,
-`codex.startup.phase.duration_ms`,
+`codex.startup.phase.duration_ms`, `exec_server_client_requests_total`,
 `codex.plugins.install_elicitation.sent`, and
 `codex.plugins.install_suggestion`. Their names are implementation evidence;
 their complete dimensions are not promoted to a published contract here.
@@ -267,6 +271,10 @@ span-name or parent/child catalog.
 | `Span.attributes` | Configured span attributes | string map | Every span when configured | Values added by the span processor at span start | — | Implemented | `CODEX-PROVIDER-IMPL` |
 | `Span.events.attributes` | `event.name` and trace-safe fields | Attributes | Central events emitted to active spans | Uses the trace event field set below | — | Implemented | `CODEX-EVENTS-IMPL`, `CODEX-EVENT-MACROS-IMPL` |
 
+The trace-export filter excludes spans whose target is `h2` or starts with
+`h2::`. This prevents the OTLP transport's own HTTP/2 spans from recursively
+creating further exports (`CODEX-PROVIDER-IMPL`).
+
 ### 7-2. Trace-safe event fields
 
 | `event.name` | Trace event fields that differ from logs | Gate/condition | Evidence | Source |
@@ -275,7 +283,7 @@ span-name or parent/child catalog.
 | `codex.sse_event` | Includes failure/completed fields; normal success events are log-only | — | Implemented | `CODEX-EVENTS-IMPL` |
 | `codex.user_prompt` | Omits prompt; adds integer `text_input_count`, `image_input_count`, `local_image_input_count`; prompt length remains string integer | — | Implemented | `CODEX-EVENTS-IMPL` |
 | `codex.tool_decision` | No trace event in the pinned central callsite | — | Implemented | `CODEX-EVENTS-IMPL` |
-| `codex.tool_result` | Omits arguments/output; adds integer lengths/line count, string `tool_origin`, boolean `mcp_tool`, and error on immediate failure | — | Implemented | `CODEX-EVENTS-IMPL` |
+| `codex.tool_result` | Shares `tool_result_seq`, tool name/namespace, call ID, duration, success, and truncation state with the log; omits agent name, arguments, output, and MCP server identity; adds integer lengths/line count, string `tool_origin`, and boolean `mcp_tool` | — | Implemented | `CODEX-TOOL-RESULT-IMPL` |
 | Other `log_and_trace_event` records | Common fields plus the same event-specific fields | — | Implemented | `CODEX-EVENTS-IMPL` |
 
 The active response-handling span receives these attributes when the matching
@@ -283,7 +291,7 @@ response item is observed:
 
 | `Span.attributes` field | OTLP type | Gate/condition | Value/unit/meaning | Evidence | Source |
 | --- | --- | --- | --- | --- | --- |
-| `otel.name` | string | Every response event | Response event type | Implemented | `CODEX-EVENTS-IMPL` |
+| `otel.name` | string | Every response event | Response event type; configuration-update response items use `configuration_update` | Implemented | `CODEX-EVENTS-IMPL` |
 | `from` | string | Output item added/done | `output_item_added` or `output_item_done` | Implemented | `CODEX-EVENTS-IMPL` |
 | `tool_name` | string | Function-call output item | Function name | Implemented | `CODEX-EVENTS-IMPL` |
 | `gen_ai.usage.input_tokens` | integer | Completed response with usage | Input tokens | Implemented | `CODEX-EVENTS-IMPL` |
@@ -301,7 +309,7 @@ response item is observed:
 | --- | --- | --- | --- | --- | --- | --- |
 | `otel.log_user_prompt` | Log `codex.user_prompt.prompt` | `false` | Uses `[REDACTED]` unless enabled | `otel.log_user_prompt` | Implemented | `CODEX-ADVANCED`, `CODEX-CONFIG`, `CODEX-EVENTS-IMPL` |
 | Signal-specific event macros | Log versus trace event attributes | Always active | Account identity, prompt body, and tool arguments/output stay out of trace-safe fields; failure `error.message` fields can still contain error text | Always active | Implemented | `CODEX-EVENT-MACROS-IMPL`, `CODEX-EVENTS-IMPL` |
-| Tool result log record | `arguments`, `output` | Included by pinned implementation | Can contain sensitive tool input and output even when prompt logging is disabled | Pinned implementation | Implemented | `CODEX-EVENTS-IMPL` |
+| Tool result log record | `arguments`, `output` | Included by pinned implementation | Can contain sensitive tool input and output even when prompt logging is disabled; output is limited to 2,048 UTF-8 bytes by default and receives a truncation notice when shortened | Pinned implementation | Implemented | `CODEX-TOOL-RESULT-IMPL`, `CODEX-CONFIG-TYPES-IMPL` |
 
 ---
 
