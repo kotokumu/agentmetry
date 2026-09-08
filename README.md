@@ -221,6 +221,19 @@ the Apple certificate into an ephemeral keychain, signs and notarizes the app
 and DMG, validates them with Gatekeeper, and publishes the GitHub Release only
 after every platform succeeds.
 
+## Preview update settings locally
+
+Run the browser-only update preview from the repository root:
+
+```sh
+npm --prefix web run dev:updates
+```
+
+Open <http://127.0.0.1:17892/dev/update-preview.html>. The page renders the
+production Connections & settings component with a simulated updater. Its
+status controls do not contact a server and never download or install an
+update.
+
 ## Contributing
 
 Bug reports, source-format updates, and focused pull requests are welcome. See
