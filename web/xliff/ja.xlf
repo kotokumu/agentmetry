@@ -15,8 +15,12 @@
   <target>通常は観測した親子関係のルートにまとめます。親の情報が届いていない場合もルートと表示され、人が作成したことを保証しません。Claudeで同じセッションIDを共有するエージェントは一つのセッションに含まれます。</target>
 </trans-unit>
 <trans-unit id="sessions.nameLimit">
-  <source>Claude Code generated names are shown when available in received telemetry; otherwise native session IDs are shown. Names are not guaranteed to match the current app display, including after manual renaming. Codex names are not supported yet.</source>
-  <target>受信したテレメトリーにClaude Codeの自動生成名があれば表示し、なければ元のセッションIDを表示します。手動変更後を含め、現在のアプリ画面の名前との一致は保証しません。Codexの名前表示は未対応です。</target>
+  <source>Received telemetry may contain Claude Code generated names or Codex names observed in app session-list results. Only supported, unambiguous names are shown; otherwise native session IDs are shown. Not all Codex names are available. Names are not guaranteed to match the current app display, including after manual renaming.</source>
+  <target>受信したテレメトリーにClaude Codeの自動生成名やCodexアプリのセッション一覧取得結果で観測した名前があれば、対応形式で競合がない場合に表示します。それ以外は元のセッションIDを表示します。Codexの名前は全件取得できるわけではありません。手動変更後を含め、現在のアプリ画面の名前との一致は保証しません。</target>
+</trans-unit>
+<trans-unit id="sessions.observedName">
+  <source>Observed name</source>
+  <target>観測名</target>
 </trans-unit>
 <trans-unit id="sessions.generatedName">
   <source>Generated name</source>

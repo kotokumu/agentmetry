@@ -37,13 +37,18 @@ describe("session catalog controls", () => {
     expect(list.shadowRoot!.textContent).toContain("手動変更後");
     await localization.select("en");
   });
-  it.each(["en", "ja"])("shows the generated text safely with its identity, origin and observed time (%s)", async (locale) => {
+  it.each([
+    { locale: "en", sourceId: "claude", origin: "claude_code.generate_session_title" as const, badge: "Generated name" },
+    { locale: "ja", sourceId: "claude", origin: "claude_code.generate_session_title" as const, badge: "自動生成名" },
+    { locale: "en", sourceId: "codex", origin: "codex_app.list_threads" as const, badge: "Observed name" },
+    { locale: "ja", sourceId: "codex", origin: "codex_app.list_threads" as const, badge: "観測名" },
+  ])("shows the text safely with its identity, origin and observed time ($sourceId $locale)", async ({ locale, sourceId, origin, badge }) => {
     await localization.select(locale);
     const list = document.createElement("am-session-list");
     const text = '<img src=x onerror="alert(1)">';
-    list.sessions = [{ id: "native/id", sourceId: "claude", sources: [], traceIds: [], startedAt: "", endedAt: "", activityCount: 1, agents: [], activities: [], tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null }, catalog: { role: "root", rootSessionId: "native/id", parentSessionId: "", name: { text, origin: "claude_code.generate_session_title", observedAt: "2026-09-01T12:00:00.000Z" } } }];
+    list.sessions = [{ id: "native/id", sourceId, sources: [], traceIds: [], startedAt: "", endedAt: "", activityCount: 1, agents: [], activities: [], tokens: { input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total: null }, catalog: { role: "root", rootSessionId: "native/id", parentSessionId: "", name: { text, origin, observedAt: "2026-09-01T12:00:00.000Z" } } }];
     list.selected = "native/id";
-    list.selectedSource = "claude";
+    list.selectedSource = sourceId;
     const selected = vi.fn();
     list.addEventListener("session-selected", selected);
     document.body.append(list); await list.updateComplete;
@@ -51,18 +56,18 @@ describe("session catalog controls", () => {
     expect(root.querySelector("strong")!.textContent).toBe(text);
     expect(root.querySelector("img")).toBeNull();
     expect(root.querySelector(".native-id")!.textContent).toBe("native/id");
-    expect(root.querySelector(".name-origin")!.textContent).toBe(locale === "ja" ? "自動生成名" : "Generated name");
+    expect(root.querySelector(".name-origin")!.textContent).toBe(badge);
     expect(root.querySelector("time")!.getAttribute("datetime")).toBe("2026-09-01T12:00:00.000Z");
     const link = root.querySelector("a")!;
-    expect(link.getAttribute("href")).toBe("/conversations/claude/native%2Fid");
+    expect(link.getAttribute("href")).toBe(`/conversations/${sourceId}/native%2Fid`);
     expect(link.getAttribute("aria-current")).toBe("page");
     link.click();
-    expect(selected.mock.calls[0][0].detail).toEqual({ sourceId: "claude", sessionId: "native/id" });
-    list.sessions = [{ ...list.sessions[0], catalog: { ...list.sessions[0].catalog!, name: { text: "Next generated name", origin: "claude_code.generate_session_title" } } }];
+    expect(selected.mock.calls[0][0].detail).toEqual({ sourceId, sessionId: "native/id" });
+    list.sessions = [{ ...list.sessions[0], catalog: { ...list.sessions[0].catalog!, name: { text: "Next observed name", origin } } }];
     await list.updateComplete;
     expect(root.querySelector("time")).toBeNull();
     expect(root.querySelector("a")!.getAttribute("aria-current")).toBe("page");
-    expect(root.querySelector("strong")!.textContent).toBe("Next generated name");
+    expect(root.querySelector("strong")!.textContent).toBe("Next observed name");
     await localization.select("en");
   });
 });

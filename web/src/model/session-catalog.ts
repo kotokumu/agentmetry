@@ -4,7 +4,7 @@ import type { Session, TimeRange } from "./telemetry";
 export type SessionListView = "roots" | "all";
 export type SessionName = Readonly<{
   text: string;
-  origin: "claude_code.generate_session_title";
+  origin: "claude_code.generate_session_title" | "codex_app.list_threads";
   observedAt?: string;
 }>;
 export type SessionCatalog = Readonly<{

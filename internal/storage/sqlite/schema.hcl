@@ -428,6 +428,10 @@ table "logs" {
   index "logs_observed_at_idx" {
     columns = [table.logs.column.observed_at]
   }
+  index "logs_codex_session_names_idx" {
+    columns = [table.logs.column.id]
+    where   = "source = 'codex' AND tool_name = 'list_threads'"
+  }
   index "logs_source_run_observed_at_idx" {
     columns = [table.logs.column.source, table.logs.column.run_id, table.logs.column.observed_at]
   }

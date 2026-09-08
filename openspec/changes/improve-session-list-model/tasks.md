@@ -33,7 +33,7 @@
 
 ---
 
-## 5. Claude Generated Names — Draft PR
+## 5. Claude Generated Names
 
 - [x] 5.1 `[change]` packet v4・モデル・仕様・設計を整合させ、独立シナリオと構築前レビューのP0/P1を解消する。
 - [x] 5.2 `[[session-catalog/telemetry-only-session-labels]]` 匿名化した実観測形状でClaude生成名抽出をTDD実装し、通常応答・無効JSON・redaction・ID矛盾・時刻不明を検証する。
@@ -43,7 +43,7 @@
 - [x] 5.6 `[change]` Go tests、対象race、Web tests/build、buf lint/breaking、OpenSpec strict、diff check、独立実装レビューを実施し記録する。
 - [x] 5.7 `[change]` 対象変更をcommitし、残課題を明記したdraft PRを作成する。マージ・archive・release tag作成は行わない。
 
-提出記録: [Draft PR #59](https://github.com/kotokumu/agentmetry/pull/59)。Claude生成名の実装・検証を提出済み。6.1とCodex/手動改名の未解決事項はPR本文にも明記した。
+完了記録: [PR #59](https://github.com/kotokumu/agentmetry/pull/59)はユーザーの追加指示に従いmainへマージ済み。merge commitはbd43698cbdcbfb0da70dfb1b4a8b6a11c40d7434。6.1とCodex/手動改名の未解決事項は維持する。
 
 ---
 
@@ -52,3 +52,19 @@
 - [ ] 6.1 `[[session-catalog/telemetry-only-session-labels]]` 同一Claude会話の実画面表示を正とするfixtureで一致を証明する。生成応答の構造テストでは完了にしない（proposal SC-7）。
 
 Codex全セッション名取得と手動改名追跡はmodel D-3/D-4の未解決要望である。実装方針を未確定のままタスク化しない。5章完了でも名前表示要望全体は未完了である。
+
+---
+
+## 7. Codex Observed Names
+
+- [x] 7.1 `[change]` packet v5のモデル・仕様・設計・タスクを整合させ、独立シナリオと設計レビューを通す。部分index追加とrollbackを含む構築前の人の承認を記録する。
+- [x] 7.2 `[[session-catalog/telemetry-only-session-labels]]` optional複数観測契約と単数fallbackをTDD実装し、所有source・複数対象・旧plugin・入力不変を検証する。
+- [x] 7.3 `[[session-catalog/telemetry-only-session-labels]]` Codex一覧結果の匿名化形状から完結項目をTDD抽出し、既知の末尾省略・不完全項目・構文不正・偽namespace・失敗・混在kind・重複キー・時刻を検証する。
+- [x] 7.4 `[[session-catalog/telemetry-only-session-labels]]` 部分indexと候補取得を実装する。一時DBで既存データからのschema収束・再open・失敗時rollbackを検証する。旧版への戻しは低位Openの拒否と実起動経路の再投影判定を区別して確認し、query planと構築/読取時間を記録する。
+- [x] 7.5 `[[session-catalog/telemetry-only-session-labels]]` 別会話の結果内の名前を対象へ対応付ける。normalize→store→reopen→ROOTS/ALLでsource同ID、ページ外/期間外の実行元、親子、活動なし、競合/重複/逆順、集計不変を検証する。
+- [x] 7.6 `[[session-catalog/session-list-presentation]]` API/WebでCodex観測名を受理し、日英の由来表示・元ID・時刻・HTML安全・旧peer/未知origin/source不一致・最新UIの選択/URLを検証する。
+- [x] 7.7 `[change]` Go全体/統合/race、Web tests/build、buf lint/breaking、OpenSpec strict、diff checkと独立実装レビューを通す。非telemetry入力と利用者DB更新がないことをauditする。
+
+- [ ] 7.8 `[change]` Conventional CommitとPRを作成し、対象checks成功後にmainへマージする。release tagは作らない。
+
+7章は承認済みのCodex観測名の範囲であり、D-3の全件保証を実装済みとは扱わない。2026-09-09のユーザー指示によりPR作成・マージまで含む。D-3〜D-5を維持しarchiveしない。

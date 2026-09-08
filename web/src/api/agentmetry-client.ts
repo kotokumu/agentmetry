@@ -400,7 +400,9 @@ function mapSessionCatalog(value: SessionSummary, view: UiSessionListView): Sess
 
 function mapSessionName(value: SessionSummary): SessionName | undefined {
   const name = value.catalog?.name;
-  if (value.sourceId !== "claude" || name?.origin !== "claude_code.generate_session_title" || !name.text.trim()) return undefined;
+  if (!name || !name.text.trim()) return undefined;
+  if (!((value.sourceId === "claude" && name.origin === "claude_code.generate_session_title")
+    || (value.sourceId === "codex" && name.origin === "codex_app.list_threads"))) return undefined;
   const time = name.observedAt;
   if (time && (time.seconds < -62135596800n || time.seconds > 253402300799n
     || !Number.isInteger(time.nanos) || time.nanos < 0 || time.nanos > 999999999)) return undefined;
