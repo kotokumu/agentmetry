@@ -1,5 +1,6 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { getVersion as tauriGetVersion } from "@tauri-apps/api/app";
 
 export type UpdatePhase =
   | "checking"
@@ -27,6 +28,7 @@ export type AppUpdateEvent = Readonly<{
 
 export interface DesktopUpdater {
   readonly supported: boolean;
+  getVersion(): Promise<string>;
   check(): Promise<UpdateCheckResult>;
   install(): Promise<UpdateCheckResult>;
   subscribe(listener: (event: AppUpdateEvent) => void): Promise<() => void>;
@@ -34,6 +36,10 @@ export interface DesktopUpdater {
 
 class TauriDesktopUpdater implements DesktopUpdater {
   readonly supported = isTauri();
+
+  getVersion() {
+    return tauriGetVersion();
+  }
 
   check() {
     return invoke<UpdateCheckResult>("check_for_app_update");

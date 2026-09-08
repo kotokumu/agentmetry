@@ -1,7 +1,8 @@
 import { msg } from "@lit/localize";
 import { css, html } from "lit";
-import { customElement } from "lit/decorators.js";
+import { customElement, property } from "lit/decorators.js";
 import { LocalizedElement } from "../localization/localized-element";
+import { desktopUpdater, type DesktopUpdater } from "../api/desktop-updater";
 import "./appearance-settings";
 import "./app-update-control";
 import "./language-selector";
@@ -31,6 +32,7 @@ metrics_exporter = { otlp-grpc = { endpoint = "http://127.0.0.1:4317" } }`;
 
 @customElement("am-connections-settings")
 export class ConnectionsSettings extends LocalizedElement {
+  @property({ attribute: false }) updater: DesktopUpdater = desktopUpdater;
   private copied = "";
   private copyError = "";
   static styles = css`
@@ -56,6 +58,7 @@ export class ConnectionsSettings extends LocalizedElement {
 
   render() {
     return html`<div class="stack">
+      ${this.updater.supported ? html`<am-app-update-control .updater=${this.updater}></am-app-update-control>` : null}
       <section><h2>${msg("Connect sources", { id: "settingsCompletion.sourcesHeading" })}</h2><p class="lead">${msg("Copy these settings into the source configuration, then restart the source. Agentmetry does not edit source files.", { id: "settingsCompletion.sourcesIntro" })}</p></section>
       <div class="source-grid">
         <article><h3>Claude Code</h3><p>${msg("Add this env object to ~/.claude/settings.json. It enables the documented telemetry signals and content fields.", { id: "settingsCompletion.claudeIntro" })}</p><pre>${claudeCommand}</pre><button class="copy" type="button" @click=${() => this.copy("claude", claudeCommand)}>${this.copyLabel("claude")}</button></article>
@@ -70,7 +73,6 @@ export class ConnectionsSettings extends LocalizedElement {
       <section class="controls">
         <div class="control"><am-language-selector></am-language-selector></div>
         <div class="control"><am-appearance-settings></am-appearance-settings></div>
-        <div class="control"><am-app-update-control></am-app-update-control></div>
       </section>
     </div>`;
   }
