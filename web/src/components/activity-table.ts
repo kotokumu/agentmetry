@@ -46,7 +46,7 @@ export class ActivityTable extends LocalizedElement {
     .activity-list, .activity-detail { min-width: 0; }
     table { width: 100%; border-collapse: collapse; min-width: 530px; }
     thead { position: sticky; top: 0; z-index: 1; background: color-mix(in srgb, var(--am-surface-raised) 96%, transparent); backdrop-filter: blur(12px); }
-    th { color: var(--am-muted); font: 0.68rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
+    th { color: var(--am-muted); font: 0.75rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
     th, td { padding: 9px 8px; border-bottom: 1px solid var(--am-border); vertical-align: top; }
     tbody tr { cursor: pointer; transition: background .16s ease; }
     tbody tr:hover td, tbody tr:focus-within td, tr[data-selected="true"] td { background: var(--am-accent-soft); }
@@ -63,9 +63,9 @@ export class ActivityTable extends LocalizedElement {
     .selected-label, .status { display: block; margin-top: 3px; color: var(--am-muted); font-size: 12px; }
     .activity-detail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); border: 1px solid var(--am-border); border-radius: 8px; padding: 16px; background: var(--am-surface-raised); overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-gutter: stable; }
     .activity-detail h3 { margin: 0 0 12px; font-size: .95rem; }
-    .activity-detail h4 { margin: 16px 0 8px; font-size: .78rem; }
-    .activity-detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: .82rem/1.65 "SFMono-Regular", "Cascadia Code", monospace; }
-    .activity-detail dl { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 6px 12px; font-size: .74rem; }
+    .activity-detail h4 { margin: 16px 0 8px; font-size: .875rem; }
+    .activity-detail pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font: .875rem/1.65 "SFMono-Regular", "Cascadia Code", monospace; }
+    .activity-detail dl { display: grid; grid-template-columns: minmax(0, 7rem) minmax(0, 1fr); gap: 6px 12px; font-size: .875rem; }
     .activity-detail dt { color: var(--am-muted); }
     .activity-detail dd { margin: 0; min-width: 0; }
     .empty-detail { color: var(--am-muted); font-size: .8rem; line-height: 1.6; }
@@ -77,11 +77,11 @@ export class ActivityTable extends LocalizedElement {
     .tokens { white-space: nowrap; }
     .tokens small { display: block; color: var(--am-muted); white-space: normal; }
     .correlation { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
-    .correlation small { border: 1px solid var(--am-border); border-radius: 4px; padding: 2px 6px; background: var(--am-surface-strong); color: var(--am-muted); font: .64rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
-    .rollup { margin-top: 5px; color: var(--am-muted); font-size: .64rem; white-space: normal; }
-    .trace { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--am-accent); cursor: pointer; padding: 0; font: .72rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
+    .correlation small { border: 1px solid var(--am-border); border-radius: 4px; padding: 2px 6px; background: var(--am-surface-strong); color: var(--am-muted); font: .75rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; }
+    .rollup { margin-top: 5px; color: var(--am-muted); font-size: .75rem; white-space: normal; }
+    .trace { border: 0; border-bottom: 1px solid currentColor; background: transparent; color: var(--am-accent); cursor: pointer; padding: 0; font: .875rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
     .trace:hover, .trace:focus-visible { color: var(--am-text); }
-    .loading { padding: 16px; color: var(--am-muted); text-align: center; font-size: .78rem; }
+    .loading { padding: 16px; color: var(--am-muted); text-align: center; font-size: .75rem; }
     .continuation { position: sticky; left: 0; display: flex; justify-content: center; align-items: center; gap: 8px; padding: 10px; color: var(--am-muted); }
     .continuation button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
     .continuation button:hover, .continuation button:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }

@@ -166,4 +166,18 @@ describe("rework episode investigation", () => {
     expect(panel.shadowRoot!.activeElement).toBe(link);
     expect(evidenceLinks(panel)).toHaveLength(3);
   });
+
+  it("puts the three primary diagnostics before episodes and secondary details", async () => {
+    const panel = await mount();
+    const cards = [...panel.shadowRoot!.querySelectorAll<HTMLElement>("am-kpi-card")];
+    expect(cards.slice(0, 3).map((card) => (card as unknown as { label: string }).label)).toEqual([
+      "Initial validation success", "Rework token rate", "Recurring failure loops",
+    ]);
+    const secondary = panel.shadowRoot!.querySelector<HTMLDetailsElement>("details.secondary-metrics");
+    expect(secondary).toBeDefined();
+    expect(secondary!.open).toBe(false);
+    expect(panel.shadowRoot!.querySelector(".episodes")!.compareDocumentPosition(secondary!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(panel.shadowRoot!.textContent).toContain("20 of 20 logical validation attempts");
+  });
+
 });

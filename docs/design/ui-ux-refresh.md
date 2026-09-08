@@ -512,17 +512,25 @@ These results validate concepts already admitted by the initial design; they do 
 
 ### 11-5. Implementation Verification Record
 
-Implementation covers `ListTraces`, `ListSessionFileReads`, per-activity models, main navigation, and session-local referenced-file navigation. `ListTraces` uses `trace_rollups` and returns source/session many-to-many participation from `trace_conversations`. `ListSessionFileReads` aggregates observed session activities within one read snapshot, separating page `hasMore` from population `coverage`. Current provider evidence does not confirm single-file output mapping, so the projection returns `NOT_CONFIRMED` without assigning content to a file. When mapping is unconfirmed, display retained input/output from the exact activity separately instead of presenting it as file content.
+The product implements the Sessions, Traces, Usage, and Connections & settings navigation. Sessions use comparison-friendly rows with reported titles, source-qualified identities, observed time, activity counts, paging, and copy feedback. The detail header switches sessions within the current catalog conditions, exposes further pages and retries, and keeps primary session metrics compact. Token and agent breakdowns remain expandable.
 
-Verification results:
+Execution logs show the model reported by each activity. Referenced files remain inside the session, with separate read identities for different reading times, exact activity input/output, keyboard focus, retries, and return navigation. Efficiency & rework presents first-pass success, rework token share, and recurring failure loops before failure episodes; supplemental diagnostics and comparison remain available. Trace participants link to source-qualified sessions without assigning another session's selected span to them. Navigation preserves the originating trace selection and catalog conditions.
 
-- Web: `npm test` — 32 files / 350 tests passed.
-- Web build: `npm run build` — i18n generation, TypeScript, and Vite passed.
-- Go: `go test ./...` and `go test -tags=integration ./...` — all packages passed.
-- Desktop: `npm run desktop:test` — 35 tests passed.
-- API: verified the corrected `ListTraces`, file-read projection, missing models, multiple participating sessions, and page termination through the actual API.
-- Browser: verified trace-filter preservation on return, direct Usage entry, file selection from logs, multiple read times for one file, reload restoration, English/Japanese, light/dark, and narrow layouts; zero runtime errors.
-- Embedded binary: `make build` — TypeScript, Vite, and embedded Go passed; core file and trace flows verified in the embedded Web UI.
-- Visual checks: synthetic data submitted through standard OTLP HTTP (`/v1/traces`) to a dedicated temporary database verifies the trace catalog, main navigation, session file list, and file-to-activity return. This verifies UI/API integration and is not a substitute for real provider evidence.
+Connections & settings contains copyable Claude Code and Codex configuration, the distinction between default OTLP receiver ports and the Web/MCP origin, retained-content limitations, the read-only MCP URL, language, persistent system/light/dark appearance, and the existing desktop update control. Appearance changes also follow OS changes outside the settings page and tolerate unavailable browser storage.
 
-Final review fixes preserve the current section during period changes, correct trace-detail return destinations, search activities from intermediate pages, and prioritize explicit read selection over per-file memory. Regression tests cover those cases together with read-history page boundaries, redaction, and truncation presentation.
+The completion work preserves the existing query/Connect/Web/live/navigation boundaries. It adds no API or database migration. The existing additive `ListTraces` and `ListSessionFileReads` APIs retain opaque paging and explicit conditions/coverage.
+
+Two data limits remain explicit:
+
+- The current session catalog query omits token aggregates. Rows say **Available in session details** when that value is not retrieved; session details and Usage use their existing aggregate queries. A missing catalog aggregate is not labeled as unreported source telemetry.
+- Current provider evidence does not confirm single-file output mapping. The file projection retains `NOT_CONFIRMED` and shows input/output from the exact activity separately. It does not substitute the current local file or assign activity-wide output to one file.
+
+Verification uses automated behavior tests and synthetic telemetry sent through standard OTLP HTTP to a dedicated local database. Synthetic fixtures establish UI/API integration, not real provider output-mapping evidence.
+
+Completion checks passed:
+
+- Web: 377 tests across 37 files; localization generation, TypeScript, and Vite production build.
+- Backend: all Go unit and integration tests; the Go binary built with the verified Web assets embedded.
+- Desktop: 35 build-input tests.
+- Browser: source-qualified session switching, an older file read's exact activity and return selection across reload, filtered trace-to-session navigation and exact span restoration, efficiency comparisons and missing-value explanations, Usage aggregates, configuration copying, and language/appearance persistence.
+- Responsive presentation: session rows at 736 px and session/file/settings views at 360 px, including long identifiers and paths.

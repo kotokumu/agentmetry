@@ -103,8 +103,8 @@
   <target>活動 <x id="0" equiv-text="${count}"/> 件</target>
 </trans-unit>
 <trans-unit id="app.conversations">
-  <source>Conversations</source>
-  <target>会話</target>
+  <source>Sessions</source>
+  <target>セッション</target>
 </trans-unit>
 <trans-unit id="app.title.dashboard">
   <source>Agentmetry · Local AI Agent Observability</source>
@@ -423,8 +423,8 @@
   <target>アクティビティ</target>
 </trans-unit>
 <trans-unit id="dashboard.modelTraffic">
-  <source>Observed model traffic</source>
-  <target>観測モデル通信量</target>
+  <source>Tokens</source>
+  <target>トークン</target>
 </trans-unit>
 <trans-unit id="dashboard.modelTrafficHint">
   <source>Input + output reported by model calls; not a plan quota</source>
@@ -723,8 +723,8 @@
   <target>エージェントの関係は報告されていません。</target>
 </trans-unit>
 <trans-unit id="agentTree.aria">
-  <source>Agent delegation topology</source>
-  <target>エージェント委譲トポロジー</target>
+  <source>Agent structure</source>
+  <target>エージェント構成</target>
 </trans-unit>
 <trans-unit id="agentTree.root">
   <source>Root</source>
@@ -887,11 +887,11 @@
   <target>手戻り分析を取得できません</target>
 </trans-unit>
 <trans-unit id="workspace.modelTraffic">
-  <source>Observed model traffic</source>
-  <target>観測モデル通信量</target>
+  <source>Tokens</source>
+  <target>トークン</target>
 </trans-unit>
 <trans-unit id="workspace.agentTopology">
-  <source>Agent topology</source>
+  <source>Agent structure</source>
   <target>エージェント構成</target>
 </trans-unit>
 <trans-unit id="workspace.operations">
@@ -907,8 +907,8 @@
   <target>すべてのエージェント</target>
 </trans-unit>
 <trans-unit id="traceExplorer.eyebrow">
-  <source>Cross-conversation causality</source>
-  <target>会話をまたぐ因果関係</target>
+  <source>Traces</source>
+  <target>トレース</target>
 </trans-unit>
 <trans-unit id="traceExplorer.title">
   <source>Trace explorer</source>
@@ -2051,8 +2051,8 @@
   <target>セッション概要</target>
 </trans-unit>
 <trans-unit id="workspace.executionContext">
-  <source>Traffic and topology</source>
-  <target>通信量と構成</target>
+  <source>Token breakdown and agents</source>
+  <target>トークン内訳とエージェント</target>
 </trans-unit>
 <trans-unit id="workspace.returnToFileRead">
   <source>Return to selected file read</source>
@@ -2197,6 +2197,246 @@
 <trans-unit id="workspace.fileReadActivitySelectionUnavailable">
   <source>No retained file read is linked to activity <x id="0" equiv-text="${id}"/>.</source>
   <target>活動 <x id="0" equiv-text="${id}"/> に対応する保持済みファイル読取はありません。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.themeSystem">
+  <source>System</source>
+  <target>システム設定に合わせる</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.themeLight">
+  <source>Light</source>
+  <target>ライト</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.themeDark">
+  <source>Dark</source>
+  <target>ダーク</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.appearance">
+  <source>Appearance</source>
+  <target>外観</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.appearanceAria">
+  <source>Appearance</source>
+  <target>外観</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.sourcesHeading">
+  <source>Connect sources</source>
+  <target>ソースの接続</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.sourcesIntro">
+  <source>Copy these settings into the source configuration, then restart the source. Agentmetry does not edit source files.</source>
+  <target>設定をソースの設定ファイルにコピーし、ソースを再起動してください。Agentmetryが設定ファイルを変更することはありません。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.claudeIntro">
+  <source>Add this env object to ~/.claude/settings.json. It enables the documented telemetry signals and content fields.</source>
+  <target>このenvオブジェクトを ~/.claude/settings.json に追加します。テレメトリーとプロンプト・応答・ツール詳細の送信が有効になります。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.codexIntro">
+  <source>Add this [otel] block to ~/.codex/config.toml. Project-local Codex configuration does not apply these settings.</source>
+  <target>この[otel]ブロックを ~/.codex/config.toml に追加します。プロジェクト内のCodex設定では適用されません。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.endpointsHeading">
+  <source>Local endpoints</source>
+  <target>ローカルの接続先</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.endpointsBody">
+  <source>Defaults are OTLP gRPC 4317 and OTLP HTTP 4318. If you start Agentmetry with custom receiver ports, replace the port in the source configuration. The Web UI, HTTP API, and MCP use 17890; that browser address is not an OTLP receiver.</source>
+  <target>既定の受信ポートはOTLP gRPCが4317、OTLP HTTPが4318です。Agentmetryの受信ポートを変更している場合は、ソース設定も合わせて変更してください。Web UI・HTTP API・MCPの既定ポートは17890で、OTLPの受信先とは異なります。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.copyFailedMessage">
+  <source>Copy failed — select the text manually</source>
+  <target>コピーできませんでした。テキストを選択してコピーしてください。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.copied">
+  <source>Copied to clipboard</source>
+  <target>クリップボードにコピーしました</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.scopeHeading">
+  <source>Capture scope</source>
+  <target>収集の範囲</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.scopeIntro">
+  <source>Agentmetry retains accepted telemetry locally. What is available depends on what the source reports and which content settings are enabled.</source>
+  <target>Agentmetryは受信したテレメトリーをローカルに保存します。確認できる情報は、ソースが送信する内容と有効な収集設定によって異なります。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.retentionHeading">
+  <source>Reported and retained data</source>
+  <target>送信・保存されるデータ</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.retentionBody">
+  <source>Prompts, responses, tool details, and file contents may be unreported, redacted, or unavailable. Missing values are shown as unreported; the app does not infer complete conversations or outcomes.</source>
+  <target>プロンプト・応答・ツール詳細・ファイル内容は、未報告、秘匿、または取得できない場合があります。未報告の値を補完したり、会話全体や実行結果を推測したりすることはありません。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.mcpHeading">
+  <source>Read-only MCP</source>
+  <target>読み取り専用MCP</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.mcpIntro">
+  <source>Use the local MCP URL in a client to query telemetry. MCP is stateless and read only. The Web UI origin and OTLP receiver endpoint are separate addresses.</source>
+  <target>MCPクライアントからこのローカルURLに接続すると、保存されたテレメトリーを照会できます。MCPはステートレス・読み取り専用です。Web UIとOTLP受信先は別のアドレスです。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.copyFailed">
+  <source>Copy failed — select the text manually</source>
+  <target>コピーできませんでした。手動でコピーしてください。</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.copiedButton">
+  <source>Copied</source>
+  <target>コピー済み</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.copyButton">
+  <source>Copy configuration</source>
+  <target>設定をコピー</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.switchSession">
+  <source>Switch session</source>
+  <target>セッションを切り替え</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.loadMore">
+  <source>Load more</source>
+  <target>さらに読み込む</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.loadingMore">
+  <source>Loading more</source>
+  <target>追加読み込み中</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.retryList">
+  <source>Retry list</source>
+  <target>一覧を再取得</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.loadedSessionsPartial">
+  <source>Loaded sessions are partial</source>
+  <target>セッションの一部を読み込み済み</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.moreSessionsAvailable">
+  <source>More sessions available</source>
+  <target>ほかにもセッションがあります</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.elapsedTime">
+  <source>Elapsed time</source>
+  <target>経過時間</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.reportedSessionInterval">
+  <source>Reported session interval</source>
+  <target>報告された開始から終了まで</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.activities">
+  <source>Activities</source>
+  <target>活動数</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.reportedActivityCount">
+  <source>Reported activity count</source>
+  <target>報告された活動の件数</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.agents">
+  <source>Agents</source>
+  <target>エージェント数</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.reportedAgentCount">
+  <source>Reported agent count</source>
+  <target>報告されたエージェントの数</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.relatedTraces">
+  <source>Related traces</source>
+  <target>関連トレース</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.noMatchingSessions">
+  <source>No matching sessions</source>
+  <target>条件に一致するセッションはありません</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.noSessionsYet">
+  <source>No sessions yet</source>
+  <target>セッションはまだありません</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.openConnections">
+  <source>Open Connections settings</source>
+  <target>接続・設定を開く</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.copied">
+  <source>Copied</source>
+  <target>コピー済み</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.copyFailed">
+  <source>Copy failed</source>
+  <target>コピーできませんでした</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.copyFullId">
+  <source>Copy full id</source>
+  <target>完全なIDをコピー</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.durationSeconds">
+  <source><x id="0" equiv-text="${remainder}"/> s</source>
+  <target><x id="0" equiv-text="${remainder}"/> 秒</target>
+</trans-unit>
+<trans-unit id="workspaceCompletion.durationMinutesSeconds">
+  <source><x id="0" equiv-text="${minutes}"/> min <x id="1" equiv-text="${remainder}"/> s</source>
+  <target><x id="0" equiv-text="${minutes}"/> 分 <x id="1" equiv-text="${remainder}"/> 秒</target>
+</trans-unit>
+<trans-unit id="filesCompletion.retry">
+  <source>Retry file reads</source>
+  <target>ファイルの読み取り記録を再取得</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.sessionColumn">
+  <source>Session</source>
+  <target>セッション</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.sourceColumn">
+  <source>Source / relationship</source>
+  <target>ソース・関係</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.observedColumn">
+  <source>Observed time / activity</source>
+  <target>観測日時・活動数</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.tokensColumn">
+  <source>Tokens</source>
+  <target>トークン</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.openSession">
+  <source>Open session <x id="0" equiv-text="${title}"/></source>
+  <target>セッション <x id="0" equiv-text="${title}"/> を開く</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.sourceLabel">
+  <source>Source</source>
+  <target>ソース</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.observedLabel">
+  <source>Observed</source>
+  <target>観測日時</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.tokensLabel">
+  <source>Tokens</source>
+  <target>トークン</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.copySessionId">
+  <source>Copy source-qualified session ID <x id="0" equiv-text="${session.sourceId}"/>:<x id="1" equiv-text="${session.id}"/></source>
+  <target>ソースを含むセッションID <x id="0" equiv-text="${session.sourceId}"/>:<x id="1" equiv-text="${session.id}"/> をコピー</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.copyTitle">
+  <source>Copy source-qualified session ID <x id="0" equiv-text="${session.sourceId}"/>:<x id="1" equiv-text="${session.id}"/></source>
+  <target>ソースを含むセッションID <x id="0" equiv-text="${session.sourceId}"/>:<x id="1" equiv-text="${session.id}"/> をコピー</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.copyButton">
+  <source>Copy ID</source>
+  <target>IDをコピー</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.loadedMore">
+  <source>Showing <x id="0" equiv-text="${localization.number(this.sessions.length)}"/> loaded sessions · more available</source>
+  <target><x id="0" equiv-text="${localization.number(this.sessions.length)}"/> 件を読み込み済み・ほかにもセッションがあります</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.loadedComplete">
+  <source>Showing <x id="0" equiv-text="${localization.number(this.sessions.length)}"/> sessions</source>
+  <target><x id="0" equiv-text="${localization.number(this.sessions.length)}"/> 件のセッション</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.copySuccess">
+  <source>Copied</source>
+  <target>コピー済み</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.copyFailure">
+  <source>Copy failed</source>
+  <target>コピーできませんでした</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.tokensInDetails">
+  <source>Available in session details</source>
+  <target>詳細で確認</target>
 </trans-unit>
 </body>
 </file>

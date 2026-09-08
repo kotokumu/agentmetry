@@ -18,10 +18,10 @@ export class AgentTree extends LocalizedElement {
     :host { display: block; max-width: 100%; }
     .viewport { width: 100%; max-width: 100%; min-height: 220px; max-height: min(560px, 65vh); overflow: auto; overscroll-behavior: contain; padding: 4px 3px 8px; }
     .graph { position: relative; min-width: max(440px, 100%); }
-    .connector { position: absolute; z-index: 1; border-radius: 99px; background: var(--am-accent); opacity: .42; box-shadow: 0 0 7px rgba(var(--am-accent-rgb), .3); pointer-events: none; }
-    .node { position: absolute; z-index: 2; box-sizing: border-box; min-height: 116px; overflow: hidden; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 9px; padding: 9px 10px; background: linear-gradient(145deg, var(--am-surface-strong), var(--am-surface)); box-shadow: 0 10px 24px rgba(0, 0, 0, .18); color: var(--am-text); cursor: pointer; text-align: left; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
-    .node:hover, .node:focus-visible { border-color: var(--am-accent); transform: translateY(-2px); box-shadow: 0 14px 30px rgba(0, 0, 0, .25), 0 0 18px rgba(var(--am-accent-rgb), .07); outline: 2px solid color-mix(in srgb, var(--am-accent) 35%, transparent); outline-offset: 2px; }
-    .node[aria-selected="true"] { background: linear-gradient(145deg, var(--am-accent-soft), var(--am-surface)); border-color: var(--am-accent); box-shadow: 0 0 22px rgba(var(--am-accent-rgb), .08); }
+    .connector { position: absolute; z-index: 1; border-radius: 99px; background: var(--am-accent); opacity: .42; pointer-events: none; }
+    .node { position: absolute; z-index: 2; box-sizing: border-box; min-height: 116px; overflow: hidden; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 9px; padding: 9px 10px; background: var(--am-surface); color: var(--am-text); cursor: pointer; text-align: left; transition: border-color .18s ease; }
+    .node:hover, .node:focus-visible { border-color: var(--am-accent); outline: 2px solid color-mix(in srgb, var(--am-accent) 35%, transparent); outline-offset: 2px; }
+    .node[aria-selected="true"] { background: var(--am-accent-soft); border-color: var(--am-accent); }
     .node-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
     .node-title strong { overflow: hidden; color: var(--am-text); font: 14px/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
     .role { border: 1px solid var(--am-border-strong); border-radius: 3px; padding: 2px 4px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 12px/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }

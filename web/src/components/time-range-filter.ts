@@ -17,7 +17,6 @@ export class TimeRangeFilter extends LocalizedElement {
       border: 1px solid var(--am-border, #25314a);
       border-radius: 9px;
       background: var(--am-surface);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025);
     }
 
     button {
@@ -27,14 +26,13 @@ export class TimeRangeFilter extends LocalizedElement {
       color: var(--am-muted, #91a0b8);
       background: transparent;
       cursor: pointer;
-      font: 700 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace;
-      transition: color .18s ease, background .18s ease, box-shadow .18s ease;
+      font: 700 .875rem/1.2 "SFMono-Regular", "Cascadia Code", monospace;
+      transition: color .18s ease, background .18s ease;
     }
 
     button[aria-pressed="true"] {
       color: var(--am-paper, #07110f);
       background: var(--am-accent, #6df4d6);
-      box-shadow: 0 0 18px rgba(var(--am-accent-rgb, 109, 244, 214), .18);
     }
 
     button:hover:not([aria-pressed="true"]), button:focus-visible:not([aria-pressed="true"]) { color: var(--am-text); background: var(--am-surface-strong); outline: none; }

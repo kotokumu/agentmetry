@@ -10,12 +10,14 @@ export const mcpEndpointFromOrigin = (origin: string) => new URL("/mcp", origin)
 @customElement("am-mcp-connection")
 export class MCPConnection extends LocalizedElement {
   @property() endpoint = mcpEndpointFromOrigin(window.location.origin);
+  @property({ type: Boolean }) inline = false;
   @state() private open = false;
   @state() private copyStatus: CopyStatus = "idle";
   private copyGeneration = 0;
 
   static styles = css`
     :host { position: relative; display: block; min-height: 31px; margin-bottom: 10px; }
+    :host([inline]) { margin-bottom: 0; }
     * { box-sizing: border-box; }
     button { font: inherit; }
     .disclosure {
@@ -55,6 +57,8 @@ export class MCPConnection extends LocalizedElement {
       box-shadow: 0 24px 70px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .035);
       text-align: left;
     }
+    :host([inline]) .panel { position: static; width: auto; border: 0; padding: 0; background: transparent; box-shadow: none; }
+    :host([inline]) .eyebrow { display: none; }
     .panel[hidden] { display: none; }
     .eyebrow { margin: 0 0 6px; color: var(--am-accent); font: 700 .61rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .15em; text-transform: uppercase; }
     h2 { margin: 0; color: var(--am-text); font: 650 1rem/1.25 Inter, ui-sans-serif, sans-serif; }
@@ -79,15 +83,15 @@ export class MCPConnection extends LocalizedElement {
 
   render() {
     return html`
-      <button
+      ${this.inline ? null : html`<button
         class="disclosure"
         type="button"
         aria-expanded=${this.open ? "true" : "false"}
         aria-controls="mcp-connection-panel"
         @click=${this.togglePanel}
         @keydown=${this.keyDown}
-      ><span class="signal" aria-hidden="true">//</span><span>MCP</span><span class="action">${localization.t(this.open ? "mcp.close" : "mcp.details")}</span></button>
-      <section id="mcp-connection-panel" class="panel" ?hidden=${!this.open} aria-labelledby="mcp-connection-title" @keydown=${this.keyDown}>
+      ><span class="signal" aria-hidden="true">//</span><span>MCP</span><span class="action">${localization.t(this.open ? "mcp.close" : "mcp.details")}</span></button>`}
+      <section id="mcp-connection-panel" class="panel" ?hidden=${!this.inline && !this.open} aria-labelledby="mcp-connection-title" @keydown=${this.keyDown}>
         <p class="eyebrow">${localization.t("mcp.eyebrow")}</p>
         <h2 id="mcp-connection-title">${localization.t("mcp.title")}</h2>
         <p class="intro">${localization.t("mcp.intro")}</p>

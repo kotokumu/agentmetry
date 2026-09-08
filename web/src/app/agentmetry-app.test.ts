@@ -366,6 +366,74 @@ describe("Agentmetry app composition", () => {
     await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-catalog")).not.toBeNull());
   });
 
+  it("returns from a trace participant session to the exact selected span with one history entry", async () => {
+    const traceId = "trace111";
+    const spanId = "spana";
+    const sessionA: TestSession = {
+      id: "sessionA", sourceId: "claude", sources: [{ id: "claude", label: "Claude" }],
+      startedAt: "2026-09-08T01:00:00Z", endedAt: "2026-09-08T01:01:00Z", activityCount: 1,
+      tokens: emptyOverview.tokens, agents: [], activities: [], traceIds: [traceId],
+    };
+    const sessionB: TestSession = {
+      id: "sessionB", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: "2026-09-08T01:02:00Z", endedAt: "2026-09-08T01:03:00Z", activityCount: 1,
+      tokens: emptyOverview.tokens, agents: [], activities: [], traceIds: [traceId],
+    };
+    const selectedActivity = {
+      id: "activity-span-a", source: "claude", signal: "trace" as const, traceId, spanId,
+      name: "selected span A", kind: "tool" as const, agentId: "agent-a", runId: sessionA.id, model: "model-a",
+      observedAt: "2026-09-08T01:00:30Z", contributesToTotal: false, tokens: emptyOverview.tokens,
+    };
+    const trace = {
+      traceId, startedAt: "2026-09-08T01:00:00Z", endedAt: "2026-09-08T01:03:00Z", status: "ok",
+      rootSpanCount: 1, missingParentCount: 0,
+      conversations: [
+        { sourceId: sessionA.sourceId, id: sessionA.id },
+        { sourceId: sessionB.sourceId, id: sessionB.id },
+      ],
+      agents: [], activities: [selectedActivity],
+    };
+    const overview = { ...emptyOverview, sessions: [sessionA, sessionB] } as TestOverview;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      const endpoint = connectPath(url).split("/").at(-1);
+      const body = init?.body ? connectBody([url, init]) : {};
+      const session = [sessionA, sessionB].find((candidate) => candidate.id === body.sessionId);
+      switch (endpoint) {
+        case "GetDashboard": return connectResponse(dashboardResponse(overview));
+        case "ListSessions": return connectResponse(sessionsResponse(overview));
+        case "GetSession": return connectResponse(session ? { session: sessionSummary(session), traceIds: [traceId] } : {});
+        case "ListSessionActivities": return connectResponse(session ? activitiesResponse(session) : { activities: [], page: { hasMore: false }, total: 0 });
+        case "GetTrace": return connectResponse(trace);
+        case "GetTraceOverview": return connectResponse(traceOverviewResponse(trace));
+        case "GetTraceWindow": return connectResponse(traceWindowResponse(trace));
+        default: return connectResponse({});
+      }
+    }));
+    history.replaceState({}, "", `/traces/${traceId}?spanId=${spanId}`);
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    const participants = () => traceRootOf(app)?.querySelector("am-trace-participants");
+    await vi.waitFor(() => expect(participants()?.shadowRoot?.querySelectorAll<HTMLAnchorElement>("a[data-participant]").length).toBe(2));
+    const historyBeforeParticipant = history.length;
+    const participantB = [...(participants()?.shadowRoot?.querySelectorAll<HTMLAnchorElement>("a[data-participant]") ?? [])]
+      .find((link) => link.textContent?.includes(sessionB.id));
+    expect(participantB).toBeDefined();
+    participantB?.click();
+
+    await vi.waitFor(() => expect(location.pathname).toBe(`/conversations/${sessionB.sourceId}/${sessionB.id}`));
+    expect(new URL(location.href).searchParams.has("spanId")).toBe(false);
+    expect(history.length).toBe(historyBeforeParticipant + 1);
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.context-return")).not.toBeNull());
+    workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.context-return")?.click();
+
+    await vi.waitFor(() => expect(location.pathname).toBe(`/traces/${traceId}`));
+    expect(new URL(location.href).searchParams.get("spanId")).toBe(spanId);
+    expect(history.length).toBe(historyBeforeParticipant + 1);
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector("am-trace-waterfall")?.shadowRoot
+      ?.querySelector('details[aria-current="location"]')?.textContent).toContain("selected span A"));
+  });
+
   it.each(["traces", "usage"] as const)("keeps the %s section and reloads it when the range changes with session conditions", async (section) => {
     history.replaceState({}, "", `/?section=${section}&range=24h&failure=true${section === "traces" ? "&traceFailure=observed" : ""}`);
     const calls: string[] = [];
@@ -402,7 +470,10 @@ describe("Agentmetry app composition", () => {
     await app.updateComplete;
 
     expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("Sessions");
-    const selector = app.shadowRoot?.querySelector("am-language-selector");
+    const settingsLink = app.shadowRoot?.querySelector<HTMLAnchorElement>('a[href*="section=connections"]');
+    settingsLink?.click();
+    await app.updateComplete;
+    const selector = app.shadowRoot?.querySelector("am-connections-settings")?.shadowRoot?.querySelector("am-language-selector");
     await selector?.updateComplete;
     const select = selector?.shadowRoot?.querySelector("select");
     select!.value = "ja";
@@ -410,9 +481,9 @@ describe("Agentmetry app composition", () => {
     await localization.whenReady();
     await app.updateComplete;
 
-    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("セッション");
+    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("接続・設定");
     expect(document.documentElement.lang).toBe("ja");
-    expect(document.title).toBe("Agentmetry · ローカル AI エージェントの可観測性");
+    expect(document.title).toBe("Agentmetry · 接続・設定");
   });
 
   it("restores the selected file read and activity after a route remount", async () => {
@@ -674,7 +745,7 @@ describe("Agentmetry app composition", () => {
     expect(content).toContain("Sessions");
     expect(content).not.toContain("Local trace observatory");
     expect(content).not.toContain("Receiving OTLP locally");
-    expect(content).toContain("Conversations");
+    expect(content).toContain("Sessions");
     expect(app.shadowRoot?.querySelector("main")?.getAttribute("data-density")).toBe("operator");
     expect(app.shadowRoot?.querySelector<HTMLAnchorElement>("a.brand")?.getAttribute("href")).toBe("/");
   });
@@ -688,8 +759,9 @@ describe("Agentmetry app composition", () => {
     expect(app.shadowRoot?.querySelector("am-dashboard-summary")).toBeNull();
     expect(app.shadowRoot?.querySelector("am-conversation-workspace")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-trace-explorer")).toBeNull();
-    expect(app.shadowRoot?.querySelector("am-app-update-control")).not.toBeNull();
-    expect(app.shadowRoot?.querySelector("am-mcp-connection")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector("am-app-update-control")).toBeNull();
+    expect(app.shadowRoot?.querySelector("am-mcp-connection")).toBeNull();
+    expect(app.shadowRoot?.querySelector("am-language-selector")).toBeNull();
     expect(app.shadowRoot?.querySelector(".kpis")).toBeNull();
     expect(workspaceRootOf(app)?.querySelector(".workspace.list-only")).not.toBeNull();
   });
@@ -700,10 +772,11 @@ describe("Agentmetry app composition", () => {
     document.body.append(app);
     await app.updateComplete;
 
-    const mcp = app.shadowRoot?.querySelector<MCPConnection>("am-mcp-connection");
+    app.shadowRoot?.querySelector<HTMLAnchorElement>('a[href*="section=connections"]')?.click();
+    await app.updateComplete;
+    const mcp = app.shadowRoot?.querySelector("am-connections-settings")?.shadowRoot?.querySelector<MCPConnection>("am-mcp-connection");
     await mcp?.updateComplete;
-    mcp?.shadowRoot?.querySelector<HTMLButtonElement>("[aria-controls='mcp-connection-panel']")?.click();
-    await mcp?.updateComplete;
+    expect(mcp?.hasAttribute("inline")).toBe(true);
     expect(mcp?.shadowRoot?.querySelector<HTMLElement>("[aria-labelledby='mcp-connection-title']")?.hidden).toBe(false);
     expect(mcp?.shadowRoot?.querySelector<HTMLInputElement>("[aria-label='MCP server URL']")?.value)
       .toBe(`${location.origin}/mcp`);
@@ -922,8 +995,8 @@ describe("Agentmetry app composition", () => {
 
     const content = workspaceRootOf(app)?.textContent ?? "";
     expect(content).not.toContain("2 traces");
-    expect(content).not.toContain("raw-trace-id-one");
-    expect(content).not.toContain("raw-trace-id-two");
+    expect(content).toContain("raw-trace-id-one");
+    expect(content).toContain("raw-trace-id-two");
     expect(workspaceRootOf(app)?.querySelector(".workspace .detail > .operations-panel am-activity-table")).not.toBeNull();
     const detail = workspaceRootOf(app)?.querySelector(".workspace .detail");
     const children = Array.from(detail?.children ?? []);

@@ -91,16 +91,16 @@ export const activityContentPreview = (activity: Activity): string => {
 };
 
 export const activityContentStyles = css`
-    h4 { margin: 16px 0 8px; font-size: .78rem; }
+    h4 { margin: 16px 0 8px; font-size: .875rem; }
     .document-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
     .document-item { display: grid; gap: 5px; padding: 10px 12px; border: 1px solid var(--am-border); border-left: 3px solid var(--am-accent); border-radius: 6px; background: var(--am-surface-strong); }
-    .document-name { color: var(--am-text); font-size: .84rem; overflow-wrap: anywhere; }
+    .document-name { color: var(--am-text); font-size: .875rem; overflow-wrap: anywhere; }
     .document-detail { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; align-items: baseline; }
-    .document-detail-label { color: var(--am-muted); font-size: .68rem; }
-    .document-reference { color: var(--am-muted); font: .72rem/1.5 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
-    .document-field { color: var(--am-muted); font-size: .68rem; }
-    .document-availability { margin: 9px 0 0; color: var(--am-muted); font-size: .76rem; line-height: 1.5; }
-    pre.received-content { margin: 8px 0 0; padding: 11px 12px; border: 1px solid var(--am-border); border-radius: 6px; background: var(--am-surface-strong); color: var(--am-text); white-space: pre-wrap; overflow-wrap: anywhere; font: .78rem/1.65 "SFMono-Regular", "Cascadia Code", monospace; }
+    .document-detail-label { color: var(--am-muted); font-size: .75rem; }
+    .document-reference { color: var(--am-muted); font: .75rem/1.5 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
+    .document-field { color: var(--am-muted); font-size: .75rem; }
+    .document-availability { margin: 9px 0 0; color: var(--am-muted); font-size: .75rem; line-height: 1.5; }
+    pre.received-content { margin: 8px 0 0; padding: 11px 12px; border: 1px solid var(--am-border); border-radius: 6px; background: var(--am-surface-strong); color: var(--am-text); white-space: pre-wrap; overflow-wrap: anywhere; font: .875rem/1.65 "SFMono-Regular", "Cascadia Code", monospace; }
     .empty-content { margin: 0; color: var(--am-muted); font-size: .8rem; line-height: 1.6; }
 `;
 

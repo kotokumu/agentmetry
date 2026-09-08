@@ -23,29 +23,32 @@ export class ReworkSummary extends LocalizedElement {
     :host { display: block; min-width: 0; }
     .heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
     .heading h2 { margin-bottom: 4px; }
-    .heading p, .state p { margin: 0; color: var(--am-muted); font-size: .72rem; line-height: 1.5; }
+    .heading p, .state p { margin: 0; color: var(--am-muted); font-size: .75rem; line-height: 1.5; }
     .compare-action { margin-top: 10px; border: 1px solid var(--am-border); border-radius: 7px; padding: 7px 10px; background: var(--am-surface-raised); color: var(--am-accent); cursor: pointer; font: 12px/1.3 inherit; }
     .compare-action:hover, .compare-action:focus-visible { border-color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
-    .coverage-badge { flex: 0 0 auto; border: 1px solid var(--am-border); border-radius: 999px; padding: 5px 9px; color: var(--am-muted); font: 700 .62rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .06em; text-transform: uppercase; }
+    .coverage-badge { flex: 0 0 auto; border: 1px solid var(--am-border); border-radius: 999px; padding: 5px 9px; color: var(--am-muted); font: 700 .75rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .06em; text-transform: uppercase; }
     .coverage-badge.partial { border-color: rgba(255, 190, 99, .42); color: #ffc77d; background: rgba(255, 190, 99, .08); }
     .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
     .metric-group + .metric-group { margin-top: 14px; }
-    .metric-group h3 { margin: 0 0 7px; color: var(--am-muted); font: 700 .64rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+    .metric-group h3 { margin: 0 0 7px; color: var(--am-muted); font: 700 .75rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
     .evidence { display: grid; grid-template-columns: minmax(0, 1.2fr) repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
     .evidence article { border: 1px solid var(--am-border); border-radius: 9px; padding: 10px 12px; background: rgba(7, 10, 15, .25); }
-    .evidence strong { display: block; margin-bottom: 4px; color: var(--am-text); font-size: .7rem; }
-    .evidence p { margin: 0; color: var(--am-muted); font-size: .68rem; line-height: 1.5; }
+    .evidence strong { display: block; margin-bottom: 4px; color: var(--am-text); font-size: .875rem; }
+    .evidence p { margin: 0; color: var(--am-muted); font-size: .75rem; line-height: 1.5; }
     .episodes { margin-top: 14px; }
-    .episodes h3 { margin: 0 0 7px; color: var(--am-muted); font: 700 .64rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+    .episodes h3 { margin: 0 0 7px; color: var(--am-muted); font: 700 .75rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
     .episode-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     .episode { min-width: 0; border: 1px solid var(--am-border); border-radius: 9px; padding: 11px 12px; background: rgba(7, 10, 15, .25); }
     .episode strong, .episode code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .episode strong { color: var(--am-text); font-size: .72rem; }
-    .episode code { margin: 5px 0; color: var(--am-accent); font-size: .66rem; }
-    .episode p { margin: 0; color: var(--am-muted); font-size: .66rem; line-height: 1.5; }
-    .episode a { display: inline-block; margin-top: 7px; color: var(--am-accent); font-size: .66rem; text-decoration: none; }
+    .episode strong { color: var(--am-text); font-size: .875rem; }
+    .episode code { margin: 5px 0; color: var(--am-accent); font-size: .75rem; }
+    .episode p { margin: 0; color: var(--am-muted); font-size: .75rem; line-height: 1.5; }
+    .episode a { display: inline-block; margin-top: 7px; color: var(--am-accent); font-size: .75rem; text-decoration: none; }
     .episode a:hover, .episode a:focus-visible { text-decoration: underline; outline: 2px solid var(--am-accent-soft); }
-    .episode-count { margin: 8px 0 0; color: var(--am-muted); font-size: .68rem; }
+    .episode-count { margin: 8px 0 0; color: var(--am-muted); font-size: .75rem; }
+    .secondary-metrics { margin-top: 14px; border-top: 1px solid var(--am-border); padding-top: 10px; }
+    .secondary-metrics > summary { cursor: pointer; color: var(--am-text); font-size: .875rem; font-weight: 650; }
+    .secondary-metrics .metric-group { margin-top: 12px; }
     .state { min-height: 140px; display: grid; place-items: center; text-align: center; }
     .state strong { display: block; margin-bottom: 6px; color: var(--am-text); }
     .state button, .show-more { margin-top: 12px; border: 1px solid var(--am-border); border-radius: 7px; padding: 7px 11px; background: var(--am-surface-raised); color: var(--am-text); cursor: pointer; font: inherit; }
@@ -97,24 +100,27 @@ export class ReworkSummary extends LocalizedElement {
     return html`<section class="panel">
       <div class="heading"><div><h2>${localization.t("rework.title")}</h2><p>${localization.t("rework.subtitle")}</p><button type="button" class="compare-action" @click=${this.requestComparison}>${localization.t("rework.openComparison")}</button></div><span class=${`coverage-badge ${partial ? "partial" : ""}`}>${localization.t(partial ? "rework.partialEvidence" : "rework.completeProjection")}</span></div>
       <div class="metric-group"><h3>${localization.t("rework.validationEffectiveness")}</h3><div class="metrics" aria-label=${localization.t("rework.validationAria")}>
-        <am-kpi-card .label=${localization.t("rework.validationFailures")} .value=${formatCount(metrics.validationFailures)} .hint=${localization.t("rework.validationHint")} .description=${localization.t("rework.validationDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.initialSuccess")} .value=${formatRate(metrics.firstPassSuccessRate)} .hint=${formatFirstPassHint(metrics.firstPassSuccesses, metrics.firstPassEligibleValidations)} .description=${localization.t("rework.initialSuccessDescription")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("rework.tokenRate")} .value=${formatRate(reworkTokenRate)} .hint=${reworkTokenHint} .description=${localization.t("rework.tokenDescription")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("rework.recurringLoops")} .value=${formatRecurringLoops(metrics.recurringFailureLoops)} .hint=${formatRecurringLoopHint(metrics.recurringFailureLoops, metrics.resolvedFailureLoops, metrics.unresolvedFailureLoops, coverage.fingerprintedFailures, metrics.validationFailures, coverage.uncorrelatedValidationObservations)} .description=${localization.t("rework.recurringDescription")}></am-kpi-card>
+      </div></div>
+      ${this.renderFailureEpisodes()}
+      <details class="secondary-metrics"><summary>${localization.t("rework.otherSignals")}</summary>
+      <div class="metric-group"><h3>${localization.t("rework.validationEffectiveness")}</h3><div class="metrics" aria-label=${localization.t("rework.validationAria")}>
+        <am-kpi-card .label=${localization.t("rework.validationFailures")} .value=${formatCount(metrics.validationFailures)} .hint=${localization.t("rework.validationHint")} .description=${localization.t("rework.validationDescription")}></am-kpi-card>
       </div></div>
       <div class="metric-group"><h3>${localization.t("rework.recurringImpact")}</h3><div class="metrics" aria-label=${localization.t("rework.recurringAria")}>
-        <am-kpi-card .label=${localization.t("rework.recurringLoops")} .value=${formatRecurringLoops(metrics.recurringFailureLoops)} .hint=${formatRecurringLoopHint(metrics.recurringFailureLoops, metrics.resolvedFailureLoops, metrics.unresolvedFailureLoops, coverage.fingerprintedFailures, metrics.validationFailures, coverage.uncorrelatedValidationObservations)} .description=${localization.t("rework.recurringDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.failureAttempts")} .value=${formatCount(metrics.repeatedFailureAttempts)} .hint=${localization.t("rework.includesFirst")} .description=${localization.t("rework.failureAttemptsDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.resolutionTime")} .value=${formatResolutionDuration(metrics.failureResolutionDurationMs, metrics.resolvedFailureLoops)} .hint=${formatResolutionHint(metrics.resolvedFailureLoops, metrics.unresolvedFailureLoops)} .description=${localization.t("rework.resolutionDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.resolutionTokens")} .value=${formatResolutionTokens(metrics.failureResolutionTokens.total, metrics.resolvedFailureLoops)} .hint=${formatResolutionHint(metrics.resolvedFailureLoops, metrics.unresolvedFailureLoops)} .description=${localization.t("rework.resolutionTokensDescription")}></am-kpi-card>
       </div></div>
       <div class="metric-group"><h3>${localization.t("rework.otherSignals")}</h3><div class="metrics" aria-label=${localization.t("rework.otherAria")}>
         <am-kpi-card .label=${localization.t("rework.effortShare")} .value=${formatRate(metrics.reworkAgentEffortRate)} .hint=${reworkEffortHint} .description=${localization.t("rework.effortDescription")}></am-kpi-card>
-        <am-kpi-card .label=${localization.t("rework.tokenRate")} .value=${formatRate(reworkTokenRate)} .hint=${reworkTokenHint} .description=${localization.t("rework.tokenDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.toolFailureRate")} .value=${formatRate(metrics.toolFailureRate)} .hint=${metrics.toolAttemptsWithOutcome ? localization.t("rework.knownOutcomes", { failures: metrics.toolFailures, total: metrics.toolAttemptsWithOutcome }) : localization.t("rework.noOutcomes")} .description=${localization.t("rework.toolFailureDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.apiRetry")} .value=${formatCount(metrics.apiRetryWaste.attempts)} .hint=${localization.t("rework.observedDuration", { duration: formatDuration(metrics.apiRetryWaste.durationMs) })} .description=${localization.t("rework.apiRetryDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.repeatedCommands")} .value=${formatCount(metrics.repeatedCommands)} .hint=${localization.t("rework.sameAgentCommand")} .description=${localization.t("rework.repeatedCommandsDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.reeditedFiles")} .value=${formatCount(metrics.reeditedFiles)} .hint=${localization.t("rework.sameAgentFile")} .description=${localization.t("rework.reeditedFilesDescription")}></am-kpi-card>
-      </div></div>
-      ${this.renderFailureEpisodes()}
+      </div></div></details>
       <div class="evidence">
         <article><strong>${localization.t(partial ? "rework.partialEvidence" : "rework.evidenceCoverage")}</strong><p>${localization.t("rework.coverageDetail", { outcomes: metrics.validationAttemptsWithOutcome, validations: coverage.validationAttempts, identified: coverage.identifiedValidationAttempts, fingerprinted: coverage.fingerprintedFailures, failures: metrics.validationFailures, backed: coverage.idBackedValidationAttempts, merged: coverage.mergedValidationAttempts, uncorrelated: coverage.uncorrelatedValidationObservations, conflicts: coverage.conflictingAttemptObservations, ambiguous: coverage.ambiguousFailureAttempts })}</p></article>
         ${capability(localization.t("rework.changeRevert"), capabilities.changeRevert.state, capabilities.changeRevert.reason)}
