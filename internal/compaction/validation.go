@@ -38,6 +38,7 @@ type validationExpectation struct {
 	logs          int64
 	metrics       int64
 	planSnapshots int64
+	rates         int64
 }
 
 func (expected *validationExpectation) add(record storedExport, accepted ingest.AcceptedExport) {
@@ -152,6 +153,7 @@ FROM otlp_exports ORDER BY id`)
 		"session_links":        int64(len(expected.sessionLinks)),
 		"session_memberships":  int64(len(expected.sessionNodes)),
 		"plan_usage_snapshots": expected.planSnapshots,
+		"model_rates":          expected.rates,
 	}
 	for table, want := range wantCounts {
 		var got int64
@@ -161,6 +163,32 @@ FROM otlp_exports ORDER BY id`)
 		if got != want {
 			return fmt.Errorf("candidate %s count %d, want %d", table, got, want)
 		}
+	}
+	foreignKeys, err := database.QueryContext(ctx, "PRAGMA foreign_key_check")
+	if err != nil {
+		return fmt.Errorf("validate candidate foreign keys: %w", err)
+	}
+	if foreignKeys.Next() {
+		_ = foreignKeys.Close()
+		return fmt.Errorf("candidate contains a foreign-key violation")
+	}
+	if err := foreignKeys.Close(); err != nil {
+		return err
+	}
+	var calls, attributions, missingSupport, missingMembership int64
+	if err := database.QueryRowContext(ctx, `SELECT
+  (SELECT COUNT(*) FROM model_calls),
+  (SELECT COUNT(*) FROM model_call_attributions),
+  (SELECT COUNT(*) FROM model_call_trace_memberships m WHERE NOT EXISTS (
+    SELECT 1 FROM model_call_trace_supports s WHERE s.call_id = m.call_id AND s.trace_id = m.trace_id
+  )),
+  (SELECT COUNT(*) FROM model_call_trace_supports s WHERE NOT EXISTS (
+    SELECT 1 FROM model_call_trace_memberships m WHERE m.call_id = s.call_id AND m.trace_id = s.trace_id
+  ))`).Scan(&calls, &attributions, &missingSupport, &missingMembership); err != nil {
+		return fmt.Errorf("validate candidate cost projection: %w", err)
+	}
+	if calls != attributions || missingSupport != 0 || missingMembership != 0 {
+		return fmt.Errorf("candidate cost projection is incomplete: calls=%d attributions=%d membership_without_support=%d support_without_membership=%d", calls, attributions, missingSupport, missingMembership)
 	}
 	return nil
 }

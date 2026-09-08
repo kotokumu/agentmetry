@@ -10,6 +10,7 @@ import { featurePanelStyles } from "./feature-styles";
 import { affectsOverview, LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
+import { costCoverageHint, formatCostSummary } from "../presentation/cost";
 
 export type DashboardStateDetail = Readonly<{
   status: "loading" | "ready" | "failed";
@@ -39,7 +40,7 @@ export class DashboardSummary extends LocalizedElement {
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
-    .kpis { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 10px; margin-bottom: 10px; }
+    .kpis { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; margin-bottom: 10px; }
     .plan-panel { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 14px; align-items: start; margin-bottom: 10px; padding-top: 11px; padding-bottom: 11px; }
     .plan-panel h2 { margin: 2px 0 0; }
     @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .plan-panel { grid-template-columns: 1fr; gap: 8px; } }
@@ -54,6 +55,7 @@ export class DashboardSummary extends LocalizedElement {
         <am-kpi-card .label=${localization.t("dashboard.conversations")} .value=${value ? localization.number(value.runCount) : placeholder}></am-kpi-card>
         <am-kpi-card .label=${localization.t("dashboard.agents")} .value=${value ? localization.number(value.agentCount) : placeholder}></am-kpi-card>
         <am-kpi-card .label=${localization.t("dashboard.modelTraffic")} .value=${value ? formatOptionalNumber(value.tokens.total) : placeholder} .hint=${localization.t("dashboard.modelTrafficHint")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("workspace.estimatedCost")} .value=${value ? formatCostSummary(value.costSummary) : placeholder} .hint=${value ? costCoverageHint(value.costSummary) : ""}></am-kpi-card>
       </section>
       <section class="panel plan-panel"><h2>${localization.t("dashboard.planLimits")}</h2><am-plan-usage .snapshots=${value?.planUsage ?? []}></am-plan-usage></section>
     `;

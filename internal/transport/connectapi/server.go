@@ -579,6 +579,7 @@ func mapTraceResponse(trace query.Trace, pageSize int) *v1.GetTraceResponse {
 		Conversations: mapConversationRefs(trace.Conversations), Agents: mapTraceAgents(trace.Agents), Activities: mapActivities(trace.Activities),
 		Page:            pageInfo(trace.HasMore, trace.ActivityOffset+len(trace.Activities), trace.ActivityOffset > 0, max(0, trace.ActivityOffset-pageSize), trace.ActivityOffset),
 		TotalActivities: trace.ActivityCount,
+		CostSummary:     mapCostSummary(trace.CostSummary),
 	}
 }
 
@@ -674,7 +675,7 @@ func timestamp(value time.Time) *timestamppb.Timestamp {
 func mapDashboard(value query.Overview) *v1.Dashboard {
 	result := &v1.Dashboard{
 		Sources: mapSources(value.Sources), SignalCounts: &v1.SignalCounts{Traces: value.SignalCounts.Traces, Logs: value.SignalCounts.Logs, Metrics: value.SignalCounts.Metrics},
-		RunCount: value.RunCount, AgentCount: value.AgentCount, Tokens: mapTokens(value.Tokens), PlanUsage: mapPlanUsage(value.PlanUsage),
+		RunCount: value.RunCount, AgentCount: value.AgentCount, Tokens: mapTokens(value.Tokens), PlanUsage: mapPlanUsage(value.PlanUsage), CostSummary: mapCostSummary(value.CostSummary),
 	}
 	result.RecentActivity = mapActivities(value.RecentActivity)
 	return result
@@ -698,7 +699,7 @@ func mapSessions(values []query.SessionListEntry) []*v1.SessionSummary {
 }
 
 func mapSession(value query.Session) *v1.SessionSummary {
-	result := &v1.SessionSummary{Id: value.ID, SourceId: value.SourceID, Sources: mapSources(value.Sources), StartedAt: timestamp(value.StartedAt), EndedAt: timestamp(value.EndedAt), ActivityCount: value.ActivityCount, AgentCount: value.AgentCount, Tokens: mapTokens(value.Tokens), Agents: mapAgents(value.Agents)}
+	result := &v1.SessionSummary{Id: value.ID, SourceId: value.SourceID, Sources: mapSources(value.Sources), StartedAt: timestamp(value.StartedAt), EndedAt: timestamp(value.EndedAt), ActivityCount: value.ActivityCount, AgentCount: value.AgentCount, Tokens: mapTokens(value.Tokens), Agents: mapAgents(value.Agents), CostSummary: mapCostSummary(value.CostSummary)}
 	if value.CostUSD != nil {
 		result.CostUsd = value.CostUSD
 	}
@@ -791,7 +792,7 @@ func mapActivities(values []query.Activity) []*v1.Activity {
 	result := make([]*v1.Activity, 0, len(values))
 	for _, value := range values {
 		body, evidence := query.ContentForDelivery(value)
-		result = append(result, &v1.Activity{
+		mapped := &v1.Activity{
 			Id: value.ID, Source: value.Source, Signal: string(value.Signal), TraceId: value.TraceID, SpanId: value.SpanID, ParentSpanId: value.ParentSpanID,
 			Name: value.Name, Kind: string(value.Kind), ToolName: value.ToolName, TargetAgentId: value.TargetAgentID, TargetAgentType: value.TargetAgentType,
 			Content: body, AgentId: value.AgentID, AgentDefinition: value.AgentDefinition, AgentType: value.AgentType, ParentAgentId: value.ParentAgentID,
@@ -800,7 +801,13 @@ func mapActivities(values []query.Activity) []*v1.Activity {
 			MissingParent:   value.MissingParent,
 			ContentEvidence: &v1.ContentEvidence{Source: evidence.Source, ActivityId: evidence.ActivityID, Signal: evidence.Signal, Kind: evidence.Kind, Evidence: evidence.Evidence, Availability: evidence.Availability, Fields: evidence.Fields, Truncated: evidence.Truncated, RedactionReason: evidence.RedactionReason},
 			PromptId:        value.PromptID, UsageId: value.UsageID, RelatedTraceId: value.RelatedTraceID, RelatedSpanId: value.RelatedSpanID,
-		})
+		}
+		if value.ModelCallCost != nil {
+			mapped.ModelCallRelation = &v1.Activity_ModelCallCost{ModelCallCost: mapModelCallCost(*value.ModelCallCost)}
+		} else if value.ModelCallRef != nil {
+			mapped.ModelCallRelation = &v1.Activity_ModelCallRef{ModelCallRef: &v1.ModelCallRef{CallId: value.ModelCallRef.CallID, IdentityBasis: identityBasis(value.ModelCallRef.IdentityBasis), EvidenceRole: evidenceRole(value.ModelCallRef.EvidenceRole)}}
+		}
+		result = append(result, mapped)
 	}
 	return result
 }

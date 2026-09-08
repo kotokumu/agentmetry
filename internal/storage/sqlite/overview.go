@@ -223,6 +223,12 @@ LIMIT ? OFFSET ?`, spanWhere, logWhere, metricWhere)
 	if err := rows.Err(); err != nil && err != sql.ErrNoRows {
 		return nil, fmt.Errorf("iterate recent activity: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return nil, fmt.Errorf("close recent activity: %w", err)
+	}
+	if err := store.hydrateModelCallRelations(ctx, reader, activities); err != nil {
+		return nil, err
+	}
 	return enrichActivityRelationships(activities), nil
 }
 

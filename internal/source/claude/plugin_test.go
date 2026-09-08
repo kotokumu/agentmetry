@@ -140,6 +140,9 @@ func TestPluginProfilesClaudeTraceAgentAndToolOperations(t *testing.T) {
 	if request.Attributes["gen_ai.agent.type"] != "Explore" || request.Attributes["gen_ai.client.request.id"] != "client-request-1" {
 		t.Fatalf("trace semantics were not normalized: %#v", request.Attributes)
 	}
+	if request.Attributes["gen_ai.usage.id"] != "client-request-1" || request.Attributes["gen_ai.usage.id.basis"] != "claude_client_request_id" {
+		t.Fatalf("typed usage identity was not normalized: %#v", request.Attributes)
+	}
 	if _, exists := request.Attributes["gen_ai.usage.input_tokens"]; exists {
 		t.Fatalf("trace token usage must not duplicate the authoritative api_request event: %#v", request.Attributes)
 	}

@@ -28,6 +28,7 @@ import type { ActivityDirection, Session, TelemetrySource, TimeRange } from "../
 import { notReported } from "../presentation/missing-data";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
+import { costCoverageHint, formatCostSummary } from "../presentation/cost";
 import { featurePanelStyles } from "./feature-styles";
 import { affectsSessionList, LIVE_UPDATE_EVENT, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 import { sectionLocation } from "../app/navigation";
@@ -296,7 +297,7 @@ export class ConversationWorkspace extends LocalizedElement {
       </div><details class="session-overview"><summary>${localization.t("workspace.sessionOverview")}</summary><div class="session-metrics" aria-label=${localization.t("workspace.usageAria")}>
         <am-kpi-card .label=${localization.t("workspace.inputTokens")} .value=${formatOptionalNumber(selected.tokens.input)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("workspace.outputTokens")} .value=${formatOptionalNumber(selected.tokens.output)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
-        <am-kpi-card .label=${localization.t("workspace.estimatedCost")} .value=${formatCost(selected.costUsd)} .hint=${selected.costUsd === undefined ? notReported() : localization.t("workspace.observedTelemetry")}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("workspace.estimatedCost")} .value=${formatCostSummary(selected.costSummary)} .hint=${costCoverageHint(selected.costSummary)}></am-kpi-card>
       </div></details>${this.renderRelatedTraces(selected)}<p class="coverage-note">${localization.t("workspace.coverage", { state: localization.t(this.conversations.rework?.coverage.activityCoverage === "observed_projection_complete" ? "workspace.coverageComplete" : this.conversations.rework ? "workspace.coveragePartial" : "workspace.coverageUnavailable") })}</p></section>
       <nav class="purpose-nav" aria-label=${localization.t("workspace.investigationAria")}>${([ ["execution", "workspace.execution"], ["files", "workspace.fileReads"], ["rework", "workspace.rework"] ] as const).map(([purpose, label]) => html`<button type="button" data-purpose=${purpose} aria-pressed=${String(this.purpose === purpose)} @click=${() => this.selectPurpose(purpose)}>${localization.t(label)}</button>`)}</nav>
       <am-session-file-reads
@@ -550,7 +551,6 @@ export class ConversationWorkspace extends LocalizedElement {
 }
 
 const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? notReported() : localization.number(value);
-const formatCost = (value?: number) => value === undefined ? notReported() : localization.number(value, { style: "currency", currency: "USD", maximumFractionDigits: 4 });
 const completionMsg = (text: string) => {
   switch (text) {
     case "Switch session": return msg("Switch session", { id: "workspaceCompletion.switchSession" });

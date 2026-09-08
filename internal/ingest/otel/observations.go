@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-const normalizerVersion = 2
+const normalizerVersion = 3
 
 func BuildTraceObservations(traces ptrace.Traces, projection canonical.Batch) ([]observation.Observation, error) {
 	observations := make([]observation.Observation, 0, len(projection.Spans))
@@ -74,10 +74,17 @@ func BuildLogObservations(logs plog.Logs, projection canonical.Batch) ([]observa
 				if record.ObservedTimestamp() == 0 {
 					observedAt = projected.ObservedAt
 				}
+				occurredAt := time.Time{}
+				if producerTime, ok := projected.Attributes["event.timestamp"].(string); ok {
+					occurredAt, _ = time.Parse(time.RFC3339Nano, producerTime)
+				}
+				if occurredAt.IsZero() && record.Timestamp() != 0 {
+					occurredAt = record.Timestamp().AsTime()
+				}
 				observations = append(observations, observation.Observation{
 					Ordinal: ordinal, Signal: canonical.SignalLog, Kind: projected.Kind,
 					Source: projected.Source, SourceEventName: sourceEventName,
-					OccurredAt: projected.ObservedAt, ObservedAt: observedAt,
+					OccurredAt: occurredAt, ObservedAt: observedAt,
 					TraceID: projected.TraceID, SpanID: projected.SpanID,
 					SessionID: projected.Agent.RunID, AgentID: projected.Agent.AgentID,
 					AgentDefinition: projected.Agent.AgentDefinition,

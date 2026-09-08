@@ -8,6 +8,7 @@ import type { TimeRange } from "../model/telemetry";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
 import { notReported } from "../presentation/missing-data";
+import { costCoverageHint, formatCostSummary } from "../presentation/cost";
 
 @customElement("am-trace-catalog")
 export class TraceCatalog extends LocalizedElement {
@@ -124,7 +125,7 @@ export class TraceCatalog extends LocalizedElement {
   private renderTrace(trace: TraceCatalogEntry) {
     const duration = trace.durationMs === undefined ? notReported() : `${localization.number(trace.durationMs)} ms`;
     const sessions = trace.conversations.length ? trace.conversations.map(({ sourceId, id }) => `${sourceId}/${id}`).join(", ") : notReported();
-    return html`<li class="trace-row"><div><a class="trace-link" href=${this.locationForTrace(trace.traceId)} @click=${(event: MouseEvent) => this.traceSelected(event, trace)}>${trace.traceId}</a><div class="meta"><span>${trace.startedAt || notReported()}</span><span>${duration}</span><span>${localization.t("traceCatalog.activities", { count: localization.number(trace.activityCount) })}</span><span>${sessions}</span></div></div><span class="status">${trace.status}</span></li>`;
+    return html`<li class="trace-row"><div><a class="trace-link" href=${this.locationForTrace(trace.traceId)} @click=${(event: MouseEvent) => this.traceSelected(event, trace)}>${trace.traceId}</a><div class="meta"><span>${trace.startedAt || notReported()}</span><span>${duration}</span><span>${localization.t("traceCatalog.activities", { count: localization.number(trace.activityCount) })}</span><span>${sessions}</span><span>${formatCostSummary(trace.costSummary)} · ${costCoverageHint(trace.costSummary)}</span></div></div><span class="status">${trace.status}</span></li>`;
   }
 
   private readonly conditionChanged = (event: Event) => {

@@ -12,6 +12,13 @@ import {
   TimeRange,
   SessionListView,
   SessionRole,
+  CallIdentityBasis,
+  CallCostBasis,
+  CostSummaryBasis,
+  CostCoverage,
+  ModelCallEvidenceRole,
+  CostUnavailableReason,
+  CostAggregationError,
   type ListSessionsResponse,
   type Activity as ActivityMessage,
   type AgentSummary,
@@ -27,6 +34,7 @@ import {
   type PlanUsageSnapshot,
   type SessionSummary,
   type TokenUsage as TokenUsageMessage,
+  type CostSummary as CostSummaryMessage,
 } from "../gen/agentmetry/v1/agentmetry_pb";
 import type {
   Activity,
@@ -42,6 +50,7 @@ import type {
   TokenUsage,
   Trace,
 } from "../model/telemetry";
+import type { CostBasis, CostSummary, ModelCallCost, ModelCallRef } from "../model/cost";
 import type { SessionFileReadPage, TraceCatalogPage, TraceCatalogEntry, SessionFileRead, TraceCatalogConditions } from "../model/trace-catalog";
 import type { TraceInvestigationWindow, TraceOverview, TraceWindowResult } from "../model/trace-investigation";
 
@@ -299,6 +308,7 @@ function mapDashboard(value: Dashboard): DashboardSummary {
     tokens: mapTokens(value.tokens),
     recentActivity: value.recentActivity.map(mapActivity),
     planUsage: value.planUsage.map(mapPlanUsage),
+    costSummary: mapCostSummary(value.costSummary),
   };
 }
 
@@ -421,6 +431,7 @@ function mapSession(value: SessionSummary, traceIds: readonly string[] = []): Se
     agentCount: Number(value.agentCount),
     tokens: mapTokens(value.tokens),
     costUsd: value.costUsd,
+    costSummary: mapCostSummary(value.costSummary),
     agents: value.agents.map(mapAgent),
     activities: [],
   };
@@ -485,6 +496,7 @@ function mapActivity(value: ActivityMessage): Activity {
     status: value.status || undefined,
     tokens: mapTokens(value.tokens),
     costUsd: value.costUsd,
+    ...mapModelCallRelation(value),
     contributesToTotal: value.contributesToTotal,
   };
 }
@@ -514,15 +526,17 @@ const mapTrace = (response: GetTraceResponse, offset = 0): Trace => {
     hasMore: page?.hasMore ?? false,
     nextPageToken: page?.nextPageToken || undefined,
     previousPageToken: page?.previousPageToken || undefined,
+    costSummary: mapCostSummary(response.costSummary),
   };
 };
 
-function mapTraceCatalogEntry(value: { traceId: string; startedAt?: Timestamp; endedAt?: Timestamp; durationMs?: number; status: string; activityCount: bigint; rootSpanCount: bigint; missingParentCount: bigint; conversations: readonly { sourceId: string; id: string }[] }): TraceCatalogEntry {
+function mapTraceCatalogEntry(value: { traceId: string; startedAt?: Timestamp; endedAt?: Timestamp; durationMs?: number; status: string; activityCount: bigint; rootSpanCount: bigint; missingParentCount: bigint; conversations: readonly { sourceId: string; id: string }[]; costSummary?: CostSummaryMessage }): TraceCatalogEntry {
   return {
     traceId: value.traceId, startedAt: timeValue(value.startedAt), endedAt: timeValue(value.endedAt),
     durationMs: value.durationMs, status: value.status, activityCount: Number(value.activityCount),
     rootSpanCount: Number(value.rootSpanCount), missingParentCount: Number(value.missingParentCount),
     conversations: value.conversations.map((conversation) => ({ sourceId: conversation.sourceId, id: conversation.id })),
+    costSummary: mapCostSummary(value.costSummary),
   };
 }
 
@@ -581,7 +595,69 @@ export const mapTraceOverview = (response: GetTraceOverviewResponse): TraceOverv
     endedAt: timeValue(activity.endedAt),
     missingParent: activity.missingParent,
   })),
+  costSummary: mapCostSummary(response.costSummary),
 });
+
+function mapCostSummary(value?: CostSummaryMessage): CostSummary {
+  const basis: CostBasis = value?.basis === CostSummaryBasis.PROVIDER_REPORTED ? "provider_reported"
+    : value?.basis === CostSummaryBasis.RATE_CARD_ESTIMATE ? "rate_card_estimate"
+      : value?.basis === CostSummaryBasis.MIXED ? "mixed"
+        : value?.basis === CostSummaryBasis.UNAVAILABLE ? "unavailable" : "unknown";
+  const coverage = value?.coverage === CostCoverage.COMPLETE ? "complete"
+    : value?.coverage === CostCoverage.PARTIAL ? "partial"
+      : value?.coverage === CostCoverage.UNAVAILABLE ? "unavailable" : "unknown";
+  const aggregateError = value?.aggregateError === undefined ? undefined
+    : value.aggregateError === CostAggregationError.CALCULATION_ERROR ? "calculation_error" : "unspecified";
+  const amountVisible = value?.amountMicroUsd !== undefined && (coverage === "complete" || coverage === "partial")
+    && basis !== "unknown" && basis !== "unavailable" && aggregateError === undefined;
+  const amountMicroUsd = value?.amountMicroUsd;
+  return {
+    amountMicroUsd: amountVisible && amountMicroUsd !== undefined ? amountMicroUsd : null,
+    basis, coverage,
+    eligibleCalls: value?.eligibleCalls ?? 0n,
+    pricedCalls: value?.pricedCalls ?? 0n,
+    unpricedReasons: value?.unpricedReasons.map((reason) => ({ reason: unavailableReason(reason.reason), count: reason.count })) ?? [],
+    ...(aggregateError ? { aggregateError } : {}),
+  };
+}
+
+function mapModelCallRelation(value: ActivityMessage): { modelCallCost?: ModelCallCost; modelCallRef?: ModelCallRef } {
+  if (value.modelCallRelation.case === "modelCallCost") {
+    const call = value.modelCallRelation.value;
+    const basis: CostBasis = call.basis === CallCostBasis.PROVIDER_REPORTED ? "provider_reported"
+      : call.basis === CallCostBasis.RATE_CARD_ESTIMATE ? "rate_card_estimate"
+        : call.basis === CallCostBasis.UNAVAILABLE ? "unavailable" : "unknown";
+    return { modelCallCost: {
+      callId: call.callId, identityBasis: identityBasis(call.identityBasis), basis,
+      amountMicroUsd: basis === "unknown" || basis === "unavailable" ? null : call.amountMicroUsd ?? null,
+      ...(call.primaryReason !== undefined ? { primaryReason: unavailableReason(call.primaryReason) } : {}),
+      ...(call.rateEntryId ? { rateEntryId: call.rateEntryId } : {}),
+    } };
+  }
+  if (value.modelCallRelation.case === "modelCallRef") {
+    const ref = value.modelCallRelation.value;
+    return { modelCallRef: { callId: ref.callId, identityBasis: identityBasis(ref.identityBasis), evidenceRole: ref.evidenceRole === ModelCallEvidenceRole.DUPLICATE_AUTHORITATIVE ? "duplicate_authoritative" : ref.evidenceRole === ModelCallEvidenceRole.CORROBORATING ? "corroborating" : "unknown" } };
+  }
+  return {};
+}
+
+const identityBasis = (value: CallIdentityBasis) => value === CallIdentityBasis.CLAUDE_CLIENT_REQUEST_ID ? "claude_client_request_id"
+  : value === CallIdentityBasis.CLAUDE_REQUEST_ID ? "claude_request_id"
+    : value === CallIdentityBasis.CLAUDE_EVENT_SEQUENCE ? "claude_event_sequence"
+      : value === CallIdentityBasis.JOURNAL_EVIDENCE_FALLBACK ? "journal_evidence_fallback" : "unknown";
+
+const unavailableReason = (value: CostUnavailableReason) => ({
+  [CostUnavailableReason.CONFLICTING_AUTHORITATIVE_EVIDENCE]: "conflicting_authoritative_evidence",
+  [CostUnavailableReason.INVALID_PROVIDER_AMOUNT]: "invalid_provider_amount",
+  [CostUnavailableReason.MISSING_MODEL]: "missing_model",
+  [CostUnavailableReason.MISSING_OCCURRED_AT]: "missing_occurred_at",
+  [CostUnavailableReason.MISSING_TOKEN_USAGE]: "missing_token_usage",
+  [CostUnavailableReason.UNSUPPORTED_BILLING_MODE]: "unsupported_billing_mode",
+  [CostUnavailableReason.UNSUPPORTED_USAGE_CONDITION]: "unsupported_usage_condition",
+  [CostUnavailableReason.RATE_NOT_FOUND]: "rate_not_found",
+  [CostUnavailableReason.RATE_CONFLICT]: "rate_conflict",
+  [CostUnavailableReason.CALCULATION_ERROR]: "calculation_error",
+} as Record<number, string>)[value] ?? "unspecified";
 
 export const mapTraceWindow = (response: GetTraceWindowResponse, offset = 0): TraceWindowResult => {
   if (!response.trace) throw new Error("Trace window response was empty");

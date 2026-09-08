@@ -1,4 +1,5 @@
 import type { Activity, Trace } from "./telemetry";
+import type { CostSummary } from "./cost";
 
 export type TraceInvestigationState = Readonly<{
   startedAt?: string;
@@ -37,6 +38,7 @@ export type TraceOverview = Readonly<{
   returnedActivities: number;
   coverage: string;
   activities: readonly TraceOverviewActivity[];
+  costSummary?: CostSummary;
 }>;
 
 export type TraceWindowResult = Readonly<{

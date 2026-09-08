@@ -61,7 +61,11 @@ func (store *Store) PutPlanUsage(ctx context.Context, snapshot planusage.Snapsho
 }
 
 func (store *Store) LatestPlanUsage(ctx context.Context) ([]planusage.Snapshot, error) {
-	rows, err := store.readDB.QueryContext(ctx, `SELECT source, account_id, plan, window_id,
+	return latestPlanUsage(ctx, store.readDB)
+}
+
+func latestPlanUsage(ctx context.Context, reader sqlReader) ([]planusage.Snapshot, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT source, account_id, plan, window_id,
   window_duration_minutes, used_percent, resets_at, captured_at, authority, raw_json
 FROM plan_usage_snapshots AS current
 WHERE NOT EXISTS (

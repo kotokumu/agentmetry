@@ -210,15 +210,25 @@ func (store *Store) activitiesByID(ctx context.Context, transaction *sql.Tx, act
 		return nil, fmt.Errorf("load activity mutations: %w", err)
 	}
 	defer rows.Close()
+	activities := make([]query.Activity, 0, len(activityIDs))
 	for rows.Next() {
 		activity, err := store.scanActivity(rows)
 		if err != nil {
 			return nil, err
 		}
-		result[activity.ID] = activity
+		activities = append(activities, activity)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := store.hydrateModelCallRelations(ctx, transaction, activities); err != nil {
+		return nil, err
+	}
+	for _, activity := range activities {
+		result[activity.ID] = activity
 	}
 	return result, nil
 }

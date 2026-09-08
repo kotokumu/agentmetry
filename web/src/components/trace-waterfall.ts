@@ -1,4 +1,5 @@
 import { css, html, type PropertyValues } from "lit";
+import { msg } from "@lit/localize";
 import { customElement, property } from "lit/decorators.js";
 import type { Activity, Trace } from "../model/telemetry";
 import type { TraceOverview } from "../model/trace-investigation";
@@ -9,6 +10,7 @@ import "./token-breakdown";
 import { activityContentStyles, renderActivityContent } from "./activity-content";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
+import { formatMicroUSD } from "../presentation/cost";
 
 type TraceRow = Readonly<{
   activity: Activity;
@@ -280,6 +282,8 @@ const durationLabel = (activity: Activity) => {
   return milliseconds < 1_000 ? `${milliseconds} ms` : `${(milliseconds / 1_000).toFixed(milliseconds < 10_000 ? 2 : 1)} s`;
 };
 const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => void, href = conversationHref(activity)) => {
+  const call = activity.modelCallCost;
+  const callRef = activity.modelCallRef;
   const facts = [
     [localization.t("waterfall.kind"), activity.kind],
     [localization.t("waterfall.toolName"), activity.toolName || NOT_APPLICABLE],
@@ -303,6 +307,10 @@ const activityEvidence = (activity: Activity, navigate?: (event: MouseEvent) => 
       ? [activity.targetAgentId, activity.targetAgentType].filter(Boolean).join(" · ")
       : NOT_APPLICABLE],
     [localization.t("waterfall.rollup"), rollupLabel(activity)],
+    [msg("Model call ID", { id: "cost.callId" }), call?.callId || callRef?.callId || NOT_APPLICABLE],
+    [msg("Call identity", { id: "cost.identity" }), call?.identityBasis || callRef?.identityBasis || NOT_APPLICABLE],
+    [msg("Cost basis", { id: "cost.basis" }), call?.basis || (callRef ? callRef.evidenceRole : NOT_APPLICABLE)],
+    [msg("Estimated cost", { id: "cost.amount" }), call?.amountMicroUsd === null || call?.amountMicroUsd === undefined ? "—" : formatMicroUSD(call.amountMicroUsd)],
   ];
   return html`<div class="evidence"><dl>${facts.map(([label, value]) => html`<div><dt>${label}</dt><dd>${value}</dd></div>`)}<div><dt>${localization.t("waterfall.tokenBreakdown")}</dt><dd><am-token-breakdown .usage=${activity.tokens}></am-token-breakdown></dd></div></dl>
     ${renderActivityContent(activity)}

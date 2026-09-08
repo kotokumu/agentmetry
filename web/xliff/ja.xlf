@@ -2458,6 +2458,62 @@
   <source>Installed version unavailable</source>
   <target>現在のバージョンを取得できません</target>
 </trans-unit>
+<trans-unit id="catalogCompletion.costColumn">
+  <source>Estimated cost</source>
+  <target>推定コスト</target>
+</trans-unit>
+<trans-unit id="catalogCompletion.costLabel">
+  <source>Estimated cost</source>
+  <target>推定コスト</target>
+</trans-unit>
+<trans-unit id="cost.callId">
+  <source>Model call ID</source>
+  <target>モデル呼び出し ID</target>
+</trans-unit>
+<trans-unit id="cost.identity">
+  <source>Call identity</source>
+  <target>呼び出し識別方式</target>
+</trans-unit>
+<trans-unit id="cost.basis">
+  <source>Cost basis</source>
+  <target>コストの根拠</target>
+</trans-unit>
+<trans-unit id="cost.amount">
+  <source>Estimated cost</source>
+  <target>推定コスト</target>
+</trans-unit>
+<trans-unit id="cost.coverageUnavailable">
+  <source>Cost coverage unavailable</source>
+  <target>コストの網羅率を確認できません</target>
+</trans-unit>
+<trans-unit id="cost.complete">
+  <source>Complete</source>
+  <target>完全</target>
+</trans-unit>
+<trans-unit id="cost.partial">
+  <source>Partial</source>
+  <target>一部</target>
+</trans-unit>
+<trans-unit id="cost.providerEstimate">
+  <source>Provider estimate</source>
+  <target>プロバイダー推定値</target>
+</trans-unit>
+<trans-unit id="cost.apiEstimate">
+  <source>API-equivalent estimate</source>
+  <target>API 相当の推定値</target>
+</trans-unit>
+<trans-unit id="cost.mixedEstimate">
+  <source>Mixed estimates</source>
+  <target>複数根拠の推定値</target>
+</trans-unit>
+<trans-unit id="cost.estimateUnavailable">
+  <source>Estimate unavailable</source>
+  <target>推定値なし</target>
+</trans-unit>
+<trans-unit id="cost.coverageHint">
+  <source><x id="0" equiv-text="${coverage}"/> · <x id="1" equiv-text="${summary.pricedCalls}"/>/<x id="2" equiv-text="${summary.eligibleCalls}"/> calls · <x id="3" equiv-text="${basis}"/></source>
+  <target><x id="0" equiv-text="${coverage}"/> · <x id="1" equiv-text="${summary.pricedCalls}"/>/<x id="2" equiv-text="${summary.eligibleCalls}"/> 呼び出し · <x id="3" equiv-text="${basis}"/></target>
+</trans-unit>
 </body>
 </file>
 </xliff>

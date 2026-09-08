@@ -5,6 +5,7 @@ import type { SessionListEntry, SessionListView } from "../model/session-catalog
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
 import { notReported } from "../presentation/missing-data";
+import { costCoverageHint, formatCostSummary } from "../presentation/cost";
 
 @customElement("am-session-list")
 export class SessionList extends LocalizedElement {
@@ -31,7 +32,7 @@ export class SessionList extends LocalizedElement {
     button:disabled { cursor: wait; opacity: .6; }
     .collection-meta { margin: 8px 0; color: var(--am-muted); font-size: 14px; }
     .session-table { width: 100%; min-width: 0; border: 1px solid var(--am-border); border-radius: 8px; overflow: hidden; }
-    .table-header, .session-row { display: grid; grid-template-columns: minmax(15rem, 2.2fr) minmax(10rem, 1.2fr) minmax(12rem, 1.1fr) minmax(8rem, .8fr) auto; gap: 16px; align-items: center; }
+    .table-header, .session-row { display: grid; grid-template-columns: minmax(15rem, 2.2fr) minmax(10rem, 1.2fr) minmax(12rem, 1.1fr) minmax(8rem, .8fr) minmax(9rem, .9fr) auto; gap: 16px; align-items: center; }
     .table-header { padding: 10px 14px; color: var(--am-muted); background: var(--am-surface-strong); font-size: 12px; font-weight: 700; }
     .session-row { border-top: 1px solid var(--am-border); border-left: 3px solid transparent; }
     .session-link { display: grid; grid-column: 1 / -2; grid-template-columns: subgrid; gap: 16px; align-items: center; min-width: 0; padding: 14px; color: var(--am-text); text-align: left; text-decoration: none; }
@@ -91,6 +92,7 @@ export class SessionList extends LocalizedElement {
         <span>${msg("Source / relationship", { id: "catalogCompletion.sourceColumn" })}</span>
         <span>${msg("Observed time / activity", { id: "catalogCompletion.observedColumn" })}</span>
         <span>${msg("Tokens", { id: "catalogCompletion.tokensColumn" })}</span>
+        <span>${msg("Estimated cost", { id: "catalogCompletion.costColumn" })}</span>
         <span aria-hidden="true"></span>
       </div>
       ${this.sessions.map((session) => this.renderRow(session))}
@@ -112,6 +114,7 @@ export class SessionList extends LocalizedElement {
         <span class="cell"><span class="cell-label">${msg("Source", { id: "catalogCompletion.sourceLabel" })}</span><span class="sources">${sourceLabels.map((label) => html`<span class="source">${label}</span>`)}${relationship ? html`<span class="source" title=${session.catalog?.parentSessionId}>${relationship}</span>` : null}</span>${session.catalog?.role === "child" && session.catalog.parentSessionId ? html`<small class="value">${session.catalog.parentSessionId}</small>` : null}</span>
         <span class="cell"><span class="cell-label">${msg("Observed", { id: "catalogCompletion.observedLabel" })}</span><span class="value">${session.startedAt ? html`<time datetime=${session.startedAt} title=${session.startedAt}>${localization.dateTime(new Date(session.startedAt))}</time>` : html`<span>${notReported()}</span>`}</span><small class="value">${session.activityCount === undefined ? notReported() : localization.t("sessions.counts", { agents: localization.number(session.agentCount ?? session.agents.length), activities: localization.number(session.activityCount) })}</small></span>
         <span class="cell"><span class="cell-label">${msg("Tokens", { id: "catalogCompletion.tokensLabel" })}</span><span class="value">${formatTokens(session.tokens)}</span></span>
+        <span class="cell"><span class="cell-label">${msg("Estimated cost", { id: "catalogCompletion.costLabel" })}</span><span class="value">${formatCostSummary(session.costSummary)}</span><small class="value">${costCoverageHint(session.costSummary)}</small></span>
       </a>
       <button class="copy-button" type="button" aria-label=${msg(str`Copy source-qualified session ID ${session.sourceId}:${session.id}`, { id: "catalogCompletion.copySessionId" })} title=${msg(str`Copy source-qualified session ID ${session.sourceId}:${session.id}`, { id: "catalogCompletion.copyTitle" })} @click=${(event: MouseEvent) => void this.copyId(event, session.sourceId, session.id)}>${this.copyStatus?.id === `${session.sourceId}:${session.id}` ? this.copyStatus.state === "copied" ? msg("Copied", { id: "catalogCompletion.copySuccess" }) : msg("Copy failed", { id: "catalogCompletion.copyFailure" }) : msg("Copy ID", { id: "catalogCompletion.copyButton" })}</button>
     </div>`;

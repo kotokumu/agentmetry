@@ -37,6 +37,9 @@ func TestNormalizeCompletedResponseAndSystemSession(t *testing.T) {
 	if event.Name != "gen_ai.response.completed" || event.Attributes["gen_ai.agent.type"] != "system" {
 		t.Fatalf("unexpected response projection: %#v", event)
 	}
+	if event.Attributes["gen_ai.usage.role"] != "authoritative_call" {
+		t.Fatalf("usage-free completion must remain cost eligible: %#v", event.Attributes)
+	}
 }
 
 func TestNormalizeUsageAndAgentCommunicationAliases(t *testing.T) {

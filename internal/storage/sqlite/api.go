@@ -13,9 +13,14 @@ import (
 )
 
 func (store *Store) GetDashboard(ctx context.Context, filter query.DashboardFilter) (query.Overview, error) {
+	transaction, err := store.readDB.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
+	if err != nil {
+		return query.Overview{}, fmt.Errorf("begin dashboard snapshot: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
 	since := formatTime(filter.Since)
 	var dashboard query.Overview
-	if err := store.readDB.QueryRowContext(ctx, `WITH grouped AS (
+	if err := transaction.QueryRowContext(ctx, `WITH grouped AS (
   SELECT r.source, COALESCE(m.root_session_id, r.run_id) AS root_id, MAX(r.ended_at) AS ended_at,
     SUM(r.trace_count) AS trace_count, SUM(r.log_count) AS log_count
   FROM session_rollups r
@@ -29,33 +34,39 @@ FROM grouped WHERE ended_at >= ?`, filter.SourceID, filter.SourceID, since).Scan
 	); err != nil {
 		return query.Overview{}, fmt.Errorf("query dashboard signal counts: %w", err)
 	}
-	if err := store.readDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM metrics WHERE observed_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(&dashboard.SignalCounts.Metrics); err != nil {
+	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM metrics WHERE observed_at >= ? AND (? = '' OR source = ?)`, since, filter.SourceID, filter.SourceID).Scan(&dashboard.SignalCounts.Metrics); err != nil {
 		return query.Overview{}, fmt.Errorf("query dashboard metric count: %w", err)
 	}
 
-	var err error
-	dashboard.Sources, err = store.dashboardSources(ctx, since, filter.SourceID)
+	dashboard.Sources, err = store.dashboardSources(ctx, transaction, since, filter.SourceID)
 	if err != nil {
 		return query.Overview{}, err
 	}
-	dashboard.RunCount, dashboard.AgentCount, dashboard.Tokens, err = store.dashboardAggregates(ctx, since, filter.SourceID, filter.Search)
+	dashboard.RunCount, dashboard.AgentCount, dashboard.Tokens, err = store.dashboardAggregates(ctx, transaction, since, filter.SourceID, filter.Search)
 	if err != nil {
 		return query.Overview{}, err
 	}
-	dashboard.RecentActivity, err = store.activities(ctx, since, 50, filter.SourceID, "")
+	dashboard.RecentActivity, err = store.activitiesWindowWithReader(ctx, transaction, since, 50, 0, filter.SourceID, "", false, "")
 	if err != nil {
 		return query.Overview{}, err
 	}
-	graph, err := store.loadSessionGraph(ctx, filter.SourceID)
+	graph, err := loadSessionGraphWithReader(ctx, transaction, filter.SourceID)
 	if err != nil {
 		return query.Overview{}, err
 	}
 	for index := range dashboard.RecentActivity {
 		dashboard.RecentActivity[index] = graph.normalizeActivityAgent(dashboard.RecentActivity[index])
 	}
-	dashboard.PlanUsage, err = store.LatestPlanUsage(ctx)
+	dashboard.PlanUsage, err = latestPlanUsage(ctx, transaction)
 	if err != nil {
 		return query.Overview{}, err
+	}
+	dashboard.CostSummary, err = store.dashboardCostSummary(ctx, transaction, filter)
+	if err != nil {
+		return query.Overview{}, err
+	}
+	if err := transaction.Commit(); err != nil {
+		return query.Overview{}, fmt.Errorf("commit dashboard snapshot: %w", err)
 	}
 	return dashboard, nil
 }
@@ -229,7 +240,17 @@ LIMIT ? OFFSET ?`, unitID, unitID), filter.SourceID, filter.SourceID, formatTime
 	if err := rows.Err(); err != nil {
 		return query.SessionPage{}, fmt.Errorf("iterate session rollups: %w", err)
 	}
+	if err := rows.Close(); err != nil {
+		return query.SessionPage{}, fmt.Errorf("close session rollups: %w", err)
+	}
 	page := query.SessionPage{Sessions: sessions[:min(len(sessions), pageSize)], AppliedView: filter.View}
+	for index := range page.Sessions {
+		page.Sessions[index].CostSummary, err = sessionListCostSummary(ctx, reader, page.Sessions[index].SourceID, page.Sessions[index].ID, filter.View == query.SessionListRoots)
+		if err != nil {
+			return query.SessionPage{}, err
+		}
+		page.Sessions[index].CostUSD = completeLegacyCost(page.Sessions[index].CostSummary)
+	}
 	if len(sessions) > pageSize {
 		page.HasMore = true
 		page.NextOffset = filter.Page.NextOffset(len(page.Sessions))
@@ -252,6 +273,16 @@ func (store *Store) GetSessionSummary(ctx context.Context, identity query.Conver
 	if err != nil {
 		return query.Session{}, err
 	}
+	members := graph.members(graph.root(ref))
+	memberIDs := make([]string, len(members))
+	for index, member := range members {
+		memberIDs[index] = member.sessionID
+	}
+	session.CostSummary, err = sessionCostSummary(ctx, transaction, ref.sourceID, memberIDs)
+	if err != nil {
+		return query.Session{}, err
+	}
+	session.CostUSD = completeLegacyCost(session.CostSummary)
 	if err := transaction.Commit(); err != nil {
 		return query.Session{}, fmt.Errorf("commit session summary snapshot: %w", err)
 	}
@@ -392,8 +423,8 @@ SELECT (SELECT COUNT(*) FROM anchor),
 	return page.OffsetAround(int(before)), nil
 }
 
-func (store *Store) dashboardSources(ctx context.Context, since, sourceID string) ([]query.TelemetrySource, error) {
-	rows, err := store.readDB.QueryContext(ctx, `SELECT source FROM (
+func (store *Store) dashboardSources(ctx context.Context, reader sqlReader, since, sourceID string) ([]query.TelemetrySource, error) {
+	rows, err := reader.QueryContext(ctx, `SELECT source FROM (
   SELECT DISTINCT source FROM spans WHERE ended_at >= ? AND (? = '' OR source = ?)
   UNION
   SELECT DISTINCT source FROM logs WHERE observed_at >= ? AND (? = '' OR source = ?)
@@ -415,10 +446,10 @@ func (store *Store) dashboardSources(ctx context.Context, since, sourceID string
 	return result, rows.Err()
 }
 
-func (store *Store) dashboardAggregates(ctx context.Context, since, sourceID, search string) (runCount, agentCount int64, tokens canonical.TokenUsage, err error) {
+func (store *Store) dashboardAggregates(ctx context.Context, reader sqlReader, since, sourceID, search string) (runCount, agentCount int64, tokens canonical.TokenUsage, err error) {
 	matchedJSON := ""
 	if strings.TrimSpace(search) != "" {
-		graph, graphErr := store.loadSessionGraph(ctx, sourceID)
+		graph, graphErr := loadSessionGraphWithReader(ctx, reader, sourceID)
 		if graphErr != nil {
 			return 0, 0, canonical.TokenUsage{}, graphErr
 		}
@@ -426,7 +457,7 @@ func (store *Store) dashboardAggregates(ctx context.Context, since, sourceID, se
 		if parseErr != nil {
 			return 0, 0, canonical.TokenUsage{}, parseErr
 		}
-		matched, searchErr := store.searchSessionRoots(ctx, store.readDB, query.SessionListFilter{Since: parsedSince, SourceID: sourceID, Search: search}, graph)
+		matched, searchErr := store.searchSessionRoots(ctx, reader, query.SessionListFilter{Since: parsedSince, SourceID: sourceID, Search: search}, graph)
 		if searchErr != nil {
 			return 0, 0, canonical.TokenUsage{}, searchErr
 		}
@@ -462,7 +493,7 @@ SELECT COUNT(*), COALESCE(SUM(agent_count), 0),
 FROM selected`
 	var input, output, cacheRead, cacheWrite, reasoning int64
 	var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported int
-	err = store.readDB.QueryRowContext(ctx, statement, sourceID, sourceID, since, matchedJSON, matchedJSON).Scan(&runCount, &agentCount, &input, &output, &cacheRead, &cacheWrite, &reasoning, &inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported)
+	err = reader.QueryRowContext(ctx, statement, sourceID, sourceID, since, matchedJSON, matchedJSON).Scan(&runCount, &agentCount, &input, &output, &cacheRead, &cacheWrite, &reasoning, &inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported)
 	if err != nil {
 		return 0, 0, canonical.TokenUsage{}, fmt.Errorf("query dashboard aggregates: %w", err)
 	}

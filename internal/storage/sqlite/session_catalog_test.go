@@ -78,7 +78,7 @@ func TestSessionCatalogViews(t *testing.T) {
 			}
 			// Presentation-only fields have separate transport/detail tests. All
 			// membership, counts, view, conditions and pagination are compared.
-			if diff := cmp.Diff(tt.want, got, cmp.AllowUnexported(canonical.TokenUsage{}), cmpopts.IgnoreFields(query.Session{}, "Sources", "StartedAt", "EndedAt", "Agents", "Activities")); diff != "" {
+			if diff := cmp.Diff(tt.want, got, cmp.AllowUnexported(canonical.TokenUsage{}), cmpopts.IgnoreFields(query.Session{}, "Sources", "StartedAt", "EndedAt", "Agents", "Activities", "CostSummary")); diff != "" {
 				t.Fatalf("catalog (-want +got): %s", diff)
 			}
 		})

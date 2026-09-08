@@ -1,6 +1,7 @@
 package billing_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -17,6 +18,20 @@ func TestCalculate(t *testing.T) {
 		want    billing.CostBreakdown
 		wantErr bool
 	}{
+		{
+			name: "Astra pricing snapshot vector",
+			usage: canonical.TokenUsage{
+				Input: 100, Output: 50, CacheRead: 20, CacheWrite: 10, Reasoning: 30,
+			},
+			pricing: billing.Pricing{
+				InputMicroUSDPerMillion: 10_000_000, CacheReadMicroUSDPerMillion: 1_000_000,
+				CacheWriteMicroUSDPerMillion: 12_500_000, OutputMicroUSDPerMillion: 50_000_000,
+			},
+			want: billing.CostBreakdown{
+				InputTokens: 100, UncachedInputTokens: 70, CacheReadTokens: 20, CacheWriteTokens: 10, OutputTokens: 50,
+				InputMicroUSD: 700, CacheReadMicroUSD: 20, CacheWriteMicroUSD: 125, OutputMicroUSD: 2500, TotalMicroUSD: 3345,
+			},
+		},
 		{
 			name: "cache-aware input is charged by component",
 			usage: canonical.TokenUsage{
@@ -99,6 +114,12 @@ func TestCalculate(t *testing.T) {
 			name:    "reasoning breakdown cannot exceed output",
 			usage:   canonical.TokenUsage{Output: 5, Reasoning: 6},
 			pricing: billing.Pricing{OutputMicroUSDPerMillion: 1_000_000},
+			wantErr: true,
+		},
+		{
+			name:    "component sum overflow is rejected",
+			usage:   canonical.TokenUsage{Input: 1_000_000, Output: 1_000_000, Presence: canonical.TokenPresence{CacheRead: true, CacheWrite: true}},
+			pricing: billing.Pricing{InputMicroUSDPerMillion: math.MaxInt64, OutputMicroUSDPerMillion: math.MaxInt64},
 			wantErr: true,
 		},
 	}

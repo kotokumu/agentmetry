@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kotokumu/agentmetry/internal/billing"
 	"github.com/kotokumu/agentmetry/internal/canonical"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/journal"
@@ -39,6 +40,17 @@ type sqlReader interface {
 }
 
 func Open(path string, profiles ...sourceplugin.Registry) (*Store, error) {
+	return open(path, true, profiles...)
+}
+
+// OpenReplayCandidate creates a store without applying the current built-in
+// pricing manifest. Compaction must install the source generation's durable
+// rate history before replaying its telemetry journal.
+func OpenReplayCandidate(path string, profiles ...sourceplugin.Registry) (*Store, error) {
+	return open(path, false, profiles...)
+}
+
+func open(path string, applyBuiltinRates bool, profiles ...sourceplugin.Registry) (*Store, error) {
 	ownershipContext, cancelOwnership := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancelOwnership()
 	owner, err := ownership.Acquire(ownershipContext, path)
@@ -84,6 +96,19 @@ func Open(path string, profiles ...sourceplugin.Registry) (*Store, error) {
 		_ = database.Close()
 		_ = owner.Close()
 		return nil, err
+	}
+	if applyBuiltinRates {
+		evaluatedAt := time.Now().UTC()
+		for _, rate := range billing.BuiltinOpenAIRates() {
+			if rate.RetrievedAt.After(evaluatedAt) {
+				evaluatedAt = rate.RetrievedAt
+			}
+		}
+		if err := store.ApplyRateManifest(context.Background(), billing.BuiltinOpenAIRates(), evaluatedAt); err != nil {
+			_ = database.Close()
+			_ = owner.Close()
+			return nil, fmt.Errorf("apply built-in model rates: %w", err)
+		}
 	}
 	if fresh {
 		if _, err := database.Exec(fmt.Sprintf("PRAGMA user_version=%d", storageversion.CurrentGeneration)); err != nil {
@@ -192,7 +217,7 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 	if err != nil {
 		return err
 	}
-	if err := store.commitProjection(ctx, transaction, batch, sequence, plan.previousSpans); err != nil {
+	if err := store.commitProjection(ctx, transaction, batch, sequence, plan.previousSpans, nil); err != nil {
 		return err
 	}
 	attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, batch, plan.previousSpans, sequence)
@@ -256,7 +281,11 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 		if err != nil {
 			return err
 		}
-		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequence, plan.previousSpans); err != nil {
+		var logActivityIDs []string
+		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequence, plan.previousSpans, &logActivityIDs); err != nil {
+			return err
+		}
+		if err := store.persistModelCalls(ctx, transaction, exportID, accepted, prepared, logActivityIDs, sequence, plan.previousSpans); err != nil {
 			return err
 		}
 		attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, accepted.Projection, plan.previousSpans, sequence)
@@ -294,7 +323,7 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 	return nil
 }
 
-func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, sequence int64, previousSpans map[storedSpanKey]storedSpanScope) error {
+func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, sequence int64, previousSpans map[storedSpanKey]storedSpanScope, logActivityIDs *[]string) error {
 	ordinal := 0
 	for _, span := range batch.Spans {
 		if !canonical.IsSemanticSpan(span) {
@@ -330,6 +359,9 @@ func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, b
 		activityID, err := store.appendLog(ctx, transaction, log, sequence)
 		if err != nil {
 			return err
+		}
+		if logActivityIDs != nil {
+			*logActivityIDs = append(*logActivityIDs, activityID)
 		}
 		if log.Kind != canonical.ActivityUnknown && log.Agent.RunID != "" {
 			ordinal++
@@ -402,13 +434,19 @@ func insertExport(ctx context.Context, transaction *sql.Tx, accepted ingest.Acce
 		return 0, fmt.Errorf("invalid harness receipt evidence")
 	}
 	hash := payload.SHA256()
+	hashText := hex.EncodeToString(hash[:])
+	var occurrence int64
+	if err := transaction.QueryRowContext(ctx, `SELECT COALESCE(MAX(payload_occurrence) + 1, 0)
+FROM otlp_exports WHERE signal = ? AND payload_sha256 = ?`, accepted.Envelope.Signal, hashText).Scan(&occurrence); err != nil {
+		return 0, fmt.Errorf("allocate OTLP payload occurrence: %w", err)
+	}
 	result, err := transaction.ExecContext(ctx, `INSERT INTO otlp_exports (
-  received_at, signal, transport, payload_protobuf, payload_codec, payload_sha256,
+  received_at, signal, transport, payload_protobuf, payload_codec, payload_sha256, payload_occurrence,
   payload_size, source, normalizer_version, normalization_status, normalization_error,
   harness_receipt_state, harness_scope, harness_fingerprint, harness_label
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		formatTime(accepted.Envelope.ReceivedAt), accepted.Envelope.Signal, accepted.Envelope.Transport,
-		payload.Bytes(), payload.Codec(), hex.EncodeToString(hash[:]), payload.OriginalSize(),
+		payload.Bytes(), payload.Codec(), hashText, occurrence, payload.OriginalSize(),
 		metadata.Source, metadata.NormalizerVersion, metadata.NormalizationStatus, accepted.NormalizationError,
 		metadata.Harness.State, metadata.Harness.Scope, metadata.Harness.Fingerprint, metadata.Harness.Label,
 	)
