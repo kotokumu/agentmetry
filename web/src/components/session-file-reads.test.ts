@@ -318,4 +318,47 @@ describe("am-session-file-reads", () => {
     await vi.waitFor(() => expect(element.shadowRoot?.textContent).toContain("src/new.ts"));
     expect(element.shadowRoot?.textContent).not.toContain("src/old.ts");
   });
+
+  it("offers a retry that recovers candidate loading without changing the session identity", async () => {
+    const item = read("retry-read", "src/retry.ts", "2026-09-08T00:09:00Z", "activity-retry", "confirmed");
+    const list = vi.spyOn(agentmetryClient, "listSessionFileReads")
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockResolvedValue({ reads: [item], distinctReferenceCount: 1, hasMore: false, coverage: "complete" });
+    const element = document.createElement("am-session-file-reads") as import("./session-file-reads").SessionFileReads;
+    Object.assign(element, { sourceId: "codex", sessionId: "session-files", active: true });
+    document.body.append(element);
+
+    await vi.waitFor(() => expect(element.shadowRoot?.querySelector(".retry")).toBeTruthy());
+    (element.shadowRoot!.querySelector(".retry") as HTMLButtonElement).click();
+    await vi.waitFor(() => expect(element.shadowRoot?.querySelector<HTMLButtonElement>(".file-row button")?.title).toBe("src/retry.ts"));
+    expect(list).toHaveBeenCalledTimes(3); // candidate retry followed by the selected-reference history read
+    expect(element.sourceId).toBe("codex");
+    expect(element.sessionId).toBe("session-files");
+  });
+
+  it("moves keyboard focus to the detail heading after file and read selection", async () => {
+    const latest = read("focus-latest", "src/focus.ts", "2026-09-08T00:11:00Z", "activity-latest", "confirmed");
+    const older = read("focus-older", "src/focus.ts", "2026-09-08T00:10:00Z", "activity-older", "confirmed");
+    const other = read("focus-other", "README.md", "2026-09-08T00:09:00Z", "activity-other", "confirmed");
+    vi.spyOn(agentmetryClient, "listSessionFileReads").mockImplementation(async (_source, _session, _token, reference) => ({
+      reads: reference === "src/focus.ts" ? [latest, older] : reference ? [other] : [latest, other], distinctReferenceCount: 2, hasMore: false, coverage: "complete",
+    }));
+    const element = document.createElement("am-session-file-reads") as import("./session-file-reads").SessionFileReads;
+    Object.assign(element, { sourceId: "codex", sessionId: "session-files", active: true });
+    document.body.append(element);
+
+    await vi.waitFor(() => expect(element.shadowRoot?.querySelector(".file-row button")).toBeTruthy());
+    const focus = vi.spyOn(HTMLElement.prototype, "focus");
+    const fileButton = [...element.shadowRoot!.querySelectorAll<HTMLButtonElement>(".file-row button")].find((button) => button.title === "README.md")!;
+    fileButton.click();
+    await vi.waitFor(() => expect(element.shadowRoot?.querySelector(".file-detail h3[tabindex='-1']")).toBeTruthy());
+    expect(focus).toHaveBeenCalledWith({ preventScroll: true });
+    element.shadowRoot!.querySelector<HTMLButtonElement>(".file-row button[title='src/focus.ts']")!.click();
+    await vi.waitFor(() => expect(element.shadowRoot?.querySelector<HTMLSelectElement>(".read-history select")).toBeTruthy());
+    const history = element.shadowRoot!.querySelector<HTMLSelectElement>(".read-history select")!;
+    history.value = older.id;
+    history.dispatchEvent(new Event("change", { bubbles: true }));
+    await vi.waitFor(() => expect(focus).toHaveBeenCalledWith({ preventScroll: true }));
+    expect(element.shadowRoot?.querySelector("#file-read-detail-heading")?.textContent).toBe("src/focus.ts");
+  });
 });

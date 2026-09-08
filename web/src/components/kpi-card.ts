@@ -29,15 +29,17 @@ export class KpiCard extends LocalizedElement {
       overflow: hidden;
       border: 1px solid var(--am-border, #25314a);
       border-radius: 10px;
-      background: linear-gradient(145deg, var(--am-surface-raised, #121a2b), var(--am-surface, #0d121a));
+      background: var(--am-surface-raised, #121a2b);
       padding: 15px 16px;
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .025), 0 16px 36px rgba(0, 0, 0, .12);
-      transition: border-color .2s ease, transform .2s ease, box-shadow .2s ease;
+      transition: border-color .2s ease;
     }
 
-    article::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: linear-gradient(180deg, var(--am-accent), transparent 72%); }
-    article::after { content: ""; position: absolute; width: 100px; height: 100px; top: -70px; right: -30px; border-radius: 50%; background: rgba(var(--am-accent-rgb, 109, 244, 214), .08); filter: blur(14px); }
-    article:hover { border-color: var(--am-border-strong, var(--am-accent)); transform: translateY(-2px); box-shadow: 0 18px 42px rgba(0, 0, 0, .2), 0 0 24px rgba(var(--am-accent-rgb, 109, 244, 214), .04); }
+    article::before { content: ""; position: absolute; inset: 0 auto 0 0; width: 2px; background: var(--am-accent); }
+    article:hover { border-color: var(--am-border-strong, var(--am-accent)); }
+
+    :host([compact]) article { min-height: auto; padding: 8px 10px; }
+    :host([compact]) strong { margin-top: 4px; font-size: 1.25rem; }
+    :host([compact]) small { margin-top: 4px; }
 
     p {
       margin: 0;
@@ -75,7 +77,7 @@ export class KpiCard extends LocalizedElement {
       background: rgba(8, 13, 20, .84);
       color: var(--am-muted, #91a0b8);
       cursor: help;
-      font: 700 .68rem/1 "SFMono-Regular", "Cascadia Code", monospace;
+      font: 700 .75rem/1 "SFMono-Regular", "Cascadia Code", monospace;
     }
     .help:hover, .help:focus-visible, .help[aria-expanded="true"] {
       border-color: var(--am-accent, #6df4d6);
@@ -93,7 +95,6 @@ export class KpiCard extends LocalizedElement {
       border-radius: 9px;
       padding: 10px 11px;
       background: #0b1119;
-      box-shadow: 0 16px 36px rgba(0, 0, 0, .42);
       color: var(--am-text, #f3f7ff);
       font-size: .8rem;
       line-height: 1.5;
@@ -104,7 +105,7 @@ export class KpiCard extends LocalizedElement {
     }
     .tooltip[data-open] { visibility: visible; opacity: 1; transform: translateY(0); }
 
-    @media (prefers-reduced-motion: reduce) { article, .tooltip { transition: none; } article:hover { transform: none; } }
+    @media (prefers-reduced-motion: reduce) { article, .tooltip { transition: none; } }
     @media (max-width: 480px) {
       article { min-height: 100px; padding: 14px; }
       strong { font-size: 1.35rem; }

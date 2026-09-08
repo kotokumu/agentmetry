@@ -46,21 +46,21 @@ export class TraceWaterfall extends LocalizedElement {
     .row[open] > summary::before { transform: translateX(-12px) rotate(90deg); }
     .label { min-width: 0; padding-left: calc(var(--depth) * 14px); }
     .label strong, .label small { display: block; overflow-wrap: anywhere; }
-    .label small { color: var(--am-muted); font-size: .68rem; }
+    .label small { color: var(--am-muted); font-size: .75rem; }
     .agent { color: var(--am-text) !important; font-weight: 700; }
     .missing { color: var(--am-danger) !important; }
     .usage strong, .usage small { display: block; }
     .usage strong { font-size: .84rem; }
-    .usage small { color: var(--am-muted); font-size: .68rem; text-transform: capitalize; }
+    .usage small { color: var(--am-muted); font-size: .75rem; text-transform: capitalize; }
     .track { position: relative; height: 24px; border: 1px solid rgba(155, 190, 213, .06); border-radius: 4px; background: color-mix(in srgb, var(--am-track) 72%, transparent); }
-    .bar { position: absolute; top: 5px; height: 12px; min-width: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--am-accent), var(--am-secondary)); box-shadow: 0 0 10px rgba(var(--am-accent-rgb), .2); }
-    .bar.error { background: var(--am-danger); box-shadow: 0 0 10px color-mix(in srgb, var(--am-danger) 35%, transparent); }
+    .bar { position: absolute; top: 5px; height: 12px; min-width: 4px; border-radius: 2px; background: var(--am-accent); }
+    .bar.error { background: var(--am-danger); }
     .event { position: absolute; top: 6px; width: 11px; height: 11px; transform: translateX(-50%) rotate(45deg); border: 2px solid var(--am-accent); background: var(--am-surface); }
     .content { margin-top: 3px; color: var(--am-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .evidence { margin: 0 0 10px calc(var(--depth) * 14px); padding: 11px 12px; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 0 7px 7px 0; background: linear-gradient(90deg, var(--am-accent-soft), var(--am-surface-strong) 30%); }
+    .evidence { margin: 0 0 10px calc(var(--depth) * 14px); padding: 11px 12px; border: 1px solid var(--am-border); border-left: 2px solid var(--am-accent); border-radius: 0 7px 7px 0; background: var(--am-surface-strong); }
     dl { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 8px 14px; margin: 0; }
-    dt { color: var(--am-muted); font: .65rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; }
-    dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: .78rem; }
+    dt { color: var(--am-muted); font: .75rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; }
+    dd { margin: 2px 0 0; overflow-wrap: anywhere; font-size: .875rem; }
     .conversation { display: inline-block; margin-top: 12px; color: var(--am-accent); font-weight: 700; }
     .load-status { min-height: 24px; padding: 12px 0 4px; color: var(--am-muted); text-align: center; font-size: .76rem; }
     .window-nav { display: flex; justify-content: center; gap: 8px; padding: 10px; }

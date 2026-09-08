@@ -1,4 +1,5 @@
 import { css, html, type PropertyValues } from "lit";
+import { msg } from "@lit/localize";
 import { customElement, property, state } from "lit/decorators.js";
 import { agentmetryClient } from "../api/agentmetry-client";
 import type { SessionFileRead } from "../model/trace-catalog";
@@ -32,10 +33,12 @@ export class SessionFileReads extends LocalizedElement {
   @state() private error = "";
   @state() private coverage: SessionFileRead["coverage"] = "unavailable";
   @state() private distinctReferenceCount = 0;
+  @state() private failedLoad: "candidates" | "history" = "candidates";
   private request = 0;
   private loadedKey = "";
   private abort?: AbortController;
   private readonly selectedReadByReference = new Map<string, string>();
+  private focusDetailHeading = false;
 
   static styles = css`
     :host { display: block; grid-column: 1 / -1; }
@@ -68,7 +71,8 @@ export class SessionFileReads extends LocalizedElement {
     code { color: var(--am-accent); font: 12px/1.4 "SFMono-Regular", "Cascadia Code", monospace; word-break: break-all; }
     .detail-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 14px; }
     .detail-actions button, .more { border: 1px solid var(--am-border); border-radius: 7px; padding: 8px 10px; background: var(--am-surface-raised); color: var(--am-text); cursor: pointer; font: 14px/1.3 inherit; }
-    .detail-actions button:hover:not(:disabled), .detail-actions button:focus-visible, .more:hover:not(:disabled), .more:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
+    .retry { margin-top: 10px; border: 1px solid var(--am-border); border-radius: 7px; padding: 8px 10px; background: var(--am-surface-raised); color: var(--am-text); cursor: pointer; font: 14px/1.3 inherit; }
+    .detail-actions button:hover:not(:disabled), .detail-actions button:focus-visible, .more:hover:not(:disabled), .more:focus-visible, .retry:hover, .retry:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     .detail-actions button:disabled { cursor: not-allowed; opacity: .45; }
     .more { margin-top: 12px; }
     @media (max-width: 800px) { .reading-layout { grid-template-columns: 1fr; } .file-list { max-height: 18rem; overflow-y: auto; padding-right: 4px; } .file-detail { position: static; } }
@@ -127,6 +131,13 @@ export class SessionFileReads extends LocalizedElement {
     if (select && select.value !== this.selectedReadId && this.historyReads.some(({ id }) => id === this.selectedReadId)) {
       select.value = this.selectedReadId;
     }
+    if (this.focusDetailHeading) {
+      const heading = this.shadowRoot?.querySelector<HTMLElement>(".file-detail h3[tabindex='-1']");
+      if (heading) {
+        this.focusDetailHeading = false;
+        heading.focus({ preventScroll: true });
+      }
+    }
   }
 
   render() {
@@ -134,7 +145,7 @@ export class SessionFileReads extends LocalizedElement {
     return html`<section class="panel" aria-labelledby="file-reads-heading">
       <h2 id="file-reads-heading">${localization.t("workspace.fileReads")}</h2>
       <p class="intro">${localization.t("workspace.fileReadsIntro", { count: localization.number(this.distinctReferenceCount) })}</p>
-      ${this.error ? html`<p class="state" role="alert">${localization.t("workspace.fileReadsUnavailable")} ${this.error}</p>`
+      ${this.error ? html`<p class="state" role="alert">${localization.t("workspace.fileReadsUnavailable")} ${this.error}</p><button class="retry" type="button" @click=${this.retry}>${msg("Retry file reads", { id: "filesCompletion.retry" })}</button>`
         : this.loading && !this.candidateReads.length ? html`<p class="state" role="status">${localization.t("workspace.loadingFileReads")}</p>`
           : html`<div class="reading-layout">
             <div><ul class="file-list" aria-label=${localization.t("workspace.fileReads")}>${this.references.map((reference) => this.renderReference(reference))}</ul>
@@ -161,7 +172,7 @@ export class SessionFileReads extends LocalizedElement {
 
   private renderDetail(read?: SessionFileRead) {
     if (!read && this.loading && this.selectedReference) {
-      return html`<aside class="file-detail" aria-live="polite"><h3>${this.selectedReference}</h3><p class="detail-note" role="status">${localization.t("common.loading")}</p></aside>`;
+      return html`<aside class="file-detail" aria-live="polite"><h3 tabindex="-1">${this.selectedReference}</h3><p class="detail-note" role="status">${localization.t("common.loading")}</p></aside>`;
     }
     if (!read) {
       const missing = (this.requestedReadId || this.requestedActivityId) && !this.loading;
@@ -170,14 +181,14 @@ export class SessionFileReads extends LocalizedElement {
           ? localization.t("workspace.fileReadSelectionUnavailable", { id: this.requestedReadId })
           : localization.t("workspace.fileReadActivitySelectionUnavailable", { id: this.requestedActivityId })
         : this.selectedReference ? localization.t("workspace.fileReadSelectionHelp") : localization.t("workspace.selectFileRead");
-      return html`<aside class="file-detail" aria-live="polite"><h3>${this.selectedReference || localization.t("workspace.fileReadDetail")}</h3><p class="detail-note">${note}</p></aside>`;
+      return html`<aside class="file-detail" aria-live="polite"><h3 tabindex="-1">${this.selectedReference || localization.t("workspace.fileReadDetail")}</h3><p class="detail-note">${note}</p></aside>`;
     }
     const outputState = this.renderOutput(read);
     const activity = this.exactActivityContent(read);
     const index = this.historyReads.findIndex(({ id }) => id === read.id);
     const runtime = read.agentId ? `${read.agentId} (${read.model || notReported()})` : read.model || notReported();
     return html`<aside class="file-detail" aria-labelledby="file-read-detail-heading">
-      <h3 id="file-read-detail-heading">${read.reference}</h3>
+      <h3 id="file-read-detail-heading" tabindex="-1">${read.reference}</h3>
       <p class="read-meta"><span>${read.observedAt || notReported()}</span><span>${runtime}</span></p>
       ${this.historyReads.length > 1 ? html`<label class="read-history">${localization.t("workspace.fileReadHistory")}<select .value=${read.id} @change=${this.historyChanged}>${this.historyReads.map((item) => html`<option value=${item.id} ?selected=${item.id === read.id}>${item.observedAt || notReported()} · ${item.agentId || notReported()} (${item.model || notReported()})</option>`)}</select></label>` : null}
       ${this.historyNextPageToken ? html`<button class="more" type="button" ?disabled=${this.loading} @click=${() => void this.loadHistory(this.selectedReference, false)}>${this.loading ? localization.t("workspace.loadingMore") : localization.t("workspace.loadMore")}</button>` : null}
@@ -284,14 +295,21 @@ export class SessionFileReads extends LocalizedElement {
     this.selectedReadId = "";
     this.historyReads = [];
     this.historyNextPageToken = "";
+    this.focusDetailHeading = true;
     void this.loadHistory(reference, true);
   }
 
   private selectRead(read: SessionFileRead) {
     this.selectedReadId = read.id;
     this.selectedReadByReference.set(read.reference, read.id);
+    this.focusDetailHeading = true;
     this.dispatchSelection(read, "file-read-selected");
   }
+
+  private retry = () => {
+    if (this.failedLoad === "history" && this.selectedReference) void this.loadHistory(this.selectedReference, true);
+    else void this.loadCandidates(true);
+  };
 
   private readonly historyChanged = (event: Event) => {
     const read = this.historyReads.find(({ id }) => id === (event.currentTarget as HTMLSelectElement).value);
@@ -318,6 +336,7 @@ export class SessionFileReads extends LocalizedElement {
     const abort = this.abort = new AbortController();
     this.loading = true;
     this.error = "";
+    this.failedLoad = "candidates";
     try {
       let token = reset ? "" : this.candidateNextPageToken;
       let accumulated = reset ? [] as SessionFileRead[] : [...this.candidateReads];
@@ -348,6 +367,7 @@ export class SessionFileReads extends LocalizedElement {
     const abort = this.abort = new AbortController();
     this.loading = true;
     this.error = "";
+    this.failedLoad = "history";
     try {
       let token = reset ? "" : this.historyNextPageToken;
       let accumulated = reset ? [] as SessionFileRead[] : [...this.historyReads];

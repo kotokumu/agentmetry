@@ -46,6 +46,19 @@ describe("MCP connection information", () => {
     expect(panel?.hidden).toBe(true);
   });
 
+  it("renders the same read-only contract inline without a popup", async () => {
+    const control = document.createElement("am-mcp-connection") as MCPConnection;
+    control.inline = true;
+    control.endpoint = "http://127.0.0.1:17890/mcp";
+    document.body.append(control);
+    await control.updateComplete;
+
+    expect(control.shadowRoot?.querySelector("button.disclosure")).toBeNull();
+    expect(control.shadowRoot?.querySelector<HTMLElement>(".panel")?.hidden).toBe(false);
+    expect(control.shadowRoot?.querySelector<HTMLInputElement>(".endpoint-value")?.readOnly).toBe(true);
+    expect(control.shadowRoot?.textContent).toContain("Read only");
+  });
+
   it("copies the displayed endpoint and confirms success", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

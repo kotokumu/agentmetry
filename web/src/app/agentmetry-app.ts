@@ -8,6 +8,7 @@ import "../components/conversation-workspace";
 import "../components/dashboard-summary";
 import "../components/language-selector";
 import "../components/mcp-connection";
+import "../components/connections-settings";
 import "../components/time-range-filter";
 import "../components/trace-explorer";
 import "../components/trace-catalog";
@@ -20,6 +21,7 @@ import type { TraceInvestigationState } from "../model/trace-investigation";
 import type { TraceCatalogConditions } from "../model/trace-catalog";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
 import { agentmetryClient } from "../api/agentmetry-client";
+import { THEME_PREFERENCE_EVENT } from "../components/theme-preference";
 import { LIVE_UPDATE_EVENT, LiveUpdateController, type LiveUpdateDelivery } from "../controllers/live-update-controller";
 import {
   conversationLocation,
@@ -89,6 +91,8 @@ export class AgentmetryApp extends LocalizedElement {
     history.scrollRestoration = "manual";
     window.addEventListener("popstate", this.popState);
     window.addEventListener("scroll", this.scrollChanged, { passive: true });
+    window.addEventListener(THEME_PREFERENCE_EVENT, this.themeChanged);
+    this.syncThemeAttribute();
     this.readRoute();
     this.liveUpdates.start();
   }
@@ -96,6 +100,7 @@ export class AgentmetryApp extends LocalizedElement {
   disconnectedCallback() {
     window.removeEventListener("popstate", this.popState);
     window.removeEventListener("scroll", this.scrollChanged);
+    window.removeEventListener(THEME_PREFERENCE_EVENT, this.themeChanged);
     history.scrollRestoration = this.previousScrollRestoration;
     this.liveUpdates.stop();
     this.filterRequest += 1;
@@ -127,26 +132,13 @@ export class AgentmetryApp extends LocalizedElement {
       font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color-scheme: dark;
     }
-    @media (prefers-color-scheme: light) {
-      :host {
-        --am-paper: #f5f7f9;
-        --am-surface: #ffffff;
-        --am-surface-raised: #f0f4f6;
-        --am-surface-strong: #e7edf1;
-        --am-text: #17232d;
-        --am-muted: #5b6b77;
-        --am-border: rgba(26, 55, 70, .18);
-        --am-border-strong: rgba(0, 112, 95, .42);
-        --am-accent: #087f6b;
-        --am-accent-rgb: 8, 127, 107;
-        --am-accent-soft: rgba(8, 127, 107, .10);
-        --am-secondary: #3b63c6;
-        --am-track: #d8e2e8;
-        --am-danger: #b72f46;
-        --am-success: #157a50;
-        color-scheme: light;
-      }
+    :host([data-theme="light"]) {
+      --am-paper: #f5f7f9; --am-surface: #ffffff; --am-surface-raised: #f0f4f6; --am-surface-strong: #e7edf1;
+      --am-text: #17232d; --am-muted: #5b6b77; --am-border: rgba(26, 55, 70, .18); --am-border-strong: rgba(0, 112, 95, .42);
+      --am-accent: #087f6b; --am-accent-rgb: 8, 127, 107; --am-accent-soft: rgba(8, 127, 107, .10); --am-secondary: #3b63c6;
+      --am-track: #d8e2e8; --am-danger: #b72f46; --am-success: #157a50; color-scheme: light;
     }
+    :host([data-theme="dark"]) { color-scheme: dark; }
     * { box-sizing: border-box; }
     main { width: 100%; min-width: 0; max-width: 1800px; margin: 0 auto; padding: clamp(16px, 1.5vw, 24px); }
     header { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; padding: 0 2px 6px; border-bottom: 1px solid var(--am-border); }
@@ -160,7 +152,7 @@ export class AgentmetryApp extends LocalizedElement {
     h1 { max-width: 720px; margin: 0; font: 650 clamp(1.4rem, 2.5vw, 2rem)/1.2 Inter, ui-sans-serif, sans-serif; letter-spacing: -.02em; }
     .header-controls { display: grid; justify-items: end; flex: 0 1 auto; min-width: min(100%, 520px); }
     .utility-controls { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; }
-    .status { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px 8px; margin: 11px 0 0; color: var(--am-muted); font: .7rem/1.45 "SFMono-Regular", "Cascadia Code", monospace; text-align: right; }
+    .status { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px 8px; margin: 11px 0 0; color: var(--am-muted); font: .75rem/1.45 "SFMono-Regular", "Cascadia Code", monospace; text-align: right; }
     .receiver { display: inline-flex; align-items: center; gap: 8px; }
     .state-note::before { content: "·"; margin-right: 8px; color: var(--am-muted); }
     .error { color: var(--am-danger); }
@@ -183,7 +175,7 @@ export class AgentmetryApp extends LocalizedElement {
       <p class="sr-only" aria-live="polite">${this.routeAnnouncement}</p>
       <header>
         <div><a class="brand" href=${dashboardHref} aria-label=${localization.t("app.backToDashboard")} @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><nav class="main-nav" aria-label=${localization.t("app.mainNavigation")}>${([ ["sessions", "app.sessions"], ["traces", "app.traces"], ["usage", "app.usage"], ["connections", "app.connections"] ] as const).map(([section, label]) => html`<a href=${sectionLocation(this.filters, section)} aria-current=${this.section === section ? "page" : "false"} @click=${(event: MouseEvent) => this.sectionSelected(event, section)}>${localization.t(label)}</a>`)}</nav><h1>${localization.t(this.sectionHeadingKey())}</h1></div>
-        <div class="header-controls"><div class="utility-controls"><am-language-selector></am-language-selector><am-app-update-control></am-app-update-control><am-mcp-connection></am-mcp-connection></div><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter>${showDashboardSummary && statusText ? html`<p class="status">${statusText}</p>` : null}</div>
+        <div class="header-controls">${this.section === "connections" ? null : html`<am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter>`}${showDashboardSummary && statusText ? html`<p class="status">${statusText}</p>` : null}</div>
       </header>
 
       ${traceActive || !showDashboardSummary ? null : html`<am-dashboard-summary
@@ -197,7 +189,7 @@ export class AgentmetryApp extends LocalizedElement {
       ></am-dashboard-summary>`}
 
       ${!traceActive && this.section === "traces" ? html`<am-trace-catalog .range=${this.range} .sourceId=${this.sourceId} .conditions=${this.traceConditions} .active=${true} .locationForTrace=${(traceId: string) => traceLocation(traceId, this.filters, undefined, "traces")} @trace-catalog-selected=${this.traceCatalogSelected} @trace-conditions-requested=${this.traceCatalogConditionsRequested}></am-trace-catalog>` : null}
-      ${!traceActive && this.section === "connections" ? html`<section class="settings-panel"><h2>${localization.t("app.connections")}</h2><p>${localization.t("app.connectionsIntro")}</p><am-mcp-connection></am-mcp-connection></section>` : null}
+      ${!traceActive && this.section === "connections" ? html`<am-connections-settings></am-connections-settings>` : null}
 
       ${traceActive ? html`<am-trace-explorer
         .traceId=${this.selectedTraceId}
@@ -638,6 +630,13 @@ export class AgentmetryApp extends LocalizedElement {
     return "";
   }
 
+  private readonly themeChanged = () => this.syncThemeAttribute();
+
+  private syncThemeAttribute() {
+    const theme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+    this.setAttribute("data-theme", theme);
+  }
+
   private syncDocumentMetadata() {
     document.documentElement.lang = localization.locale;
     if (this.selectedTraceId) {
@@ -647,6 +646,11 @@ export class AgentmetryApp extends LocalizedElement {
     }
     if (this.requestedConversation) {
       this.routeAnnouncement = localization.t("app.conversation", { id: shortId(this.requestedConversation.conversationId) });
+      document.title = `Agentmetry · ${this.routeAnnouncement}`;
+      return;
+    }
+    if (this.section === "connections") {
+      this.routeAnnouncement = localization.t("app.connections");
       document.title = `Agentmetry · ${this.routeAnnouncement}`;
       return;
     }

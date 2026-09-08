@@ -65,17 +65,6 @@ export class TraceExplorer extends LocalizedElement {
       ${this.trace.failed ? html`<div class="panel trace-state error" role="alert">${this.anchorSpanId ? localization.t("traceExplorer.requestedSpanUnavailable", { id: this.anchorSpanId }) : ""}${String(this.trace.error ?? localization.t("traceExplorer.unavailable"))}</div>` : null}
       ${trace ? html`
         <section class="panel"><am-trace-summary .trace=${trace}></am-trace-summary></section>
-        <section class="panel"><h2>${localization.t("traceExplorer.participants")}</h2><am-trace-participants .trace=${trace}></am-trace-participants></section>
-        <section class="panel"><h2>${localization.t("traceExplorer.investigate")}</h2><am-trace-overview
-          .overview=${this.trace.overview}
-          .investigation=${this.investigation}
-          .matchingActivities=${this.trace.matchingActivities}
-          .overviewState=${this.trace.overviewState}
-          .windowState=${this.trace.windowState}
-          .overviewError=${this.trace.overviewError ?? ""}
-          .windowError=${this.trace.windowError ?? ""}
-          @trace-investigation-requested=${this.investigationRequested}
-        ></am-trace-overview></section>
         <section class="panel"><h2>${localization.t("traceExplorer.timeline")}</h2><am-trace-waterfall
           .trace=${trace}
           .overview=${this.trace.overview}
@@ -91,6 +80,17 @@ export class TraceExplorer extends LocalizedElement {
           @trace-selection-cleared=${this.selectionCleared}
           @trace-selection-show-requested=${this.selectionShowRequested}
         ></am-trace-waterfall></section>
+        <section class="panel"><h2>${localization.t("traceExplorer.participants")}</h2><am-trace-participants .trace=${trace} .locationForConversation=${this.locationForConversation}></am-trace-participants></section>
+        <section class="panel"><h2>${localization.t("traceExplorer.investigate")}</h2><am-trace-overview
+          .overview=${this.trace.overview}
+          .investigation=${this.investigation}
+          .matchingActivities=${this.trace.matchingActivities}
+          .overviewState=${this.trace.overviewState}
+          .windowState=${this.trace.windowState}
+          .overviewError=${this.trace.overviewError ?? ""}
+          .windowError=${this.trace.windowError ?? ""}
+          @trace-investigation-requested=${this.investigationRequested}
+        ></am-trace-overview></section>
       ` : null}
     </section>`;
   }
