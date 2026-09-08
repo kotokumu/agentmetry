@@ -30,12 +30,14 @@ export class AppUpdateControl extends LocalizedElement {
   static styles = css`
     :host { display: block; }
     .update-section { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--am-border); border-radius: 10px; background: var(--am-surface-raised); }
-    .update-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; }
+    .update-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; }
+    .info { min-width: 0; display: grid; gap: 6px; }
     h2 { margin: 0; color: var(--am-text); font-size: 1rem; }
-    .installed-version { margin: 0; color: var(--am-text); font: .78rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; text-align: right; }
+    .installed-version { margin: 0; color: var(--am-text); font: 14px/1.4 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
     .installed-version span { color: var(--am-muted); }
     .installed-version code { color: var(--am-accent); }
-    .control { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px 10px; }
+    .message-area { min-width: 0; overflow-wrap: anywhere; }
+    .action { display: flex; align-items: center; }
     .message { margin: 0; color: var(--am-muted); font: 12px/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
     .message.available { color: var(--am-accent); }
     .message.error { color: var(--am-danger); }
@@ -44,8 +46,7 @@ export class AppUpdateControl extends LocalizedElement {
     button:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 2px; }
     button:disabled { cursor: progress; opacity: .62; }
     button.primary { border-color: var(--am-border-strong); color: var(--am-accent); background: var(--am-accent-soft); }
-    @media (max-width: 950px) { .control { justify-content: flex-start; } }
-    @media (max-width: 560px) { .update-heading { align-items: flex-start; flex-direction: column; gap: 7px; } .installed-version { text-align: left; } .control { align-items: flex-start; flex-direction: column; } }
+    @media (max-width: 560px) { .update-row { grid-template-columns: 1fr; gap: 12px; } .action { justify-content: flex-start; } }
   `;
 
   connectedCallback() {
@@ -78,14 +79,17 @@ export class AppUpdateControl extends LocalizedElement {
     if (!this.updater.supported) return nothing;
     const busy = ["checking", "downloading", "installing", "restarting"].includes(this.phase);
     return html`<section class="update-section" aria-labelledby="update-heading">
-      <div class="update-heading"><h2 id="update-heading">${localization.t("update.heading")}</h2><p class="installed-version"><span>${localization.t("update.currentVersionLabel")}</span> ${this.versionText()}</p></div>
-      <div class="control" aria-live="polite">
-        ${this.message()}
-        <button
+      <div class="update-row">
+        <div class="info">
+          <h2 id="update-heading">${localization.t("update.heading")}</h2>
+          <p class="installed-version"><span>${localization.t("update.currentVersionLabel")}</span> ${this.versionText()}</p>
+          <div class="message-area" aria-live="polite">${this.message()}</div>
+        </div>
+        <div class="action"><button
           class=${this.phase === "available" ? "primary" : ""}
           ?disabled=${busy}
           @click=${this.runAction}
-        >${this.actionLabel()}</button>
+        >${this.actionLabel()}</button></div>
       </div>
     </section>`;
   }

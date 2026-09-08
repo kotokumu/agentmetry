@@ -6,6 +6,7 @@
   "scripts": {
     "i18n:extract": "lit-localize extract",
     "i18n:build": "lit-localize build",
+    "dev:updates": "npm run i18n:build && vite --host 127.0.0.1 --port 17892 --strictPort",
     "test": "npm run i18n:build && vitest run",
     "build": "npm run i18n:build && tsc -b && vite build",
     "dev": "npm run i18n:build && vite"
