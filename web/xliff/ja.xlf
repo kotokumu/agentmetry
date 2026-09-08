@@ -50,18 +50,6 @@
   <source>Back to Agentmetry dashboard</source>
   <target>Agentmetry ダッシュボードに戻る</target>
 </trans-unit>
-<trans-unit id="app.eyebrow">
-  <source>Local trace observatory // Live</source>
-  <target>ローカルトレース観測 // 稼働中</target>
-</trans-unit>
-<trans-unit id="app.headline">
-  <source>Agent conversations,</source>
-  <target>エージェントの会話を、</target>
-</trans-unit>
-<trans-unit id="app.headlineSuffix">
-  <source>decoded.</source>
-  <target>読み解く。</target>
-</trans-unit>
 <trans-unit id="app.dashboard">
   <source>Dashboard</source>
   <target>ダッシュボード</target>
@@ -74,6 +62,46 @@
   <source>Trace <x id="0" equiv-text="${id}"/></source>
   <target>トレース <x id="0" equiv-text="${id}"/></target>
 </trans-unit>
+<trans-unit id="app.sessions">
+  <source>Sessions</source>
+  <target>セッション</target>
+</trans-unit>
+<trans-unit id="app.traces">
+  <source>Traces</source>
+  <target>トレース</target>
+</trans-unit>
+<trans-unit id="app.usage">
+  <source>Usage</source>
+  <target>使用量</target>
+</trans-unit>
+<trans-unit id="app.connections">
+  <source>Connections &amp; settings</source>
+  <target>接続・設定</target>
+</trans-unit>
+<trans-unit id="app.mainNavigation">
+  <source>Main navigation</source>
+  <target>メインナビゲーション</target>
+</trans-unit>
+<trans-unit id="app.connectionsIntro">
+  <source>Review the local OTLP endpoint and optional MCP connection from this workspace.</source>
+  <target>このワークスペースのローカルOTLPエンドポイントと任意のMCP接続を確認します。</target>
+</trans-unit>
+<trans-unit id="app.tracesUnavailable">
+  <source>Traces unavailable</source>
+  <target>トレースを取得できません</target>
+</trans-unit>
+<trans-unit id="app.loadingTraces">
+  <source>Loading traces…</source>
+  <target>トレースを読み込み中…</target>
+</trans-unit>
+<trans-unit id="app.noTraces">
+  <source>No retained traces match this scope.</source>
+  <target>この範囲に該当する保持トレースはありません。</target>
+</trans-unit>
+<trans-unit id="traceCatalog.activities">
+  <source><x id="0" equiv-text="${count}"/> activities</source>
+  <target>活動 <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
 <trans-unit id="app.conversations">
   <source>Conversations</source>
   <target>会話</target>
@@ -81,14 +109,6 @@
 <trans-unit id="app.title.dashboard">
   <source>Agentmetry · Local AI Agent Observability</source>
   <target>Agentmetry · ローカル AI エージェントの可観測性</target>
-</trans-unit>
-<trans-unit id="app.receivingAria">
-  <source>Receiving OTLP</source>
-  <target>OTLP を受信中</target>
-</trans-unit>
-<trans-unit id="app.receiving">
-  <source>Receiving OTLP locally · HTTP :4318 · gRPC :4317</source>
-  <target>ローカルで OTLP を受信中 · HTTP :4318 · gRPC :4317</target>
 </trans-unit>
 <trans-unit id="app.refreshing">
   <source>Refreshing dashboard…</source>
@@ -819,12 +839,44 @@
   <target>調査ビュー</target>
 </trans-unit>
 <trans-unit id="workspace.execution">
-  <source>Execution</source>
-  <target>実行</target>
+  <source>Execution log</source>
+  <target>実行ログ</target>
+</trans-unit>
+<trans-unit id="workspace.fileReads">
+  <source>Referenced files</source>
+  <target>参照ファイル</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadsIntro">
+  <source><x id="0" equiv-text="${count}"/> reported file references. Choose a reference and reading time to inspect its retained evidence.</source>
+  <target>報告されたファイル参照 <x id="0" equiv-text="${count}"/> 件。参照と読み取り時点を選び、保持された根拠を確認します。</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadsUnavailable">
+  <source>Referenced files unavailable</source>
+  <target>参照ファイルを取得できません</target>
+</trans-unit>
+<trans-unit id="workspace.loadingFileReads">
+  <source>Loading referenced files…</source>
+  <target>参照ファイルを読み込み中…</target>
+</trans-unit>
+<trans-unit id="workspace.noFileReads">
+  <source>No file reference was reported in this session.</source>
+  <target>このセッションではファイル参照が報告されていません。</target>
+</trans-unit>
+<trans-unit id="workspace.loadingMore">
+  <source>Loading…</source>
+  <target>読み込み中…</target>
+</trans-unit>
+<trans-unit id="workspace.loadMore">
+  <source>Load more</source>
+  <target>さらに読み込む</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadNotConfirmed">
+  <source>Output not confirmed for this file</source>
+  <target>このファイルへの出力対応は未確認</target>
 </trans-unit>
 <trans-unit id="workspace.rework">
-  <source>Rework</source>
-  <target>手戻り</target>
+  <source>Efficiency &amp; rework</source>
+  <target>効率・手戻り</target>
 </trans-unit>
 <trans-unit id="workspace.comparison">
   <source>Comparison</source>
@@ -1953,6 +2005,198 @@
 <trans-unit id="activity.referenceContentNotReported">
   <source>Only the reference was reported; the referenced content was not included.</source>
   <target>参照先だけが報告され、参照先の内容は含まれていません。</target>
+</trans-unit>
+<trans-unit id="traceCatalog.failureCondition">
+  <source>Failure observation</source>
+  <target>失敗の観測</target>
+</trans-unit>
+<trans-unit id="traceCatalog.allFailures">
+  <source>All observations</source>
+  <target>すべての観測</target>
+</trans-unit>
+<trans-unit id="traceCatalog.failureObserved">
+  <source>Failure observed</source>
+  <target>失敗を観測</target>
+</trans-unit>
+<trans-unit id="traceCatalog.failureNotObserved">
+  <source>Failure not observed</source>
+  <target>失敗は未観測</target>
+</trans-unit>
+<trans-unit id="traceCatalog.failureNotReported">
+  <source>Failure not reported</source>
+  <target>失敗は未報告</target>
+</trans-unit>
+<trans-unit id="traceCatalog.minimumDuration">
+  <source>Minimum duration (ms)</source>
+  <target>最小所要時間（ms）</target>
+</trans-unit>
+<trans-unit id="traceCatalog.conditionsApplied">
+  <source>These conditions were applied by the query.</source>
+  <target>この条件はクエリに適用されています。</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadRecords">
+  <source>readings</source>
+  <target>件の読み取り</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadRecordsUnknown">
+  <source>readings not reported</source>
+  <target>読み取り件数未報告</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadRecordEvidence">
+  <source>Record evidence</source>
+  <target>記録の根拠</target>
+</trans-unit>
+<trans-unit id="workspace.sessionOverview">
+  <source>Session overview</source>
+  <target>セッション概要</target>
+</trans-unit>
+<trans-unit id="workspace.executionContext">
+  <source>Traffic and topology</source>
+  <target>通信量と構成</target>
+</trans-unit>
+<trans-unit id="workspace.returnToFileRead">
+  <source>Return to selected file read</source>
+  <target>選択したファイル読取に戻る</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadOutputConfirmed">
+  <source>Output matched to this file</source>
+  <target>このファイルに対応する出力</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadOutputNotConfirmed">
+  <source>File output mapping not confirmed</source>
+  <target>ファイル出力との対応未確認</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadActivityOutput">
+  <source>Activity input/output (individual file mapping not confirmed)</source>
+  <target>活動の入力・出力（個別ファイルとの対応は未確認）</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadDetail">
+  <source>File read</source>
+  <target>ファイル読取</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadSelectionUnavailable">
+  <source>Read <x id="0" equiv-text="${id}"/> is outside the retained file records for this session.</source>
+  <target>読取ID <x id="0" equiv-text="${id}"/> はこのセッションで保持されているファイル記録の範囲外です。</target>
+</trans-unit>
+<trans-unit id="workspace.selectFileRead">
+  <source>Select a file to inspect its retained read records.</source>
+  <target>ファイルを選択すると、保持された読み取り記録を確認できます。</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadSelectionHelp">
+  <source>Choose a reading time to inspect file-time content or retained activity evidence. The record stays separate from the activity log.</source>
+  <target>ファイル時点の本文または保持された活動の根拠を確認する読み取り時点を選択します。記録は活動ログとは別に保持されます。</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadSource">
+  <source>Source</source>
+  <target>ソース</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadSession">
+  <source>Session</source>
+  <target>セッション</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadObserved">
+  <source>Observed</source>
+  <target>観測時刻</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadAgent">
+  <source>Agent</source>
+  <target>エージェント</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadModel">
+  <source>Model</source>
+  <target>モデル</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadId">
+  <source>Read ID</source>
+  <target>読取ID</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadActivity">
+  <source>Activity ID</source>
+  <target>活動ID</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadCoverage">
+  <source>Coverage</source>
+  <target>カバレッジ</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadMapping">
+  <source>Output mapping</source>
+  <target>出力対応</target>
+</trans-unit>
+<trans-unit id="workspace.openActivity">
+  <source>See surrounding logs</source>
+  <target>前後のログを見る</target>
+</trans-unit>
+<trans-unit id="workspace.previousRead">
+  <source>Previous reading</source>
+  <target>前の読み取り</target>
+</trans-unit>
+<trans-unit id="workspace.nextRead">
+  <source>Next reading</source>
+  <target>次の読み取り</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadAvailability.available">
+  <source>Content available</source>
+  <target>本文を利用できます</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadAvailability.not_reported">
+  <source>Content not reported</source>
+  <target>本文は未報告</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadAvailability.redacted">
+  <source>Content redacted</source>
+  <target>本文は秘匿されています</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadAvailability.not_returned">
+  <source>Content not returned</source>
+  <target>本文は返されていません</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadAvailability.not_confirmed">
+  <source>Content mapping not confirmed</source>
+  <target>本文との対応未確認</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadCoverage.complete">
+  <source>Complete projected coverage</source>
+  <target>保持された投影の全件</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadCoverage.partial">
+  <source>Partial projected coverage</source>
+  <target>投影された根拠の一部</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadCoverage.unavailable">
+  <source>Coverage unavailable</source>
+  <target>カバレッジ未取得</target>
+</trans-unit>
+<trans-unit id="rework.openComparison">
+  <source>Open comparison</source>
+  <target>比較を開く</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadHistory">
+  <source>Reading time</source>
+  <target>読み取り時点</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadActivityOutputUnavailable">
+  <source>The exact activity output is not retained for this reading.</source>
+  <target>この読み取りに対応する活動の正確な出力は保持されていません。</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadActivityOutputLoading">
+  <source>Loading the exact activity evidence…</source>
+  <target>正確な活動の根拠を読み込み中…</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadLoadedRecords">
+  <source><x id="0" equiv-text="${count}"/> readings loaded</source>
+  <target>読み込み済み <x id="0" equiv-text="${count}"/> 件</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadReferenceOnly">
+  <source>Reference only; the file body was not reported.</source>
+  <target>参照先のみ。ファイル本文は報告されていません。</target>
+</trans-unit>
+<trans-unit id="activity.viewFiles">
+  <source>View referenced files</source>
+  <target>参照ファイルを見る</target>
+</trans-unit>
+<trans-unit id="workspace.fileReadActivitySelectionUnavailable">
+  <source>No retained file read is linked to activity <x id="0" equiv-text="${id}"/>.</source>
+  <target>活動 <x id="0" equiv-text="${id}"/> に対応する保持済みファイル読取はありません。</target>
 </trans-unit>
 </body>
 </file>

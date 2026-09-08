@@ -18,6 +18,9 @@ service AgentmetryQueryService {
   // Returns bounded session summaries. Operation evidence is loaded separately.
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
 
+  // Returns a bounded trace catalog independent of any selected session.
+  rpc ListTraces(ListTracesRequest) returns (ListTracesResponse);
+
   // Returns one session summary and its agent topology, without operations.
   rpc GetSession(GetSessionRequest) returns (GetSessionResponse);
 
@@ -29,6 +32,9 @@ service AgentmetryQueryService {
 
   // Returns one bounded, cursor-addressed activity page for a session.
   rpc ListSessionActivities(ListSessionActivitiesRequest) returns (ListSessionActivitiesResponse);
+
+  // Returns reported file references across the retained activities of a session group.
+  rpc ListSessionFileReads(ListSessionFileReadsRequest) returns (ListSessionFileReadsResponse);
 
   // Returns the bounded trace evidence for one trace ID.
   rpc GetTrace(GetTraceRequest) returns (GetTraceResponse);
@@ -611,4 +617,69 @@ message TraceAgent {
   string agent_type = 5;
   string parent_agent_id = 6;
   string model = 7;
+}
+
+enum TraceFailureObservation {
+  TRACE_FAILURE_OBSERVATION_UNSPECIFIED = 0;
+  TRACE_FAILURE_OBSERVATION_OBSERVED = 1;
+  TRACE_FAILURE_OBSERVATION_NOT_OBSERVED = 2;
+  TRACE_FAILURE_OBSERVATION_NOT_REPORTED = 3;
+}
+
+message TraceConditions {
+  TraceFailureObservation failure_observation = 1;
+  optional double min_duration_ms = 2;
+}
+
+message ListTracesRequest {
+  TimeFilter filter = 1;
+  TraceConditions conditions = 2;
+  PageRequest page = 3;
+}
+
+message TraceSummary {
+  string trace_id = 1;
+  google.protobuf.Timestamp started_at = 2;
+  google.protobuf.Timestamp ended_at = 3;
+  optional double duration_ms = 4;
+  string status = 5;
+  int64 activity_count = 6;
+  int64 root_span_count = 7;
+  int64 missing_parent_count = 8;
+  repeated ConversationRef conversations = 9;
+}
+
+message ListTracesResponse {
+  repeated TraceSummary traces = 1;
+  PageInfo page = 2;
+  TraceConditions applied_conditions = 3;
+}
+
+message ListSessionFileReadsRequest {
+  string source_id = 1;
+  string session_id = 2;
+  PageRequest page = 3;
+  string reference = 4;
+}
+
+message SessionFileRead {
+  string id = 1;
+  string source_id = 2;
+  string session_id = 3;
+  string reference = 4;
+  string activity_id = 5;
+  google.protobuf.Timestamp observed_at = 6;
+  string agent_id = 7;
+  string model = 8;
+  string output_content = 9;
+  string output_availability = 10;
+  string output_mapping = 11;
+  ContentEvidence content_evidence = 12;
+}
+
+message ListSessionFileReadsResponse {
+  repeated SessionFileRead reads = 1;
+  int64 distinct_reference_count = 2;
+  PageInfo page = 3;
+  string coverage = 4;
 }

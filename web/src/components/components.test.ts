@@ -316,7 +316,7 @@ describe("dashboard components", () => {
     expect(table.shadowRoot?.textContent).toContain("Agent");
     expect(table.shadowRoot?.textContent).toContain("—");
     expect(table.shadowRoot?.textContent).not.toContain("N/A");
-    expect(table.shadowRoot?.textContent).toContain("Runtime ID: main");
+    expect(table.shadowRoot?.textContent).toContain("main (example-model)");
     expect(table.shadowRoot?.querySelector("a.trace")).toBeNull();
   });
 
@@ -801,7 +801,7 @@ describe("dashboard components", () => {
     expect(child?.textContent).toContain("child");
     expect(child?.textContent).toContain("repository-review");
     expect(child?.textContent).toContain("example-large");
-    expect(child?.textContent).toContain("Runtime ID:");
+    expect(child?.textContent).toContain("child (example-large)");
     const childTokens = child?.querySelector("am-token-breakdown");
     await (childTokens as { updateComplete?: Promise<unknown> } | null)?.updateComplete;
     expect(childTokens?.shadowRoot?.textContent).toContain("120");

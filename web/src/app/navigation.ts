@@ -2,19 +2,23 @@ import type { ConversationTarget } from "../model/trace-analysis";
 import type { SessionListView } from "../model/session-catalog";
 import { conditionParameters, filtersFromParameters, type InvestigationFilters } from "../model/investigation-conditions";
 import { parseTraceInvestigationState, type TraceInvestigationState } from "../model/trace-investigation";
+import type { TraceCatalogFailure } from "../model/trace-catalog";
 
-export type NavigationFilters = InvestigationFilters & Readonly<{ sessionView?: SessionListView }>;
+export type NavigationFilters = InvestigationFilters & TraceCatalogFilters & Readonly<{ sessionView?: SessionListView }>;
+export type AppSection = "sessions" | "traces" | "usage" | "connections";
+export type TraceCatalogFilters = Readonly<{ traceFailure?: TraceCatalogFailure; traceMinDurationMs?: number }>;
 
 export type NavigationOrigin = Readonly<{
-  kind: "conversation" | "trace";
+  kind: "conversation" | "trace" | "trace-list";
   href: string;
   label: string;
 }>;
 
 export type NavigationViewState = Readonly<{
   selectedAgentId?: string;
-  purpose?: "execution" | "rework" | "comparison";
+  purpose?: "execution" | "files" | "rework" | "comparison";
   selectedActivityId?: string;
+  selectedFileReadId?: string;
   traceInvestigation?: TraceInvestigationState;
   evidenceFocus?: Readonly<{ kind: "episode" | "activity"; traceId: string; spanId: string }>;
   scrollY?: number;
@@ -32,6 +36,7 @@ const sessionViewFromParameters = (query: URLSearchParams): SessionListView => {
 
 export const filtersFromLocation = (location: Pick<URL, "searchParams">): NavigationFilters => ({
   ...filtersFromParameters(location.searchParams),
+  ...traceCatalogFiltersFromParameters(location.searchParams),
   ...(sessionViewFromParameters(location.searchParams) === "all" ? { sessionView: "all" } : {}),
 });
 
@@ -44,6 +49,13 @@ export const canonicalSessionListLocation = (location: URL): string => {
 };
 
 export const dashboardLocation = (filters: NavigationFilters) => withFilters("/", filters);
+
+export const sectionLocation = (filters: NavigationFilters, section: AppSection) => {
+  const query = filterParameters(filters);
+  if (section === "traces") addTraceCatalogParameters(query, filters);
+  if (section !== "sessions") query.set("section", section);
+  return withQuery("/", query);
+};
 
 export const conversationLocation = (
   target: ConversationTarget,
@@ -60,8 +72,10 @@ export const conversationLocation = (
   );
 };
 
-export const traceLocation = (traceId: string, filters: NavigationFilters, spanId?: string) => {
+export const traceLocation = (traceId: string, filters: NavigationFilters, spanId?: string, section?: AppSection) => {
   const query = filterParameters(filters);
+  addTraceCatalogParameters(query, filters);
+  if (section) query.set("section", section);
   if (spanId) query.set("spanId", spanId);
   return withQuery(`/traces/${encodeURIComponent(traceId)}`, query);
 };
@@ -71,7 +85,7 @@ export const navigationOriginFromState = (state: unknown): NavigationOrigin | un
   const origin = (state as { origin?: unknown }).origin;
   if (!origin || typeof origin !== "object") return undefined;
   const candidate = origin as Partial<NavigationOrigin>;
-  if ((candidate.kind !== "conversation" && candidate.kind !== "trace")
+  if ((candidate.kind !== "conversation" && candidate.kind !== "trace" && candidate.kind !== "trace-list")
     || typeof candidate.href !== "string"
     || !candidate.href.startsWith("/")
     || candidate.href.startsWith("//")
@@ -86,8 +100,9 @@ export const navigationViewStateFromState = (state: unknown): NavigationViewStat
   if (!view || typeof view !== "object") return undefined;
   const candidate = view as Partial<NavigationViewState>;
   const selectedAgentId = typeof candidate.selectedAgentId === "string" ? candidate.selectedAgentId : undefined;
-  const purpose = candidate.purpose === "execution" || candidate.purpose === "rework" || candidate.purpose === "comparison" ? candidate.purpose : undefined;
+  const purpose = candidate.purpose === "execution" || candidate.purpose === "files" || candidate.purpose === "rework" || candidate.purpose === "comparison" ? candidate.purpose : undefined;
   const selectedActivityId = typeof candidate.selectedActivityId === "string" ? candidate.selectedActivityId : undefined;
+  const selectedFileReadId = typeof candidate.selectedFileReadId === "string" ? candidate.selectedFileReadId : undefined;
   const scrollY = typeof candidate.scrollY === "number" && Number.isFinite(candidate.scrollY) && candidate.scrollY >= 0
     ? candidate.scrollY
     : undefined;
@@ -95,12 +110,30 @@ export const navigationViewStateFromState = (state: unknown): NavigationViewStat
   const traceInvestigation = parseTraceInvestigationState(candidate.traceInvestigation);
   const evidenceFocus = focus && (focus.kind === "episode" || focus.kind === "activity")
     && typeof focus.traceId === "string" && typeof focus.spanId === "string" && focus.traceId && focus.spanId ? focus : undefined;
-  return selectedAgentId === undefined && scrollY === undefined && evidenceFocus === undefined && purpose === undefined && selectedActivityId === undefined && traceInvestigation === undefined
-    ? undefined : { selectedAgentId, scrollY, ...(purpose ? { purpose } : {}), ...(selectedActivityId !== undefined ? { selectedActivityId } : {}), ...(evidenceFocus ? { evidenceFocus } : {}), ...(traceInvestigation ? { traceInvestigation } : {}) };
+  return selectedAgentId === undefined && scrollY === undefined && evidenceFocus === undefined && purpose === undefined && selectedActivityId === undefined && selectedFileReadId === undefined && traceInvestigation === undefined
+    ? undefined : { selectedAgentId, scrollY, ...(purpose ? { purpose } : {}), ...(selectedActivityId !== undefined ? { selectedActivityId } : {}), ...(selectedFileReadId !== undefined ? { selectedFileReadId } : {}), ...(evidenceFocus ? { evidenceFocus } : {}), ...(traceInvestigation ? { traceInvestigation } : {}) };
+};
+
+const traceCatalogFiltersFromParameters = (query: URLSearchParams): TraceCatalogFilters => {
+  const failure = query.get("traceFailure");
+  if (failure !== null && failure !== "observed" && failure !== "not_observed" && failure !== "not_reported") {
+    throw new Error("Invalid trace failure condition.");
+  }
+  const minimum = query.get("traceMinMs");
+  if (minimum !== null && (!minimum.trim() || !Number.isFinite(Number(minimum)) || Number(minimum) < 0)) {
+    throw new Error("Invalid trace minimum duration.");
+  }
+  return { ...(failure ? { traceFailure: failure } : {}), ...(minimum !== null ? { traceMinDurationMs: Number(minimum) } : {}) };
+};
+
+const addTraceCatalogParameters = (query: URLSearchParams, filters: NavigationFilters) => {
+  if (filters.traceFailure) query.set("traceFailure", filters.traceFailure);
+  if (filters.traceMinDurationMs !== undefined) query.set("traceMinMs", String(filters.traceMinDurationMs));
 };
 
 const filterParameters = (filters: NavigationFilters) => {
   const query = conditionParameters(filters);
+  addTraceCatalogParameters(query, filters);
   if (filters.sessionView === "all") query.set("view", "all");
   return query;
 };

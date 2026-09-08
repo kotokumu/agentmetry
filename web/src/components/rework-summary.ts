@@ -24,6 +24,8 @@ export class ReworkSummary extends LocalizedElement {
     .heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
     .heading h2 { margin-bottom: 4px; }
     .heading p, .state p { margin: 0; color: var(--am-muted); font-size: .72rem; line-height: 1.5; }
+    .compare-action { margin-top: 10px; border: 1px solid var(--am-border); border-radius: 7px; padding: 7px 10px; background: var(--am-surface-raised); color: var(--am-accent); cursor: pointer; font: 12px/1.3 inherit; }
+    .compare-action:hover, .compare-action:focus-visible { border-color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     .coverage-badge { flex: 0 0 auto; border: 1px solid var(--am-border); border-radius: 999px; padding: 5px 9px; color: var(--am-muted); font: 700 .62rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .06em; text-transform: uppercase; }
     .coverage-badge.partial { border-color: rgba(255, 190, 99, .42); color: #ffc77d; background: rgba(255, 190, 99, .08); }
     .metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
@@ -93,7 +95,7 @@ export class ReworkSummary extends LocalizedElement {
     const reworkTokenRate = calculateRate(metrics.reworkTokens.total, sessionTotalTokens);
     const reworkTokenHint = formatReworkTokenHint(metrics.reworkTokens.total, sessionTotalTokens);
     return html`<section class="panel">
-      <div class="heading"><div><h2>${localization.t("rework.title")}</h2><p>${localization.t("rework.subtitle")}</p></div><span class=${`coverage-badge ${partial ? "partial" : ""}`}>${localization.t(partial ? "rework.partialEvidence" : "rework.completeProjection")}</span></div>
+      <div class="heading"><div><h2>${localization.t("rework.title")}</h2><p>${localization.t("rework.subtitle")}</p><button type="button" class="compare-action" @click=${this.requestComparison}>${localization.t("rework.openComparison")}</button></div><span class=${`coverage-badge ${partial ? "partial" : ""}`}>${localization.t(partial ? "rework.partialEvidence" : "rework.completeProjection")}</span></div>
       <div class="metric-group"><h3>${localization.t("rework.validationEffectiveness")}</h3><div class="metrics" aria-label=${localization.t("rework.validationAria")}>
         <am-kpi-card .label=${localization.t("rework.validationFailures")} .value=${formatCount(metrics.validationFailures)} .hint=${localization.t("rework.validationHint")} .description=${localization.t("rework.validationDescription")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("rework.initialSuccess")} .value=${formatRate(metrics.firstPassSuccessRate)} .hint=${formatFirstPassHint(metrics.firstPassSuccesses, metrics.firstPassEligibleValidations)} .description=${localization.t("rework.initialSuccessDescription")}></am-kpi-card>
@@ -156,6 +158,7 @@ export class ReworkSummary extends LocalizedElement {
 
   private showMoreEpisodes = () => { this.visibleEpisodeCount += 3; };
   private retry = () => this.dispatchEvent(new CustomEvent("rework-retry-requested", { bubbles: true, composed: true }));
+  private requestComparison = () => this.dispatchEvent(new CustomEvent("comparison-requested", { bubbles: true, composed: true }));
 }
 
 const capability = (label: string, state: string, reason: string) => html`<article><strong>${label} · ${state === "unavailable" ? localization.t("rework.notAvailable") : state}</strong><p>${reason}</p></article>`;

@@ -151,8 +151,7 @@ export class ConversationsController {
 	  if (this.requested) return { sourceId: this.requested.sourceId, conversationId: this.requested.conversationId };
     const sessions = this.listedSessions;
     if (this.selectedRef && sessions.some(({ id, sourceId }) => id === this.selectedRef?.conversationId && sourceId === this.selectedRef.sourceId)) return this.selectedRef;
-    const first = sessions[0];
-	  return first ? { sourceId: first.sourceId, conversationId: first.id } : undefined;
+	  return undefined;
 	}
 
 	get target(): ConversationRef | undefined {
@@ -418,6 +417,32 @@ export class ConversationsController {
       this.activityPage = { direction, loading: false, error: error instanceof Error ? error.message : "Activities unavailable" };
     }
     this.host.requestUpdate();
+  }
+
+  async revealActivity(activityId: string): Promise<boolean> {
+    let session = this.selected;
+    if (!session || !activityId) return false;
+    const sessionIdentity = sessionKey(session.sourceId, session.id);
+    const hasActivity = (candidate: Session["activities"][number]) => candidate.id === activityId || activityIdentity(candidate) === activityId;
+    while (true) {
+      if (sessionKey(session.sourceId, session.id) !== sessionIdentity) return false;
+      if (session.activities.some(hasActivity)) return true;
+
+      const direction: ActivityDirection | undefined = session.hasEarlier
+        ? "newer"
+        : session.hasMore !== false && (session.hasMore ?? session.activities.length < session.activityCount)
+          ? "older"
+          : undefined;
+      if (!direction) return false;
+
+      const before = `${session.activityOffset ?? 0}:${session.activities.length}:${session.previousPageToken ?? ""}:${session.nextPageToken ?? ""}`;
+      await this.loadActivities(direction);
+      session = this.selected;
+      if (!session || sessionKey(session.sourceId, session.id) !== sessionIdentity) return false;
+      if (session.activities.some(hasActivity)) return true;
+      const after = `${session.activityOffset ?? 0}:${session.activities.length}:${session.previousPageToken ?? ""}:${session.nextPageToken ?? ""}`;
+      if (after === before || this.activityPage?.error) return false;
+    }
   }
 
   async loadAgentActivities(direction: ActivityDirection, agentId = this.selectedAgentId) {

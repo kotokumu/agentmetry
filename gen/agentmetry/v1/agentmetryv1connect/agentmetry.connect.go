@@ -39,6 +39,9 @@ const (
 	// AgentmetryQueryServiceListSessionsProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's ListSessions RPC.
 	AgentmetryQueryServiceListSessionsProcedure = "/agentmetry.v1.AgentmetryQueryService/ListSessions"
+	// AgentmetryQueryServiceListTracesProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's ListTraces RPC.
+	AgentmetryQueryServiceListTracesProcedure = "/agentmetry.v1.AgentmetryQueryService/ListTraces"
 	// AgentmetryQueryServiceGetSessionProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's GetSession RPC.
 	AgentmetryQueryServiceGetSessionProcedure = "/agentmetry.v1.AgentmetryQueryService/GetSession"
@@ -51,6 +54,9 @@ const (
 	// AgentmetryQueryServiceListSessionActivitiesProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's ListSessionActivities RPC.
 	AgentmetryQueryServiceListSessionActivitiesProcedure = "/agentmetry.v1.AgentmetryQueryService/ListSessionActivities"
+	// AgentmetryQueryServiceListSessionFileReadsProcedure is the fully-qualified name of the
+	// AgentmetryQueryService's ListSessionFileReads RPC.
+	AgentmetryQueryServiceListSessionFileReadsProcedure = "/agentmetry.v1.AgentmetryQueryService/ListSessionFileReads"
 	// AgentmetryQueryServiceGetTraceProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's GetTrace RPC.
 	AgentmetryQueryServiceGetTraceProcedure = "/agentmetry.v1.AgentmetryQueryService/GetTrace"
@@ -78,6 +84,8 @@ type AgentmetryQueryServiceClient interface {
 	GetDashboard(context.Context, *connect.Request[v1.GetDashboardRequest]) (*connect.Response[v1.GetDashboardResponse], error)
 	// Returns bounded session summaries. Operation evidence is loaded separately.
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	// Returns a bounded trace catalog independent of any selected session.
+	ListTraces(context.Context, *connect.Request[v1.ListTracesRequest]) (*connect.Response[v1.ListTracesResponse], error)
 	// Returns one session summary and its agent topology, without operations.
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error)
 	// Returns server-calculated rework indicators for one source-qualified
@@ -87,6 +95,8 @@ type AgentmetryQueryServiceClient interface {
 	CompareRework(context.Context, *connect.Request[v1.CompareReworkRequest]) (*connect.Response[v1.CompareReworkResponse], error)
 	// Returns one bounded, cursor-addressed activity page for a session.
 	ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error)
+	// Returns reported file references across the retained activities of a session group.
+	ListSessionFileReads(context.Context, *connect.Request[v1.ListSessionFileReadsRequest]) (*connect.Response[v1.ListSessionFileReadsResponse], error)
 	// Returns the bounded trace evidence for one trace ID.
 	GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error)
 	GetTraceOverview(context.Context, *connect.Request[v1.GetTraceOverviewRequest]) (*connect.Response[v1.GetTraceOverviewResponse], error)
@@ -122,6 +132,12 @@ func NewAgentmetryQueryServiceClient(httpClient connect.HTTPClient, baseURL stri
 			connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListSessions")),
 			connect.WithClientOptions(opts...),
 		),
+		listTraces: connect.NewClient[v1.ListTracesRequest, v1.ListTracesResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceListTracesProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListTraces")),
+			connect.WithClientOptions(opts...),
+		),
 		getSession: connect.NewClient[v1.GetSessionRequest, v1.GetSessionResponse](
 			httpClient,
 			baseURL+AgentmetryQueryServiceGetSessionProcedure,
@@ -144,6 +160,12 @@ func NewAgentmetryQueryServiceClient(httpClient connect.HTTPClient, baseURL stri
 			httpClient,
 			baseURL+AgentmetryQueryServiceListSessionActivitiesProcedure,
 			connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListSessionActivities")),
+			connect.WithClientOptions(opts...),
+		),
+		listSessionFileReads: connect.NewClient[v1.ListSessionFileReadsRequest, v1.ListSessionFileReadsResponse](
+			httpClient,
+			baseURL+AgentmetryQueryServiceListSessionFileReadsProcedure,
+			connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListSessionFileReads")),
 			connect.WithClientOptions(opts...),
 		),
 		getTrace: connect.NewClient[v1.GetTraceRequest, v1.GetTraceResponse](
@@ -189,10 +211,12 @@ func NewAgentmetryQueryServiceClient(httpClient connect.HTTPClient, baseURL stri
 type agentmetryQueryServiceClient struct {
 	getDashboard           *connect.Client[v1.GetDashboardRequest, v1.GetDashboardResponse]
 	listSessions           *connect.Client[v1.ListSessionsRequest, v1.ListSessionsResponse]
+	listTraces             *connect.Client[v1.ListTracesRequest, v1.ListTracesResponse]
 	getSession             *connect.Client[v1.GetSessionRequest, v1.GetSessionResponse]
 	getSessionRework       *connect.Client[v1.GetSessionReworkRequest, v1.GetSessionReworkResponse]
 	compareRework          *connect.Client[v1.CompareReworkRequest, v1.CompareReworkResponse]
 	listSessionActivities  *connect.Client[v1.ListSessionActivitiesRequest, v1.ListSessionActivitiesResponse]
+	listSessionFileReads   *connect.Client[v1.ListSessionFileReadsRequest, v1.ListSessionFileReadsResponse]
 	getTrace               *connect.Client[v1.GetTraceRequest, v1.GetTraceResponse]
 	getTraceOverview       *connect.Client[v1.GetTraceOverviewRequest, v1.GetTraceOverviewResponse]
 	getTraceWindow         *connect.Client[v1.GetTraceWindowRequest, v1.GetTraceWindowResponse]
@@ -209,6 +233,11 @@ func (c *agentmetryQueryServiceClient) GetDashboard(ctx context.Context, req *co
 // ListSessions calls agentmetry.v1.AgentmetryQueryService.ListSessions.
 func (c *agentmetryQueryServiceClient) ListSessions(ctx context.Context, req *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error) {
 	return c.listSessions.CallUnary(ctx, req)
+}
+
+// ListTraces calls agentmetry.v1.AgentmetryQueryService.ListTraces.
+func (c *agentmetryQueryServiceClient) ListTraces(ctx context.Context, req *connect.Request[v1.ListTracesRequest]) (*connect.Response[v1.ListTracesResponse], error) {
+	return c.listTraces.CallUnary(ctx, req)
 }
 
 // GetSession calls agentmetry.v1.AgentmetryQueryService.GetSession.
@@ -229,6 +258,11 @@ func (c *agentmetryQueryServiceClient) CompareRework(ctx context.Context, req *c
 // ListSessionActivities calls agentmetry.v1.AgentmetryQueryService.ListSessionActivities.
 func (c *agentmetryQueryServiceClient) ListSessionActivities(ctx context.Context, req *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
 	return c.listSessionActivities.CallUnary(ctx, req)
+}
+
+// ListSessionFileReads calls agentmetry.v1.AgentmetryQueryService.ListSessionFileReads.
+func (c *agentmetryQueryServiceClient) ListSessionFileReads(ctx context.Context, req *connect.Request[v1.ListSessionFileReadsRequest]) (*connect.Response[v1.ListSessionFileReadsResponse], error) {
+	return c.listSessionFileReads.CallUnary(ctx, req)
 }
 
 // GetTrace calls agentmetry.v1.AgentmetryQueryService.GetTrace.
@@ -269,6 +303,8 @@ type AgentmetryQueryServiceHandler interface {
 	GetDashboard(context.Context, *connect.Request[v1.GetDashboardRequest]) (*connect.Response[v1.GetDashboardResponse], error)
 	// Returns bounded session summaries. Operation evidence is loaded separately.
 	ListSessions(context.Context, *connect.Request[v1.ListSessionsRequest]) (*connect.Response[v1.ListSessionsResponse], error)
+	// Returns a bounded trace catalog independent of any selected session.
+	ListTraces(context.Context, *connect.Request[v1.ListTracesRequest]) (*connect.Response[v1.ListTracesResponse], error)
 	// Returns one session summary and its agent topology, without operations.
 	GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error)
 	// Returns server-calculated rework indicators for one source-qualified
@@ -278,6 +314,8 @@ type AgentmetryQueryServiceHandler interface {
 	CompareRework(context.Context, *connect.Request[v1.CompareReworkRequest]) (*connect.Response[v1.CompareReworkResponse], error)
 	// Returns one bounded, cursor-addressed activity page for a session.
 	ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error)
+	// Returns reported file references across the retained activities of a session group.
+	ListSessionFileReads(context.Context, *connect.Request[v1.ListSessionFileReadsRequest]) (*connect.Response[v1.ListSessionFileReadsResponse], error)
 	// Returns the bounded trace evidence for one trace ID.
 	GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error)
 	GetTraceOverview(context.Context, *connect.Request[v1.GetTraceOverviewRequest]) (*connect.Response[v1.GetTraceOverviewResponse], error)
@@ -309,6 +347,12 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 		connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListSessions")),
 		connect.WithHandlerOptions(opts...),
 	)
+	agentmetryQueryServiceListTracesHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceListTracesProcedure,
+		svc.ListTraces,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListTraces")),
+		connect.WithHandlerOptions(opts...),
+	)
 	agentmetryQueryServiceGetSessionHandler := connect.NewUnaryHandler(
 		AgentmetryQueryServiceGetSessionProcedure,
 		svc.GetSession,
@@ -331,6 +375,12 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 		AgentmetryQueryServiceListSessionActivitiesProcedure,
 		svc.ListSessionActivities,
 		connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListSessionActivities")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryQueryServiceListSessionFileReadsHandler := connect.NewUnaryHandler(
+		AgentmetryQueryServiceListSessionFileReadsProcedure,
+		svc.ListSessionFileReads,
+		connect.WithSchema(agentmetryQueryServiceMethods.ByName("ListSessionFileReads")),
 		connect.WithHandlerOptions(opts...),
 	)
 	agentmetryQueryServiceGetTraceHandler := connect.NewUnaryHandler(
@@ -375,6 +425,8 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 			agentmetryQueryServiceGetDashboardHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceListSessionsProcedure:
 			agentmetryQueryServiceListSessionsHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceListTracesProcedure:
+			agentmetryQueryServiceListTracesHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetSessionProcedure:
 			agentmetryQueryServiceGetSessionHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetSessionReworkProcedure:
@@ -383,6 +435,8 @@ func NewAgentmetryQueryServiceHandler(svc AgentmetryQueryServiceHandler, opts ..
 			agentmetryQueryServiceCompareReworkHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceListSessionActivitiesProcedure:
 			agentmetryQueryServiceListSessionActivitiesHandler.ServeHTTP(w, r)
+		case AgentmetryQueryServiceListSessionFileReadsProcedure:
+			agentmetryQueryServiceListSessionFileReadsHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetTraceProcedure:
 			agentmetryQueryServiceGetTraceHandler.ServeHTTP(w, r)
 		case AgentmetryQueryServiceGetTraceOverviewProcedure:
@@ -412,6 +466,10 @@ func (UnimplementedAgentmetryQueryServiceHandler) ListSessions(context.Context, 
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.ListSessions is not implemented"))
 }
 
+func (UnimplementedAgentmetryQueryServiceHandler) ListTraces(context.Context, *connect.Request[v1.ListTracesRequest]) (*connect.Response[v1.ListTracesResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.ListTraces is not implemented"))
+}
+
 func (UnimplementedAgentmetryQueryServiceHandler) GetSession(context.Context, *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.GetSession is not implemented"))
 }
@@ -426,6 +484,10 @@ func (UnimplementedAgentmetryQueryServiceHandler) CompareRework(context.Context,
 
 func (UnimplementedAgentmetryQueryServiceHandler) ListSessionActivities(context.Context, *connect.Request[v1.ListSessionActivitiesRequest]) (*connect.Response[v1.ListSessionActivitiesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.ListSessionActivities is not implemented"))
+}
+
+func (UnimplementedAgentmetryQueryServiceHandler) ListSessionFileReads(context.Context, *connect.Request[v1.ListSessionFileReadsRequest]) (*connect.Response[v1.ListSessionFileReadsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.ListSessionFileReads is not implemented"))
 }
 
 func (UnimplementedAgentmetryQueryServiceHandler) GetTrace(context.Context, *connect.Request[v1.GetTraceRequest]) (*connect.Response[v1.GetTraceResponse], error) {

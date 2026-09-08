@@ -45,7 +45,7 @@ export class ActivityTable extends LocalizedElement {
     .reading-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
     .activity-list, .activity-detail { min-width: 0; }
     table { width: 100%; border-collapse: collapse; min-width: 530px; }
-    thead { position: sticky; top: 0; z-index: 1; background: rgba(9, 14, 20, .96); backdrop-filter: blur(12px); }
+    thead { position: sticky; top: 0; z-index: 1; background: color-mix(in srgb, var(--am-surface-raised) 96%, transparent); backdrop-filter: blur(12px); }
     th { color: var(--am-muted); font: 0.68rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
     th, td { padding: 9px 8px; border-bottom: 1px solid var(--am-border); vertical-align: top; }
     tbody tr { cursor: pointer; transition: background .16s ease; }
@@ -55,12 +55,12 @@ export class ActivityTable extends LocalizedElement {
     th:nth-child(2) { min-width: 180px; }
     th:nth-child(3) { width: 130px; }
     th:nth-child(4) { width: 100px; }
-    td { color: var(--am-text); font-size: .78rem; }
+    td { color: var(--am-text); font-size: 14px; }
     code { color: var(--am-accent); font: .7rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; }
     .preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--am-muted); overflow-wrap: anywhere; margin-top: 4px; }
     .select-activity { border: 1px solid transparent; background: transparent; padding: 4px; text-align: left; color: var(--am-text); cursor: pointer; font: inherit; }
     .select-activity[aria-pressed="true"] { border-color: var(--am-accent); }
-    .selected-label, .status { display: block; margin-top: 3px; color: var(--am-muted); font-size: .68rem; }
+    .selected-label, .status { display: block; margin-top: 3px; color: var(--am-muted); font-size: 12px; }
     .activity-detail { position: sticky; top: 16px; max-height: calc(100dvh - 32px); border: 1px solid var(--am-border); border-radius: 8px; padding: 16px; background: var(--am-surface-raised); overflow: auto; overflow-wrap: anywhere; overscroll-behavior: contain; scrollbar-gutter: stable; }
     .activity-detail h3 { margin: 0 0 12px; font-size: .95rem; }
     .activity-detail h4 { margin: 16px 0 8px; font-size: .78rem; }
@@ -70,8 +70,10 @@ export class ActivityTable extends LocalizedElement {
     .activity-detail dd { margin: 0; min-width: 0; }
     .empty-detail { color: var(--am-muted); font-size: .8rem; line-height: 1.6; }
     .return-to-activity { border: 1px solid var(--am-border); border-radius: 5px; background: transparent; color: var(--am-text); cursor: pointer; padding: 7px 10px; margin-bottom: 12px; }
+    .view-files { display: block; border: 1px solid var(--am-border); border-radius: 5px; background: var(--am-surface); color: var(--am-accent); cursor: pointer; padding: 7px 10px; margin: 0 0 12px; }
     button:focus-visible, a:focus-visible, .activity-detail:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 3px; }
-    .kind { display: inline-block; border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; background: var(--am-accent-soft); color: var(--am-accent); font: 700 .58rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .04em; text-transform: uppercase; }
+    .agent-model { display: block; margin-top: 3px; color: var(--am-muted); font: 12px/1.3 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
+    .kind { display: inline-block; border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; background: var(--am-accent-soft); color: var(--am-accent); font: 700 12px/1.2 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .04em; text-transform: uppercase; }
     .tokens { white-space: nowrap; }
     .tokens small { display: block; color: var(--am-muted); white-space: normal; }
     .correlation { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
@@ -175,7 +177,7 @@ export class ActivityTable extends LocalizedElement {
 	    return html`<tr data-activity-id=${activityIdentity(activity)} data-activity-index=${this.renderOffset + index} data-highlighted=${String(highlighted)} data-selected=${String(isSelected)} aria-current=${highlighted ? "location" : "false"} @click=${(event: MouseEvent) => this.selectActivityFromRow(event, activity)}>
         <td>${formatTime(activity.observedAt)}</td>
         <td><button type="button" class="select-activity" aria-controls="activity-detail" aria-pressed=${String(isSelected)} @click=${() => this.selectActivity(activity)}><strong>${operationLabel(activity)}</strong><span class="preview">${content ? `${content.slice(0, 120)}${content.length > 120 ? "…" : ""}` : contentAvailabilityLabel(activity.contentEvidence, activity.content)}</span>${isSelected ? html`<span class="selected-label">${localization.t("activity.selected")}</span>` : null}</button><br><span class="kind">${activity.kind}</span>${activity.status ? html`<span class="status">${activityStatusLabel(activity.status)}</span>` : null}${correlationView(activity)}</td>
-        <td><strong>${agentDisplayLabel(activity)}</strong><br><small>${localization.t("agentTree.runtimeId", { id: activity.agentId || "main" })}</small></td>
+        <td><strong>${agentDisplayLabel(activity)}</strong><span class="agent-model">${activity.agentId && agentDisplayLabel(activity) !== activity.agentId ? `${activity.agentId} ` : ""}(${activity.model || notReported()})</span></td>
         <td>${this.traceView(activity)}</td>
       </tr>`;})}</tbody>
     </table></div>${this.continuation("older")}</div>${this.detailView(selected, selectedVisibility)}</div>`;
@@ -212,20 +214,27 @@ export class ActivityTable extends LocalizedElement {
     row?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }
 
+  private openReferencedFiles(activity: Activity) {
+    this.dispatchEvent(new CustomEvent("activity-files-requested", {
+      detail: { activityId: activityIdentity(activity) }, bubbles: true, composed: true,
+    }));
+  }
+
   private detailView(activity?: Activity, visibility: "loaded" | "not_loaded" | "outside_agent_filter" = "loaded") {
     return html`<section class="activity-detail" id="activity-detail" tabindex="-1" aria-labelledby="activity-detail-heading">
       <h3 id="activity-detail-heading">${activity ? operationLabel(activity) : localization.t("activity.detail")}</h3>
       ${visibility === "outside_agent_filter" ? html`<p class="empty-detail" role="status">${localization.t("activity.outsideFilter")}</p>` : visibility === "not_loaded" && activity ? html`<p class="empty-detail" role="status">${localization.t("activity.notLoadedRetained")}</p>` : null}
       ${activity ? html`${visibility === "loaded" ? html`<button type="button" class="return-to-activity" @click=${this.returnToActivity}>${localization.t("activity.back")}</button>` : null}${renderActivityContent(activity)}
+        <button type="button" class="view-files" @click=${() => this.openReferencedFiles(activity)}>${localization.t("activity.viewFiles")}</button>
         <h4>${localization.t("activity.metadata")}</h4><dl>
           <dt>${localization.t("activity.activity")}</dt><dd>${activityIdentity(activity)}</dd>
           <dt>${localization.t("activity.source")}</dt><dd>${activity.source || notReported()}</dd>
           <dt>${localization.t("activity.conversation")}</dt><dd>${activity.runId || notReported()}</dd>
           <dt>${localization.t("activity.signal")}</dt><dd>${activity.signal}</dd>
           <dt>${localization.t("activity.event")}</dt><dd>${activity.name}</dd>
-          <dt>${localization.t("activity.agent")}</dt><dd>${agentDisplayLabel(activity)} · ${activity.agentId || "main"}</dd>
+          <dt>${localization.t("activity.agent")}</dt><dd>${agentDisplayLabel(activity)}${activity.agentId && agentDisplayLabel(activity) !== activity.agentId ? ` · ${activity.agentId}` : ""}</dd>
           <dt>${localization.t("activity.agentType")}</dt><dd>${activity.agentType || notReported()}</dd>
-          <dt>${localization.t("activity.model")}</dt><dd>${activity.model || NOT_APPLICABLE}</dd>
+          <dt>${localization.t("activity.model")}</dt><dd>${activity.model || notReported()}</dd>
           <dt>${localization.t("activity.status")}</dt><dd>${activityStatusLabel(activity.status)}</dd>
           <dt>${localization.t("activity.observed")}</dt><dd>${activity.observedAt}</dd>
           <dt>${localization.t("activity.trace")}</dt><dd>${activity.traceId || activity.relatedTraceId || NOT_APPLICABLE}</dd>

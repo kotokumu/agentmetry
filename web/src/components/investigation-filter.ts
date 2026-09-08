@@ -38,15 +38,15 @@ export class InvestigationFilter extends LocalizedElement {
   private selectedRequest?: { name: string; filters: InvestigationFilters; sawPending: boolean };
 
   static styles = css`
-    :host { display: block; min-width: 0; margin: 12px 0; font-size: .85rem; }
+    :host { display: block; min-width: 0; margin: 12px 0; font-size: 14px; }
     section { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--am-border); border-radius: 8px; background: var(--am-surface); }
     details.editor { border-top: 1px solid var(--am-border); border-bottom: 1px solid var(--am-border); }
     details.editor > summary { cursor: pointer; padding: 10px 0; color: var(--am-text); font-weight: 600; }
-    .applied { margin: 0; color: var(--am-muted); font-size: .75rem; line-height: 1.5; overflow-wrap: anywhere; }
+    .applied { margin: 0; color: var(--am-muted); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
     form, .naming { display: grid; gap: 9px; padding-bottom: 10px; }
-    h3 { margin: 0; color: var(--am-text); font-size: .85rem; }
-    label { display: grid; gap: 5px; min-width: 0; color: var(--am-muted); font-size: .72rem; }
-    input, select, button { box-sizing: border-box; min-width: 0; border: 1px solid var(--am-border); border-radius: 6px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px; font: inherit; font-size: .76rem; }
+    h3 { margin: 0; color: var(--am-text); font-size: 14px; }
+    label { display: grid; gap: 5px; min-width: 0; color: var(--am-muted); font-size: 12px; }
+    input, select, button { box-sizing: border-box; min-width: 0; border: 1px solid var(--am-border); border-radius: 6px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px; font: inherit; font-size: 14px; }
     input, select { width: 100%; }
     input[type="checkbox"] { width: auto; }
     button { cursor: pointer; }
@@ -88,24 +88,27 @@ export class InvestigationFilter extends LocalizedElement {
     return html`<section aria-labelledby="investigation-filters-heading">
         <h3 id="investigation-filters-heading">${localization.t("investigation.title")}</h3>
         <p class="applied">${localization.t("investigation.applied", { filters: describeFilters(this.filters) })}</p>
-        <label>${localization.t("saved.filter")}
-          <select name="saved-filter" .value=${this.selectedName} ?disabled=${this.pending} @change=${this.selectSaved}>
-            <option value="">${localization.t("saved.chooseOne")}</option>
-            ${this.saved.map((item) => html`<option value=${item.name}>${item.name}</option>`)}
-          </select>
-        </label>
-        ${this.selectedName ? html`<div class="actions">
-          <button type="button" data-action="update-saved" ?disabled=${!this.selectedApplied || !this.confirmed || this.pending} @click=${this.updateSaved}>${localization.t("saved.update")}</button>
-          <button class="quiet" type="button" data-action="delete-saved" ?disabled=${this.pending} @click=${this.deleteSaved}>${localization.t("saved.delete")}</button>
-        </div>` : null}
-        <button type="button" data-action="save-as" ?disabled=${!this.confirmed || this.pending} @click=${this.beginNaming}>${localization.t("saved.saveAs")}</button>
-        ${this.naming ? html`<form class="naming" @submit=${this.save}>
-          <label>${localization.t("saved.filterName")}<input name="filter-name" maxlength="80" .value=${this.saveName} @input=${this.changeSaveName}></label>
-          <div class="actions">
-            <button class="primary" type="submit" data-action="save" ?disabled=${!this.confirmed || this.pending}>${localization.t("common.save")}</button>
-            <button class="quiet" type="button" @click=${this.cancelNaming}>${localization.t("common.cancel")}</button>
-          </div>
-        </form>` : null}
+        <details class="saved">
+          <summary>${localization.t("saved.filter")}</summary>
+          <label>${localization.t("saved.filter")}
+            <select name="saved-filter" .value=${this.selectedName} ?disabled=${this.pending} @change=${this.selectSaved}>
+              <option value="">${localization.t("saved.chooseOne")}</option>
+              ${this.saved.map((item) => html`<option value=${item.name}>${item.name}</option>`)}
+            </select>
+          </label>
+          ${this.selectedName ? html`<div class="actions">
+            <button type="button" data-action="update-saved" ?disabled=${!this.selectedApplied || !this.confirmed || this.pending} @click=${this.updateSaved}>${localization.t("saved.update")}</button>
+            <button class="quiet" type="button" data-action="delete-saved" ?disabled=${this.pending} @click=${this.deleteSaved}>${localization.t("saved.delete")}</button>
+          </div>` : null}
+          <button type="button" data-action="save-as" ?disabled=${!this.confirmed || this.pending} @click=${this.beginNaming}>${localization.t("saved.saveAs")}</button>
+          ${this.naming ? html`<form class="naming" @submit=${this.save}>
+            <label>${localization.t("saved.filterName")}<input name="filter-name" maxlength="80" .value=${this.saveName} @input=${this.changeSaveName}></label>
+            <div class="actions">
+              <button class="primary" type="submit" data-action="save" ?disabled=${!this.confirmed || this.pending}>${localization.t("common.save")}</button>
+              <button class="quiet" type="button" @click=${this.cancelNaming}>${localization.t("common.cancel")}</button>
+            </div>
+          </form>` : null}
+        </details>
         <details class="editor">
           <summary>${localization.t("investigation.editConditions")}</summary>
           <form @submit=${this.applyDraft}>

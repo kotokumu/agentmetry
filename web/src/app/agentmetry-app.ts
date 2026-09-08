@@ -10,12 +10,14 @@ import "../components/language-selector";
 import "../components/mcp-connection";
 import "../components/time-range-filter";
 import "../components/trace-explorer";
+import "../components/trace-catalog";
 import type { ConversationSummaryDetail, ConversationWorkspace } from "../components/conversation-workspace";
 import type { DashboardStateDetail } from "../components/dashboard-summary";
 import type { TraceExplorer } from "../components/trace-explorer";
 import type { RangeSelectedDetail } from "../components/time-range-filter";
 import { conversationTargetFromLocation, type ConversationTarget } from "../model/trace-analysis";
 import type { TraceInvestigationState } from "../model/trace-investigation";
+import type { TraceCatalogConditions } from "../model/trace-catalog";
 import type { TelemetrySource, TimeRange } from "../model/telemetry";
 import { agentmetryClient } from "../api/agentmetry-client";
 import { LIVE_UPDATE_EVENT, LiveUpdateController, type LiveUpdateDelivery } from "../controllers/live-update-controller";
@@ -27,10 +29,14 @@ import {
   navigationOriginFromState,
   navigationViewStateFromState,
   traceLocation,
+  sectionLocation,
+  type AppSection,
   type NavigationFilters,
   type NavigationOrigin,
   type NavigationViewState,
 } from "./navigation";
+
+const shortId = (value: string) => value.length > 18 ? `${value.slice(0, 14)}…` : value;
 
 @customElement("am-app")
 export class AgentmetryApp extends LocalizedElement {
@@ -38,8 +44,11 @@ export class AgentmetryApp extends LocalizedElement {
   @state() private sourceId = "";
   @state() private search = "";
   @state() private conditions: SessionConditions = {};
+  @state() private traceFailure?: TraceCatalogConditions["failureObservation"];
+  @state() private traceMinDurationMs?: number;
   @state() private filterError = "";
   @state() private sessionView: "roots" | "all" = "roots";
+  @state() private section: AppSection = "sessions";
   @state() private filterPending = false;
   private filterRequest = 0;
   private filterAbort?: AbortController;
@@ -53,6 +62,7 @@ export class AgentmetryApp extends LocalizedElement {
   @state() private requestedAgentId = "";
   @state() private requestedPurpose: NavigationViewState["purpose"] = "execution";
   @state() private requestedActivityId = "";
+  @state() private requestedFileReadId = "";
   @state() private requestedEvidenceFocus?: NavigationViewState["evidenceFocus"];
   @state() private routeAnnouncement = localization.t("app.dashboard");
   @state() private dashboardStatus: DashboardStateDetail["status"] = "loading";
@@ -62,6 +72,7 @@ export class AgentmetryApp extends LocalizedElement {
   @state() private activityCount?: number;
   private pendingFocus?: "trace" | "detail" | "list";
   private pendingScrollY?: number;
+  private pendingRouteView?: NavigationViewState;
   private scrollSaveGeneration = 0;
   private scrollSaveScheduled = false;
   private previousScrollRestoration: ScrollRestoration = "auto";
@@ -116,44 +127,66 @@ export class AgentmetryApp extends LocalizedElement {
       font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       color-scheme: dark;
     }
+    @media (prefers-color-scheme: light) {
+      :host {
+        --am-paper: #f5f7f9;
+        --am-surface: #ffffff;
+        --am-surface-raised: #f0f4f6;
+        --am-surface-strong: #e7edf1;
+        --am-text: #17232d;
+        --am-muted: #5b6b77;
+        --am-border: rgba(26, 55, 70, .18);
+        --am-border-strong: rgba(0, 112, 95, .42);
+        --am-accent: #087f6b;
+        --am-accent-rgb: 8, 127, 107;
+        --am-accent-soft: rgba(8, 127, 107, .10);
+        --am-secondary: #3b63c6;
+        --am-track: #d8e2e8;
+        --am-danger: #b72f46;
+        --am-success: #157a50;
+        color-scheme: light;
+      }
+    }
     * { box-sizing: border-box; }
     main { width: 100%; min-width: 0; max-width: 1800px; margin: 0 auto; padding: clamp(16px, 1.5vw, 24px); }
-    header { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; padding: 0 2px 6px; }
-    header::after { content: ""; position: absolute; inset: auto 0 -8px; height: 1px; background: linear-gradient(90deg, var(--am-accent), rgba(109, 244, 214, .08) 42%, transparent); }
+    header { position: relative; display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 18px; padding: 0 2px 6px; border-bottom: 1px solid var(--am-border); }
     .brand { display: flex; width: fit-content; align-items: center; gap: 10px; margin-bottom: 12px; color: var(--am-text); font: 800 .7rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .22em; text-decoration: none; }
     .brand:hover { color: var(--am-accent); }
     .brand:focus-visible { border-radius: 7px; outline: 2px solid var(--am-accent); outline-offset: 4px; }
-    .brand-mark { width: 30px; height: 30px; padding: 2px; border: 1px solid var(--am-border-strong); border-radius: 8px; background: rgba(237, 245, 251, .92); object-fit: contain; box-shadow: 0 0 20px rgba(var(--am-accent-rgb), .12); }
-    .eyebrow { margin: 0 0 6px; color: var(--am-accent); font: 700 .64rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .15em; text-transform: uppercase; }
+    .brand-mark { width: 30px; height: 30px; padding: 2px; border: 1px solid var(--am-border-strong); border-radius: 8px; background: rgba(237, 245, 251, .92); object-fit: contain; }
+    .main-nav { display: flex; flex-wrap: wrap; gap: 5px; margin: 0 0 12px; }
+    .main-nav a { padding: 6px 9px; border-radius: 5px; color: var(--am-muted); font-size: 14px; text-decoration: none; }
+    .main-nav a:hover, .main-nav a:focus-visible, .main-nav a[aria-current="page"] { color: var(--am-text); background: var(--am-accent-soft); }
     h1 { max-width: 720px; margin: 0; font: 650 clamp(1.4rem, 2.5vw, 2rem)/1.2 Inter, ui-sans-serif, sans-serif; letter-spacing: -.02em; }
-    h1 span { color: var(--am-muted); font-weight: 400; }
     .header-controls { display: grid; justify-items: end; flex: 0 1 auto; min-width: min(100%, 520px); }
     .utility-controls { display: flex; align-items: flex-start; justify-content: flex-end; gap: 8px; }
     .status { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 5px 8px; margin: 11px 0 0; color: var(--am-muted); font: .7rem/1.45 "SFMono-Regular", "Cascadia Code", monospace; text-align: right; }
     .receiver { display: inline-flex; align-items: center; gap: 8px; }
     .state-note::before { content: "·"; margin-right: 8px; color: var(--am-muted); }
-    .status-dot { width: 7px; height: 7px; flex: 0 0 auto; border-radius: 50%; background: var(--am-success); box-shadow: 0 0 0 4px rgba(101, 230, 165, .09), 0 0 14px rgba(101, 230, 165, .55); animation: pulse 2.8s ease-in-out infinite; }
     .error { color: var(--am-danger); }
+    .settings-panel { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--am-border); border-radius: 8px; background: var(--am-surface-raised); }
+    .settings-panel h2, .settings-panel p { margin: 0; }
+    .settings-panel p { color: var(--am-muted); font-size: 14px; line-height: 1.5; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
     am-trace-explorer[hidden], am-conversation-workspace[hidden] { display: none; }
-    @keyframes pulse { 50% { box-shadow: 0 0 0 6px rgba(101, 230, 165, .03), 0 0 20px rgba(101, 230, 165, .7); } }
     @media (max-width: 950px) { header { align-items: flex-start; flex-direction: column; } .header-controls { justify-items: start; } .utility-controls { justify-content: flex-start; } .status { justify-content: flex-start; text-align: left; } }
     @media (max-width: 640px) { main { padding: 12px; } h1 { font-size: 1.5rem; } .brand { margin-bottom: 14px; } }
     @media (max-width: 480px) { .status { align-items: flex-start; flex-direction: column; } .state-note::before { content: none; } }
-    @media (prefers-reduced-motion: reduce) { .status-dot { animation: none; } }
   `;
 
   render() {
     const traceActive = Boolean(this.selectedTraceId);
     const dashboardHref = dashboardLocation(this.filters);
+    const statusText = this.statusText();
+    const showDashboardSummary = this.section === "usage";
     return html`<main data-density="operator">
       <p class="sr-only" aria-live="polite">${this.routeAnnouncement}</p>
-      ${traceActive ? null : html`<header>
-        <div><a class="brand" href=${dashboardHref} aria-label=${localization.t("app.backToDashboard")} @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><p class="eyebrow">${localization.t("app.eyebrow")}</p><h1>${localization.t("app.headline")}<br><span>${localization.t("app.headlineSuffix")}</span></h1></div>
-        <div class="header-controls"><div class="utility-controls"><am-language-selector></am-language-selector><am-app-update-control></am-app-update-control><am-mcp-connection></am-mcp-connection></div><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter><p class="status">${this.statusText()}</p></div>
-      </header>`}
+      <header>
+        <div><a class="brand" href=${dashboardHref} aria-label=${localization.t("app.backToDashboard")} @click=${this.goHome}><img class="brand-mark" src="/agentmetry-mark.png" alt="" aria-hidden="true"><span>AGENTMETRY</span></a><nav class="main-nav" aria-label=${localization.t("app.mainNavigation")}>${([ ["sessions", "app.sessions"], ["traces", "app.traces"], ["usage", "app.usage"], ["connections", "app.connections"] ] as const).map(([section, label]) => html`<a href=${sectionLocation(this.filters, section)} aria-current=${this.section === section ? "page" : "false"} @click=${(event: MouseEvent) => this.sectionSelected(event, section)}>${localization.t(label)}</a>`)}</nav><h1>${localization.t(this.sectionHeadingKey())}</h1></div>
+        <div class="header-controls"><div class="utility-controls"><am-language-selector></am-language-selector><am-app-update-control></am-app-update-control><am-mcp-connection></am-mcp-connection></div><am-time-range-filter .selected=${this.range} @range-selected=${this.rangeSelected}></am-time-range-filter>${showDashboardSummary && statusText ? html`<p class="status">${statusText}</p>` : null}</div>
+      </header>
 
-      ${traceActive ? null : html`<am-dashboard-summary
+      ${traceActive || !showDashboardSummary ? null : html`<am-dashboard-summary
         .range=${this.range}
         .sourceId=${this.sourceId}
         .search=${this.search}
@@ -163,12 +196,17 @@ export class AgentmetryApp extends LocalizedElement {
         @dashboard-state-changed=${this.dashboardStateChanged}
       ></am-dashboard-summary>`}
 
+      ${!traceActive && this.section === "traces" ? html`<am-trace-catalog .range=${this.range} .sourceId=${this.sourceId} .conditions=${this.traceConditions} .active=${true} .locationForTrace=${(traceId: string) => traceLocation(traceId, this.filters, undefined, "traces")} @trace-catalog-selected=${this.traceCatalogSelected} @trace-conditions-requested=${this.traceCatalogConditionsRequested}></am-trace-catalog>` : null}
+      ${!traceActive && this.section === "connections" ? html`<section class="settings-panel"><h2>${localization.t("app.connections")}</h2><p>${localization.t("app.connectionsIntro")}</p><am-mcp-connection></am-mcp-connection></section>` : null}
+
       ${traceActive ? html`<am-trace-explorer
         .traceId=${this.selectedTraceId}
         .anchorSpanId=${this.selectedTraceSpanId}
         .requestedInvestigation=${this.requestedTraceInvestigation}
-        .returnHref=${this.traceReturn?.href ?? dashboardHref}
-        .returnLabel=${this.traceReturn ? this.localizedOriginLabel(this.traceReturn) : localization.t("app.conversations")}
+        .returnHref=${this.traceReturn?.href ?? (this.section === "traces" ? sectionLocation(this.filters, "traces") : dashboardHref)}
+        .returnLabel=${this.traceReturn
+          ? this.localizedOriginLabel(this.traceReturn)
+          : this.section === "traces" ? localization.t("app.traces") : localization.t("app.conversations")}
         .locationForConversation=${(target: ConversationTarget) => conversationLocation(target, this.filters)}
         @trace-close-requested=${this.closeTrace}
         @trace-removed=${this.traceRemoved}
@@ -176,7 +214,7 @@ export class AgentmetryApp extends LocalizedElement {
         @trace-view-ready=${this.traceViewReady}
         @trace-view-state-changed=${this.traceViewStateChanged}
       ></am-trace-explorer>` : null}
-      ${this.workspaceInitialized ? html`<am-conversation-workspace
+      ${this.workspaceInitialized && this.section === "sessions" ? html`<am-conversation-workspace
         .sessionView=${this.sessionView}
         .range=${this.range}
         .sourceId=${this.sourceId}
@@ -192,6 +230,7 @@ export class AgentmetryApp extends LocalizedElement {
         .requestedAgentId=${this.requestedAgentId}
         .purpose=${this.requestedPurpose}
         .requestedActivityId=${this.requestedActivityId}
+        .requestedFileReadId=${this.requestedFileReadId}
         .requestedEvidenceFocus=${this.requestedEvidenceFocus}
         .active=${!traceActive}
         ?hidden=${traceActive}
@@ -216,9 +255,17 @@ export class AgentmetryApp extends LocalizedElement {
   }
 
   private rangeSelected(event: CustomEvent<RangeSelectedDetail>) {
-    if (hasSessionConditions(this.conditions)) { void this.applyInvestigationFilters({ ...this.investigationFilters, range: event.detail.range }); return; }
+    if (this.section === "sessions" && hasSessionConditions(this.conditions)) {
+      void this.applyInvestigationFilters({ ...this.investigationFilters, range: event.detail.range });
+      return;
+    }
     this.range = event.detail.range;
-    this.showFilteredDashboard();
+    const href = this.selectedTraceId
+      ? traceLocation(this.selectedTraceId, this.filters, this.selectedTraceSpanId || undefined, this.section === "traces" ? "traces" : undefined)
+      : sectionLocation(this.filters, this.section);
+    this.beginNavigation(href);
+    history.pushState(history.state, "", href);
+    this.readRoute(true);
   }
 
   private sourceSelected(event: CustomEvent<{ sourceId: string }>) {
@@ -284,6 +331,25 @@ export class AgentmetryApp extends LocalizedElement {
     this.readRoute(true, true);
   }
 
+  private readonly traceCatalogSelected = (event: CustomEvent<{ traceId: string }>) => {
+    const origin: NavigationOrigin = {
+      kind: "trace-list",
+      href: `${window.location.pathname}${window.location.search}`,
+      label: localization.t("app.traces"),
+    };
+    this.beginNavigation();
+    history.pushState({ origin }, "", traceLocation(event.detail.traceId, this.filters, undefined, "traces"));
+    this.readRoute(true, true);
+  };
+
+  private readonly traceCatalogConditionsRequested = (event: CustomEvent<{ conditions: TraceCatalogConditions }>) => {
+    const conditions = event.detail.conditions;
+    const filters = { ...this.filters, traceFailure: conditions.failureObservation, traceMinDurationMs: conditions.minDurationMs };
+    this.beginNavigation();
+    history.pushState({}, "", sectionLocation(filters, "traces"));
+    this.readRoute(true, true);
+  };
+
   private dashboardStateChanged(event: CustomEvent<DashboardStateDetail>) {
     this.dashboardStatus = event.detail.status;
     this.sources = event.detail.sources;
@@ -304,6 +370,19 @@ export class AgentmetryApp extends LocalizedElement {
     this.readRoute(true, true);
   };
 
+  private readonly sectionSelected = (event: MouseEvent, section: AppSection) => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    const href = sectionLocation(this.filters, section);
+    this.beginNavigation();
+    history.pushState({}, "", href);
+    this.readRoute(true, true);
+  };
+
+  private sectionHeadingKey(): "app.sessions" | "app.traces" | "app.usage" | "app.connections" {
+    return `app.${this.section}` as "app.sessions" | "app.traces" | "app.usage" | "app.connections";
+  }
+
   private readonly closeTrace = () => {
     if (this.traceReturn) {
       this.beginNavigation();
@@ -311,7 +390,7 @@ export class AgentmetryApp extends LocalizedElement {
       return;
     }
     this.beginNavigation();
-    history.replaceState({}, "", dashboardLocation(this.filters));
+    history.replaceState({}, "", sectionLocation(this.filters, this.section));
     this.readRoute(true, true);
   };
 
@@ -372,16 +451,24 @@ export class AgentmetryApp extends LocalizedElement {
     this.range = filters.range;
     this.sourceId = filters.sourceId;
     this.search = filters.search;
+    this.traceFailure = filters.traceFailure;
+    this.traceMinDurationMs = filters.traceMinDurationMs;
     this.sessionView = filters.sessionView ?? "roots";
+    const requestedSection = new URL(window.location.href).searchParams.get("section");
+    this.section = requestedSection === "traces" || requestedSection === "usage" || requestedSection === "connections" ? requestedSection : "sessions";
     const origin = navigationOriginFromState(history.state);
     const view = navigationViewStateFromState(history.state);
+    const conversationTarget = conversationTargetFromLocation(window.location.pathname, window.location.search);
+    const traceId = traceIdFromPath(window.location.pathname);
+    this.pendingRouteView = view && (conversationTarget || traceId) ? view : undefined;
     this.requestedPurpose = view?.purpose ?? (restoreContext && view?.evidenceFocus?.kind === "episode" ? "rework" : "execution");
     this.requestedActivityId = view?.selectedActivityId ?? "";
+    this.requestedFileReadId = view?.selectedFileReadId ?? "";
     this.requestedEvidenceFocus = restoreContext ? view?.evidenceFocus : undefined;
     this.pendingScrollY = restoreContext ? (resetScroll ? 0 : view?.scrollY) : undefined;
     if (resetScroll && typeof window.scrollTo === "function") window.scrollTo({ top: 0, behavior: "auto" });
-    const conversationTarget = conversationTargetFromLocation(window.location.pathname, window.location.search);
     if (conversationTarget) {
+      this.section = "sessions";
       this.workspaceInitialized = true;
       this.selectedTraceId = "";
       this.requestedConversation = conversationTarget;
@@ -393,11 +480,10 @@ export class AgentmetryApp extends LocalizedElement {
       this.pendingFocus = restoreContext ? "detail" : undefined;
       return;
     }
-    const traceId = traceIdFromPath(window.location.pathname);
     this.selectedTraceId = traceId ?? "";
     this.selectedTraceSpanId = traceId ? (new URL(location.href).searchParams.get("spanId") ?? "").toLowerCase() : "";
     this.requestedTraceInvestigation = traceId && restoreContext ? view?.traceInvestigation : undefined;
-    this.traceReturn = traceId && origin?.kind === "conversation" ? origin : undefined;
+    this.traceReturn = traceId && (origin?.kind === "trace-list" || origin?.kind === "conversation") ? origin : undefined;
     this.conversationReturn = undefined;
     if (traceId) {
       this.routeAnnouncement = localization.t("app.trace", { id: shortId(traceId) });
@@ -405,7 +491,7 @@ export class AgentmetryApp extends LocalizedElement {
       this.pendingFocus = restoreContext ? "trace" : undefined;
       return;
     }
-    this.workspaceInitialized = true;
+    this.workspaceInitialized = this.section === "sessions";
     this.requestedConversation = undefined;
     this.requestedAgentId = view?.selectedAgentId ?? "";
     this.traceReturn = undefined;
@@ -445,7 +531,19 @@ export class AgentmetryApp extends LocalizedElement {
   }
 
   private get filters(): NavigationFilters {
-    return { ...this.investigationFilters, ...(this.sessionView === "all" ? { sessionView: "all" as const } : {}) };
+    return {
+      ...this.investigationFilters,
+      ...(this.sessionView === "all" ? { sessionView: "all" as const } : {}),
+      ...(this.traceFailure ? { traceFailure: this.traceFailure } : {}),
+      ...(this.traceMinDurationMs !== undefined ? { traceMinDurationMs: this.traceMinDurationMs } : {}),
+    };
+  }
+
+  private get traceConditions(): TraceCatalogConditions {
+    return {
+      ...(this.traceFailure ? { failureObservation: this.traceFailure } : {}),
+      ...(this.traceMinDurationMs !== undefined ? { minDurationMs: this.traceMinDurationMs } : {}),
+    };
   }
 
   private get investigationFilters(): InvestigationFilters {
@@ -490,17 +588,22 @@ export class AgentmetryApp extends LocalizedElement {
   private beginNavigation(href?: string) {
     this.scrollSaveGeneration += 1;
     this.scrollSaveScheduled = false;
-    this.saveCurrentEntryView(href);
+    this.saveCurrentEntryView(href, true);
   }
 
-  private saveCurrentEntryView(href = `${window.location.pathname}${window.location.search}`) {
+  private saveCurrentEntryView(href = `${window.location.pathname}${window.location.search}`, force = false) {
     const origin = navigationOriginFromState(history.state);
     const workspace = this.shadowRoot?.querySelector<ConversationWorkspace>("am-conversation-workspace");
     const workspaceVisible = !traceIdFromPath(window.location.pathname);
+    const view = workspaceVisible
+      ? workspace?.navigationViewState
+      : this.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer")?.navigationViewState;
+    if (!force && this.pendingRouteView && !routeViewApplied(this.pendingRouteView, view)) return;
+    if (this.pendingRouteView && routeViewApplied(this.pendingRouteView, view)) this.pendingRouteView = undefined;
     history.replaceState({
       ...(origin ? { origin } : {}),
       view: {
-        ...(workspaceVisible ? workspace?.navigationViewState : this.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer")?.navigationViewState ?? {}),
+        ...(view ?? {}),
         scrollY: window.scrollY,
       },
     }, "", href);
@@ -530,10 +633,9 @@ export class AgentmetryApp extends LocalizedElement {
 
 
   private statusText() {
-    const receiver = html`<span class="receiver"><span class="status-dot" aria-label=${localization.t("app.receivingAria")}></span><span>${localization.t("app.receiving")}</span></span>`;
-    if (this.dashboardStatus === "loading") return html`${receiver}<span class="state-note">${localization.t("app.refreshing")}</span>`;
-    if (this.dashboardStatus === "failed") return html`${receiver}<span class="state-note error">${localization.t("app.dashboardUnavailable")}</span>`;
-    return receiver;
+    if (this.dashboardStatus === "loading") return localization.t("app.refreshing");
+    if (this.dashboardStatus === "failed") return localization.t("app.dashboardUnavailable");
+    return "";
   }
 
   private syncDocumentMetadata() {
@@ -569,6 +671,15 @@ export function traceIdFromPath(pathname: string): string | undefined {
   try { return decodeURIComponent(match[1]); } catch { return undefined; }
 }
 
-const shortId = (value: string) => value.length > 18 ? `${value.slice(0, 14)}…` : value;
+const routeViewApplied = (requested: NavigationViewState, current?: NavigationViewState) => {
+  if (!current) return false;
+  if (requested.selectedAgentId !== undefined && current.selectedAgentId !== requested.selectedAgentId) return false;
+  if (requested.purpose !== undefined && current.purpose !== requested.purpose) return false;
+  if (requested.selectedActivityId !== undefined && current.selectedActivityId !== requested.selectedActivityId) return false;
+  if (requested.selectedFileReadId !== undefined && current.selectedFileReadId !== requested.selectedFileReadId) return false;
+  if (requested.traceInvestigation !== undefined && JSON.stringify(current.traceInvestigation) !== JSON.stringify(requested.traceInvestigation)) return false;
+  if (requested.evidenceFocus !== undefined && JSON.stringify(current.evidenceFocus) !== JSON.stringify(requested.evidenceFocus)) return false;
+  return true;
+};
 
 declare global { interface HTMLElementTagNameMap { "am-app": AgentmetryApp } }

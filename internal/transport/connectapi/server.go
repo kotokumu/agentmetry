@@ -30,6 +30,14 @@ type Reader interface {
 	query.TraceReader
 }
 
+type traceListReader interface {
+	query.TraceListReader
+}
+
+type sessionFileReadReader interface {
+	query.SessionFileReadReader
+}
+
 type LiveReader interface {
 	query.ProjectionChangeReader
 	query.ActivitySyncReader
@@ -38,6 +46,8 @@ type LiveReader interface {
 type Server struct {
 	agentmetryv1connect.UnimplementedAgentmetryQueryServiceHandler
 	reader       Reader
+	traceList    traceListReader
+	fileReads    sessionFileReadReader
 	changes      query.ProjectionChangeReader
 	activitySync query.ActivitySyncReader
 	now          Clock
@@ -46,6 +56,12 @@ type Server struct {
 
 func New(reader Reader, live LiveReader, now Clock) (string, http.Handler) {
 	server := &Server{reader: reader, now: now, subscribers: make(chan struct{}, 8)}
+	if value, ok := reader.(traceListReader); ok {
+		server.traceList = value
+	}
+	if value, ok := reader.(sessionFileReadReader); ok {
+		server.fileReads = value
+	}
 	if live != nil {
 		server.changes = live
 		server.activitySync = live
@@ -343,6 +359,60 @@ func (server *Server) ListSessions(ctx context.Context, request *connect.Request
 	}), nil
 }
 
+func (server *Server) ListTraces(ctx context.Context, request *connect.Request[v1.ListTracesRequest]) (*connect.Response[v1.ListTracesResponse], error) {
+	if server.traceList == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("trace list is unavailable"))
+	}
+	filter, err := dashboardFilter(server.now(), request.Msg.GetFilter())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	conditions, err := traceConditions(request.Msg.GetConditions())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	if filter.Search != "" {
+		return nil, connect.NewError(connect.CodeInvalidArgument, errors.New("trace list search is unsupported"))
+	}
+	timeRange := request.Msg.GetFilter().GetRange()
+	if timeRange == v1.TimeRange_TIME_RANGE_UNSPECIFIED {
+		timeRange = v1.TimeRange_TIME_RANGE_ONE_DAY
+	}
+	pageSize, err := boundedPageSize(request.Msg.GetPage())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	offset := 0
+	listFilter := query.TraceListFilter{Since: filter.Since, SourceID: filter.SourceID, Conditions: conditions}
+	if token := request.Msg.GetPage().GetPageToken(); token != "" {
+		offset, err = parseBoundPageToken(token, traceListPageTokenKind, traceListPageBinding(listFilter, pageSize, timeRange))
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+	}
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	listFilter.Page = queryPage
+	page, err := server.traceList.ListTraces(ctx, listFilter)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	pageInfoValue := pageInfo(page.HasMore, page.NextOffset, offset > 0, max(0, offset-pageSize), offset)
+	if pageInfoValue.GetHasMore() {
+		pageInfoValue.NextPageToken = encodeBoundPageToken(traceListPageTokenKind, page.NextOffset, traceListPageBinding(listFilter, pageSize, timeRange))
+	}
+	if offset > 0 {
+		pageInfoValue.PreviousPageToken = encodeBoundPageToken(traceListPageTokenKind, max(0, offset-pageSize), traceListPageBinding(listFilter, pageSize, timeRange))
+	}
+	return connect.NewResponse(&v1.ListTracesResponse{
+		Traces:            mapTraceSummaries(page.Traces),
+		Page:              pageInfoValue,
+		AppliedConditions: mapTraceConditions(page.AppliedConditions),
+	}), nil
+}
+
 func (server *Server) GetSession(ctx context.Context, request *connect.Request[v1.GetSessionRequest]) (*connect.Response[v1.GetSessionResponse], error) {
 	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
 	if err != nil {
@@ -419,6 +489,52 @@ func (server *Server) ListSessionActivities(ctx context.Context, request *connec
 		Activities: mapActivities(page.Activities),
 		Page:       pageInfo(page.HasMore, page.Offset+len(page.Activities), page.HasEarlier, max(0, page.Offset-pageSize), page.Offset),
 		Total:      page.Total,
+	}), nil
+}
+
+func (server *Server) ListSessionFileReads(ctx context.Context, request *connect.Request[v1.ListSessionFileReadsRequest]) (*connect.Response[v1.ListSessionFileReadsResponse], error) {
+	if server.fileReads == nil {
+		return nil, connect.NewError(connect.CodeUnimplemented, errors.New("session file reads are unavailable"))
+	}
+	identity, err := query.NewConversationIdentity(request.Msg.GetSourceId(), request.Msg.GetSessionId())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	pageSize, err := boundedPageSize(request.Msg.GetPage())
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	offset := 0
+	reference := strings.TrimSpace(request.Msg.GetReference())
+	readFilter := query.SessionFileReadFilter{Identity: identity, Reference: reference}
+	if token := request.Msg.GetPage().GetPageToken(); token != "" {
+		offset, err = parseBoundPageToken(token, fileReadsPageTokenKind, fileReadsPageBinding(identity, reference, pageSize))
+		if err != nil {
+			return nil, connect.NewError(connect.CodeInvalidArgument, err)
+		}
+	}
+	queryPage, err := query.NewPage(offset, pageSize)
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInvalidArgument, err)
+	}
+	readFilter.Page = queryPage
+	page, err := server.fileReads.ListSessionFileReads(ctx, readFilter)
+	if errors.Is(err, query.ErrConversationNotFound) || errors.Is(err, query.ErrConversationTargetNotFound) {
+		return nil, connect.NewError(connect.CodeNotFound, err)
+	}
+	if err != nil {
+		return nil, connect.NewError(connect.CodeInternal, err)
+	}
+	pageInfoValue := pageInfo(page.HasMore, page.NextOffset, offset > 0, max(0, offset-pageSize), offset)
+	if pageInfoValue.GetHasMore() {
+		pageInfoValue.NextPageToken = encodeBoundPageToken(fileReadsPageTokenKind, page.NextOffset, fileReadsPageBinding(identity, reference, pageSize))
+	}
+	if offset > 0 {
+		pageInfoValue.PreviousPageToken = encodeBoundPageToken(fileReadsPageTokenKind, max(0, offset-pageSize), fileReadsPageBinding(identity, reference, pageSize))
+	}
+	return connect.NewResponse(&v1.ListSessionFileReadsResponse{
+		Reads: mapSessionFileReads(page.Reads), DistinctReferenceCount: page.DistinctReferenceCount,
+		Page: pageInfoValue, Coverage: page.Coverage,
 	}), nil
 }
 
