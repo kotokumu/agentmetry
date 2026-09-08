@@ -23,14 +23,14 @@ export class AgentTree extends LocalizedElement {
     .node:hover, .node:focus-visible { border-color: var(--am-accent); transform: translateY(-2px); box-shadow: 0 14px 30px rgba(0, 0, 0, .25), 0 0 18px rgba(var(--am-accent-rgb), .07); outline: 2px solid color-mix(in srgb, var(--am-accent) 35%, transparent); outline-offset: 2px; }
     .node[aria-selected="true"] { background: linear-gradient(145deg, var(--am-accent-soft), var(--am-surface)); border-color: var(--am-accent); box-shadow: 0 0 22px rgba(var(--am-accent-rgb), .08); }
     .node-title { display: flex; align-items: baseline; gap: 7px; min-width: 0; }
-    .node-title strong { overflow: hidden; color: var(--am-text); font: .76rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
-    .role { border: 1px solid var(--am-border-strong); border-radius: 3px; padding: 2px 4px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 .55rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
-    code { display: block; margin-top: 3px; color: var(--am-muted); font-size: .64rem; overflow-wrap: anywhere; }
-    .meta { margin-top: 3px; overflow: hidden; color: var(--am-muted); font-size: .68rem; text-overflow: ellipsis; white-space: nowrap; }
-    .usage { display: grid; gap: 2px; margin-top: 4px; color: var(--am-muted); font-size: .68rem; }
+    .node-title strong { overflow: hidden; color: var(--am-text); font: 14px/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-overflow: ellipsis; white-space: nowrap; }
+    .role { border: 1px solid var(--am-border-strong); border-radius: 3px; padding: 2px 4px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 12px/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .08em; text-transform: uppercase; }
+    code { display: block; margin-top: 3px; color: var(--am-muted); font-size: 12px; overflow-wrap: anywhere; }
+    .meta { margin-top: 3px; overflow: hidden; color: var(--am-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+    .usage { display: grid; gap: 2px; margin-top: 4px; color: var(--am-muted); font-size: 12px; }
     .usage p { margin: 0; overflow-wrap: anywhere; }
     .usage details { flex-basis: 100%; }
-    .usage summary { width: fit-content; cursor: pointer; color: var(--am-accent); font-size: .66rem; }
+    .usage summary { width: fit-content; cursor: pointer; color: var(--am-accent); font-size: 12px; }
     .usage details p { margin-top: 3px; }
     .empty { color: var(--am-muted); font-size: .78rem; }
   `;
@@ -214,8 +214,8 @@ const renderGraphNode = (
   @keydown=${(event: KeyboardEvent) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); select(event); } }}
 >
   <div class="node-title"><span class="role">${localization.t(layout.depth === 0 ? "agentTree.root" : "agentTree.child")}</span><strong title=${agentDisplayLabel(layout.node.agent)}>${agentDisplayLabel(layout.node.agent)}</strong></div>
-  <code>${localization.t("agentTree.runtimeId", { id: layout.node.agent.agentId || notReported() })}</code>
-  <div class="meta">${[layout.node.agent.agentType, layout.node.agent.model].filter(Boolean).join(" · ") || notReported()}</div>
+  <code>${layout.node.agent.agentId && agentDisplayLabel(layout.node.agent) !== layout.node.agent.agentId ? `${layout.node.agent.agentId} ` : ""}(${layout.node.agent.model || notReported()})</code>
+  <div class="meta">${layout.node.agent.agentType || notReported()}</div>
   <div class="usage">
     <p>${localization.t("participants.activityCount", { count: localization.number(layout.node.agent.activityCount) })}</p>
     <am-token-breakdown .usage=${layout.node.agent.tokens} .compact=${true} @click=${(event: MouseEvent) => event.stopPropagation()} @token-breakdown-toggle=${tokenBreakdownToggled}></am-token-breakdown>

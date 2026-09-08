@@ -18,6 +18,7 @@ import type { TraceExplorer } from "../components/trace-explorer";
 import type { DashboardSummary } from "../components/dashboard-summary";
 import type { MCPConnection } from "../components/mcp-connection";
 import type { TokenUsage } from "../model/telemetry";
+import type { SessionFileRead } from "../model/trace-catalog";
 import { localization } from "../localization/localization";
 
 const emptyOverview = {
@@ -170,6 +171,14 @@ const connectPath = (url: string) => new URL(url, "http://localhost").pathname;
 const connectBody = (call: readonly unknown[]) => JSON.parse(new TextDecoder().decode((call[1] as { body: Uint8Array }).body));
 const workspaceOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<ConversationWorkspace>("am-conversation-workspace");
 const workspaceRootOf = (app: AgentmetryApp) => workspaceOf(app)?.shadowRoot;
+const selectSessionFromList = async (app: AgentmetryApp, sessionId: string, sourceId = "codex") => {
+  await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-session-list")).not.toBeNull());
+  const url = new URL(location.href);
+  url.pathname = `/conversations/${encodeURIComponent(sourceId)}/${encodeURIComponent(sessionId)}`;
+  history.pushState(history.state, "", `${url.pathname}${url.search}`);
+  window.dispatchEvent(new PopStateEvent("popstate"));
+  await vi.waitFor(() => expect(location.pathname).toContain(`/conversations/`));
+};
 const traceExplorerOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer");
 const traceRootOf = (app: AgentmetryApp) => traceExplorerOf(app)?.shadowRoot;
 const dashboardOf = (app: AgentmetryApp) => app.shadowRoot?.querySelector<DashboardSummary>("am-dashboard-summary");
@@ -232,6 +241,7 @@ describe("Agentmetry app composition", () => {
     }));
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
+    await selectSessionFromList(app, current.id);
     const comparisonPanel = () => workspaceRootOf(app)?.querySelector<ReworkComparison>("am-rework-comparison");
     await vi.waitFor(() => expect(comparisonPanel()?.state.status).toBe("loading"));
     releaseRoots();
@@ -241,13 +251,18 @@ describe("Agentmetry app composition", () => {
     comparisonPanel()?.dispatchEvent(new CustomEvent("comparison-retry-requested", { bubbles: true, composed: true }));
     await vi.waitFor(() => expect(comparisons.some((request) => request.baseline.sessionId === root.id)).toBe(true));
     expect(comparisons.every((request) => request.baseline.sessionId !== child.id)).toBe(true);
-    expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.sessions.map((session) => session.id)).toEqual([current.id, child.id]);
-    workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.shadowRoot?.querySelector<HTMLAnchorElement>(`a[href*='${child.id}']`)?.click();
+    workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.list-return")?.click();
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".workspace")?.getAttribute("data-view")).toBe("list"));
+    const list = workspaceRootOf(app)?.querySelector<SessionList>("am-session-list");
+    await vi.waitFor(() => expect(list?.sessions.map((session) => session.id)).toEqual([current.id, child.id]));
+    list?.shadowRoot?.querySelector<HTMLAnchorElement>(`a[href*='${child.id}']`)?.click();
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain(root.id));
     expect(location.pathname).toBe(`/conversations/codex/${child.id}`);
     expect(new URL(location.href).searchParams.get("view")).toBe("all");
-    expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.selected).toBe(child.id);
+    expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain(root.id);
     const allLocation = location.pathname + location.search;
+    workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.list-return")?.click();
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".workspace")?.getAttribute("data-view")).toBe("list"));
     workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.shadowRoot?.querySelector<HTMLInputElement>("input")?.click();
     await vi.waitFor(() => expect(workspaceOf(app)?.sessionView).toBe("roots"));
     expect(new URL(location.href).searchParams.has("view")).toBe(false);
@@ -280,6 +295,105 @@ describe("Agentmetry app composition", () => {
     expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.view).toBe("all");
     expect(new URL(location.href).searchParams.get("view")).toBe("all");
   });
+
+  it("sends trace conditions with a source-qualified trace route and preserves them through a session return", async () => {
+    const traceId = "trace-catalog-1";
+    const spanId = "span-catalog-1";
+    const activity = {
+      id: "activity-catalog-1", source: "codex", signal: "trace" as const, traceId, spanId,
+      name: "catalog operation", kind: "tool" as const, agentId: "main", runId: "session-catalog-1", model: "model-a",
+      observedAt: "2026-09-08T00:00:01Z", contributesToTotal: false,
+      tokens: emptyOverview.tokens,
+    };
+    const session: TestSession = {
+      id: "session-catalog-1", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: "2026-09-08T00:00:00Z", endedAt: "2026-09-08T00:01:00Z", activityCount: 1,
+      tokens: emptyOverview.tokens, agents: [], activities: [activity], traceIds: [traceId],
+    };
+    const overview = { ...emptyOverview, sessions: [session] } as TestOverview;
+    const trace = {
+      traceId, startedAt: session.startedAt, endedAt: session.endedAt, status: "ok", rootSpanCount: 1, missingParentCount: 0,
+      conversations: [{ sourceId: "codex", id: session.id }], agents: [], activities: [activity],
+    };
+    const requests: Record<string, any>[] = [];
+    history.replaceState({}, "", "/?section=traces&source=codex&traceFailure=observed&traceMinMs=1");
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      const path = connectPath(url).split("/").at(-1);
+      if (path === "ListTraces") {
+        const request = connectBody([url, init]);
+        requests.push(request);
+        return connectResponse({
+          traces: [{ traceId, startedAt: trace.startedAt, endedAt: trace.endedAt, status: "ok", activityCount: 1, rootSpanCount: 1, missingParentCount: 0, conversations: trace.conversations }],
+          page: { hasMore: false }, appliedConditions: request.conditions,
+        });
+      }
+      if (path === "GetTrace") return connectResponse(trace);
+      if (path === "GetTraceOverview") return connectResponse(traceOverviewResponse(trace));
+      if (path === "GetTraceWindow") return connectResponse(traceWindowResponse(trace));
+      if (path === "GetSession") return connectResponse({ session: sessionSummary(session), traceIds: [traceId] });
+      if (path === "ListSessionActivities") return connectResponse(activitiesResponse(session));
+      return connectResponse({});
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(requests.length).toBeGreaterThan(0));
+    expect(requests[0]?.filter?.sourceId).toBe("codex");
+    expect(requests[0]?.conditions?.failureObservation).toBe("TRACE_FAILURE_OBSERVATION_OBSERVED");
+    expect(requests[0]?.conditions?.minDurationMs).toBe(1);
+
+    const catalog = app.shadowRoot?.querySelector("am-trace-catalog");
+    await catalog?.updateComplete;
+    catalog?.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace-link")?.click();
+    await vi.waitFor(() => expect(location.pathname).toBe(`/traces/${traceId}`));
+    expect(location.search).toBe("?source=codex&traceFailure=observed&traceMinMs=1&section=traces");
+
+    const waterfall = () => traceRootOf(app)?.querySelector("am-trace-waterfall");
+    await vi.waitFor(() => expect(waterfall()).not.toBeNull());
+    waterfall()?.dispatchEvent(new CustomEvent("conversation-selected-from-trace", {
+      detail: { sourceId: "codex", conversationId: session.id, traceId, spanId }, bubbles: true, composed: true,
+    }));
+    await vi.waitFor(() => expect(location.pathname).toBe(`/conversations/codex/${session.id}`));
+    expect(location.search).toBe("?source=codex&traceFailure=observed&traceMinMs=1&traceId=trace-catalog-1&spanId=span-catalog-1");
+
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.context-return")).not.toBeNull());
+    workspaceRootOf(app)?.querySelector<HTMLAnchorElement>("a.context-return")?.click();
+    await vi.waitFor(() => expect(location.pathname).toBe(`/traces/${traceId}`));
+    await vi.waitFor(() => expect(traceRootOf(app)?.querySelector<HTMLAnchorElement>("a.trace-close")).not.toBeNull());
+    traceRootOf(app)?.querySelector<HTMLAnchorElement>("a.trace-close")?.click();
+    await vi.waitFor(() => expect(location.pathname).toBe("/"));
+    expect(location.search).toBe("?section=traces&source=codex&traceFailure=observed&traceMinMs=1");
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-catalog")).not.toBeNull());
+  });
+
+  it.each(["traces", "usage"] as const)("keeps the %s section and reloads it when the range changes with session conditions", async (section) => {
+    history.replaceState({}, "", `/?section=${section}&range=24h&failure=true${section === "traces" ? "&traceFailure=observed" : ""}`);
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
+      const endpoint = connectPath(url).split("/").at(-1) ?? "";
+      calls.push(endpoint);
+      if (endpoint === "ListTraces") {
+        const request = connectBody([url, init]);
+        return connectResponse({ traces: [], page: { hasMore: false }, appliedConditions: request.conditions });
+      }
+      if (endpoint === "GetDashboard") return connectResponse(dashboardResponse(emptyOverview));
+      return connectResponse({ sessions: [], page: { hasMore: false } });
+    }));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    const component = section === "traces" ? "am-trace-catalog" : "am-dashboard-summary";
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector(component)).not.toBeNull());
+    const initialCalls = calls.length;
+    app.shadowRoot?.querySelector<TimeRangeFilter>("am-time-range-filter")?.shadowRoot
+      ?.querySelector<HTMLButtonElement>('button[data-range="7d"]')?.click();
+
+    await vi.waitFor(() => expect(new URL(location.href).searchParams.get("range")).toBe("7d"));
+    expect(new URL(location.href).searchParams.get("section")).toBe(section);
+    await vi.waitFor(() => expect(calls.slice(initialCalls)).toContain(section === "traces" ? "ListTraces" : "GetDashboard"));
+    expect(calls.slice(initialCalls)).not.toContain("ListSessions");
+  });
+
   it("switches the application shell and document metadata to Japanese without reloading", async () => {
     vi.stubGlobal("fetch", overviewFetch(emptyOverview));
     await localization.select("en");
@@ -287,7 +401,7 @@ describe("Agentmetry app composition", () => {
     document.body.append(app);
     await app.updateComplete;
 
-    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("Agent conversations");
+    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("Sessions");
     const selector = app.shadowRoot?.querySelector("am-language-selector");
     await selector?.updateComplete;
     const select = selector?.shadowRoot?.querySelector("select");
@@ -296,9 +410,56 @@ describe("Agentmetry app composition", () => {
     await localization.whenReady();
     await app.updateComplete;
 
-    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("エージェントの会話");
+    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("セッション");
     expect(document.documentElement.lang).toBe("ja");
     expect(document.title).toBe("Agentmetry · ローカル AI エージェントの可観測性");
+  });
+
+  it("restores the selected file read and activity after a route remount", async () => {
+    const read = (id: string, activityId: string, observedAt: string, body: string): SessionFileRead => ({
+      id, sourceId: "codex", sessionId: "qa-session-content", reference: "src/selection.ts", activityId, observedAt,
+      agentId: "main", model: "model-a", outputContent: body, outputAvailability: "available", outputMapping: "confirmed",
+      coverage: "complete", contentEvidence: {
+        source: "codex", activityId, signal: "log", kind: "tool_output", evidence: "read_output", availability: "available",
+        fields: ["output"], truncated: false,
+      },
+    });
+    const older = read("read-selection-2", "activity-2", "2026-09-08T00:02:00Z", "const selected = rows[0];");
+    const newer = read("read-selection-1", "activity-1", "2026-09-08T00:01:00Z", "const selected = rows[1];");
+    const activity = {
+      id: older.activityId, source: "codex", signal: "log" as const, name: "read_file", kind: "tool" as const,
+      runId: older.sessionId, agentId: older.agentId, model: older.model, observedAt: older.observedAt,
+      content: older.outputContent, contentEvidence: older.contentEvidence, tokens: emptyOverview.tokens, contributesToTotal: false,
+    };
+    const session: TestSession = {
+      id: older.sessionId, sourceId: "codex", sources: [{ id: "codex", label: "Codex" }],
+      startedAt: newer.observedAt, endedAt: older.observedAt, activityCount: 1, tokens: emptyOverview.tokens,
+      agents: [], activities: [activity],
+    };
+    vi.spyOn(agentmetryClient, "listSessionFileReads").mockImplementation(async (_source, _session, _pageToken, reference) => ({
+      reads: reference ? [older, newer] : [older], distinctReferenceCount: 1, hasMore: false, coverage: "complete",
+    }));
+    vi.stubGlobal("fetch", overviewFetch({ ...emptyOverview, sessions: [session] } as TestOverview));
+    history.replaceState({ view: { purpose: "files", selectedFileReadId: older.id, selectedActivityId: older.activityId } }, "", `/conversations/codex/${session.id}`);
+
+    const mount = () => {
+      const app = document.createElement("am-app") as AgentmetryApp;
+      document.body.append(app);
+      return app;
+    };
+    let app = mount();
+    const assertRestored = async () => {
+      await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-session-file-reads")?.shadowRoot?.querySelector(".read-body")?.textContent).toContain(older.outputContent));
+      expect(workspaceRootOf(app)?.querySelector("am-session-file-reads")?.shadowRoot?.querySelector<HTMLSelectElement>(".read-history select")?.value).toBe(older.id);
+      expect(history.state?.view?.purpose).toBe("files");
+      expect(history.state?.view?.selectedFileReadId).toBe(older.id);
+      expect(history.state?.view?.selectedActivityId).toBe(older.activityId);
+    };
+    await assertRestored();
+
+    document.body.replaceChildren();
+    app = mount();
+    await assertRestored();
   });
 
   it("applies acknowledged full conditions and preserves the last query on unsupported or invalid drafts", async () => {
@@ -351,6 +512,7 @@ describe("Agentmetry app composition", () => {
     vi.stubGlobal("fetch", overviewFetch(overview));
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
+    await selectSessionFromList(app, "session-rework");
 
     const panel = await vi.waitFor(() => {
       const result = workspaceRootOf(app)?.querySelector("am-rework-summary");
@@ -383,7 +545,10 @@ describe("Agentmetry app composition", () => {
     vi.stubGlobal("fetch", overviewFetch({ ...emptyOverview, sessions: [current, baseline] } as TestOverview));
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
+    await selectSessionFromList(app, current.id);
 
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-rework-summary")).not.toBeNull());
+    workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.querySelector<HTMLButtonElement>(".compare-action")?.click();
     const panel = await vi.waitFor(() => {
       const result = workspaceRootOf(app)?.querySelector<ReworkComparison>("am-rework-comparison");
       expect(result?.shadowRoot?.textContent).toContain("Before / After diagnostics");
@@ -506,9 +671,10 @@ describe("Agentmetry app composition", () => {
 
     const content = `${app.shadowRoot?.textContent ?? ""} ${workspaceRootOf(app)?.textContent ?? ""}`;
     expect(content).toContain("AGENTMETRY");
-    expect(content).toContain("Agent conversations");
-    expect(content).toContain("Receiving OTLP locally");
-    expect(content).toContain("Loading conversations");
+    expect(content).toContain("Sessions");
+    expect(content).not.toContain("Local trace observatory");
+    expect(content).not.toContain("Receiving OTLP locally");
+    expect(content).toContain("Conversations");
     expect(app.shadowRoot?.querySelector("main")?.getAttribute("data-density")).toBe("operator");
     expect(app.shadowRoot?.querySelector<HTMLAnchorElement>("a.brand")?.getAttribute("href")).toBe("/");
   });
@@ -519,13 +685,13 @@ describe("Agentmetry app composition", () => {
     document.body.append(app);
     await app.updateComplete;
 
-    expect(app.shadowRoot?.querySelector("am-dashboard-summary")).not.toBeNull();
+    expect(app.shadowRoot?.querySelector("am-dashboard-summary")).toBeNull();
     expect(app.shadowRoot?.querySelector("am-conversation-workspace")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-trace-explorer")).toBeNull();
     expect(app.shadowRoot?.querySelector("am-app-update-control")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-mcp-connection")).not.toBeNull();
     expect(app.shadowRoot?.querySelector(".kpis")).toBeNull();
-    expect(app.shadowRoot?.querySelector(".workspace")).toBeNull();
+    expect(workspaceRootOf(app)?.querySelector(".workspace.list-only")).not.toBeNull();
   });
 
   it("shows the current-origin MCP connection details", async () => {
@@ -572,9 +738,10 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
+    await selectSessionFromList(app, "session-fast");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("session-fast"));
     expect(workspaceRootOf(app)?.textContent).toContain("Selected conversation");
-    expect(app.shadowRoot?.querySelector(".status")?.textContent).toContain("Refreshing dashboard");
+    expect(app.shadowRoot?.querySelector(".status")).toBeNull();
   });
 
   it("shows unavailable conversation KPIs when the conversation list fails", async () => {
@@ -588,10 +755,8 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
-    await vi.waitFor(() => expect(dashboardOf(app)?.conversationStatus).toBe("failed"));
-    const cards = Array.from(dashboardOf(app)?.shadowRoot?.querySelectorAll<KpiCard>("am-kpi-card") ?? []);
-    expect(cards[0]?.value).toBe("Unavailable");
-    expect(cards[2]?.value).toBe("Unavailable");
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-session-list")?.shadowRoot?.textContent).toContain("Conversations unavailable"));
+    expect(app.shadowRoot?.querySelector("am-dashboard-summary")).toBeNull();
   });
 
   it("returns from a conversation route to the dashboard through the brand", async () => {
@@ -614,13 +779,13 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
     await app.updateComplete;
-    await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetDashboard"))).toBe(true));
+    await vi.waitFor(() => expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/ListSessions"))).toBe(true));
 
     const filter = app.shadowRoot?.querySelector<TimeRangeFilter>("am-time-range-filter");
     await filter?.updateComplete;
     filter?.shadowRoot?.querySelector<HTMLButtonElement>("button[data-range='1h']")?.click();
 
-    await vi.waitFor(() => expect(fetchStub.mock.calls.some((call) => connectPath(call[0] as string).endsWith("/GetDashboard") && connectBody(call).filter.range === "TIME_RANGE_ONE_HOUR")).toBe(true));
+    await vi.waitFor(() => expect(fetchStub.mock.calls.some((call) => connectPath(call[0] as string).endsWith("/ListSessions") && connectBody(call).filter.range === "TIME_RANGE_ONE_HOUR")).toBe(true));
     await app.updateComplete;
     await filter?.updateComplete;
     expect(filter?.selected).toBe("1h");
@@ -655,6 +820,7 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
+    await selectSessionFromList(app, "conversation-1");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("conversation-1"));
     const range = app.shadowRoot?.querySelector<TimeRangeFilter>("am-time-range-filter");
     await range?.updateComplete;
@@ -710,7 +876,7 @@ describe("Agentmetry app composition", () => {
   });
 
   it("uses a focused trace view with an honest direct-link return target", async () => {
-    history.replaceState({}, "", "/traces/direct-trace?source=codex&q=tool+error");
+    history.replaceState({}, "", "/traces/direct-trace?section=traces&source=codex&q=tool+error");
     vi.stubGlobal("fetch", overviewFetch(emptyOverview));
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
@@ -719,12 +885,15 @@ describe("Agentmetry app composition", () => {
     const trace = traceExplorerOf(app);
     await trace?.updateComplete;
 
-    expect(app.shadowRoot?.querySelector("header")).toBeNull();
+    expect(app.shadowRoot?.querySelector("header")).not.toBeNull();
     expect(app.shadowRoot?.querySelector("am-dashboard-summary")).toBeNull();
     expect(trace?.shadowRoot?.querySelector("h1")?.textContent).toContain("Trace explorer");
     const returnLink = trace?.shadowRoot?.querySelector<HTMLAnchorElement>("a.trace-close");
-    expect(returnLink?.textContent).toContain("Conversations");
-    expect(returnLink?.getAttribute("href")).toBe("/?source=codex&q=tool+error");
+    expect(returnLink?.textContent).toContain("Traces");
+    expect(returnLink?.getAttribute("href")).toBe("/?source=codex&q=tool+error&section=traces");
+    returnLink?.click();
+    await vi.waitFor(() => expect(location.pathname).toBe("/"));
+    expect(new URL(location.href).searchParams.get("section")).toBe("traces");
   });
 
   it("keeps trace navigation at activity level instead of the session header", async () => {
@@ -748,6 +917,7 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
+    await selectSessionFromList(app, "session-1", "claude");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.textContent).toContain("Selected conversation"));
 
     const content = workspaceRootOf(app)?.textContent ?? "";
@@ -780,6 +950,7 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
+    await selectSessionFromList(app, "session-usage", "claude");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector(".session-metrics")).toBeTruthy());
 
     const metricCards = Array.from(workspaceRootOf(app)?.querySelectorAll<KpiCard>(".session-metrics am-kpi-card") ?? []);
@@ -818,6 +989,7 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
 
+    await selectSessionFromList(app, "session-1");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-agent-tree")).toBeTruthy());
     const sessionLink = workspaceRootOf(app)?.querySelector("am-session-list")?.shadowRoot?.querySelector<HTMLAnchorElement>("a");
     sessionLink?.click();
@@ -839,8 +1011,8 @@ describe("Agentmetry app composition", () => {
     expect(history.state.view.selectedAgentId).toBe("reviewer");
     expect(history.state.view.selectedActivityId).toBe("review-activity");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<HTMLElement>(".operations-panel")?.hidden).toBe(true));
-    workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='comparison']")?.click();
-    await vi.waitFor(() => expect(history.state?.view?.purpose).toBe("comparison"));
+    workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.querySelector<HTMLButtonElement>(".compare-action")?.click();
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-rework-comparison")?.hasAttribute("hidden")).toBe(false));
     history.back();
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("[data-purpose='rework']")?.getAttribute("aria-pressed")).toBe("true"));
     expect(history.state.view.selectedActivityId).toBe("review-activity");
@@ -888,7 +1060,7 @@ describe("Agentmetry app composition", () => {
       activities: [targetActivity],
     };
     const exactOverview = { ...emptyOverview, sessions: overviewSessions } as TestOverview;
-    const fetchStub = vi.fn().mockImplementation(async (url: string) => {
+    const fetchStub = vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
       switch (connectPath(url).split("/").at(-1)) {
         case "GetDashboard": return connectResponse(dashboardResponse(exactOverview));
         case "ListSessions": return connectResponse(sessionsResponse(exactOverview));
@@ -903,14 +1075,12 @@ describe("Agentmetry app composition", () => {
 
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-activity-table")).toBeTruthy());
 
-    const list = workspaceRootOf(app)?.querySelector<SessionList>("am-session-list");
     const table = workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table");
-    expect(list?.selected).toBe("conversation-1");
-    expect(list?.selectedSource).toBe("codex");
+    expect(workspaceRootOf(app)?.querySelector(".session-id")?.textContent).toContain("conversation-1");
     expect(table?.highlightedTraceId).toBe(traceId);
     expect(table?.highlightedSpanId).toBe(spanId);
     expect(table?.activities[0]?.spanId).toBe(spanId);
-    expect(fetchStub.mock.calls.some(([url]) => connectPath(url as string).endsWith("/GetSession"))).toBe(true);
+    expect(fetchStub.mock.calls.some(([url, init]) => connectPath(url as string).endsWith("/GetSession") && connectBody([url, init]).sourceId === "codex")).toBe(true);
 
     history.replaceState({ view: { selectedAgentId: "reviewer" } }, "", `${location.pathname}${location.search}`);
     window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
@@ -979,6 +1149,7 @@ describe("Agentmetry app composition", () => {
     vi.stubGlobal("fetch", fetchStub);
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
+    await selectSessionFromList(app, "conversation-1", "claude");
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-activity-table")?.shadowRoot?.querySelector("a.trace")).toBeTruthy());
 
     const activityTable = workspaceRootOf(app)?.querySelector("am-activity-table");

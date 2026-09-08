@@ -39,7 +39,7 @@ export class DashboardSummary extends LocalizedElement {
 
   static styles = [featurePanelStyles, css`
     :host { display: block; }
-    .kpis { display: grid; grid-template-columns: repeat(4, minmax(130px, 1fr)); gap: 10px; margin-bottom: 10px; }
+    .kpis { display: grid; grid-template-columns: repeat(3, minmax(130px, 1fr)); gap: 10px; margin-bottom: 10px; }
     .plan-panel { display: grid; grid-template-columns: 116px minmax(0, 1fr); gap: 14px; align-items: start; margin-bottom: 10px; padding-top: 11px; padding-bottom: 11px; }
     .plan-panel h2 { margin: 2px 0 0; }
     @media (max-width: 640px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } .plan-panel { grid-template-columns: 1fr; gap: 8px; } }
@@ -49,12 +49,10 @@ export class DashboardSummary extends LocalizedElement {
   render() {
     const value = this.dashboard.value;
     const placeholder = this.dashboard.failed ? unavailable() : localization.t("common.loading");
-    const conversationPlaceholder = this.conversationStatus === "failed" ? unavailable() : localization.t("common.loading");
     return html`
       <section class="kpis" aria-label=${localization.t("dashboard.overviewAria")}>
-        <am-kpi-card .label=${localization.t("dashboard.conversations")} .value=${this.conversationStatus === "ready" && this.conversationCount !== undefined ? localization.number(this.conversationCount) : conversationPlaceholder}></am-kpi-card>
+        <am-kpi-card .label=${localization.t("dashboard.conversations")} .value=${value ? localization.number(value.runCount) : placeholder}></am-kpi-card>
         <am-kpi-card .label=${localization.t("dashboard.agents")} .value=${value ? localization.number(value.agentCount) : placeholder}></am-kpi-card>
-        <am-kpi-card .label=${localization.t("dashboard.activities")} .value=${this.conversationStatus === "ready" && this.activityCount !== undefined ? localization.number(this.activityCount) : conversationPlaceholder}></am-kpi-card>
         <am-kpi-card .label=${localization.t("dashboard.modelTraffic")} .value=${value ? formatOptionalNumber(value.tokens.total) : placeholder} .hint=${localization.t("dashboard.modelTrafficHint")}></am-kpi-card>
       </section>
       <section class="panel plan-panel"><h2>${localization.t("dashboard.planLimits")}</h2><am-plan-usage .snapshots=${value?.planUsage ?? []}></am-plan-usage></section>

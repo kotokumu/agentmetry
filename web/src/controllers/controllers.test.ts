@@ -34,6 +34,13 @@ class ConversationsHost extends LitElement {
     conversationsClient.listSessionsPage ??= async (query, signal) => ({ sessions: await conversationsClient.listSessions(query.range, query.sourceId, query.search, signal, query.conditions), nextPageToken: "" });
     this.conversations = new ConversationsController(this, conversationsClient, () => this.filters, () => this.active, () => this.view);
   }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // These controller tests exercise detail/live behavior; production entry
+    // behavior is covered by the app tests and intentionally starts at the list.
+    queueMicrotask(() => { if (!this.conversations.target) this.conversations.select({ sourceId: "codex", conversationId: "session-1" }); });
+  }
 }
 
 class TraceHost extends LitElement {
@@ -64,6 +71,7 @@ describe("Lit data controllers", () => {
     rows = [{ ...session([]), id: "session-2" }];
     host.view = "all"; host.requestUpdate();
     await vi.waitFor(() => expect(host.conversations.sessions[0]?.id).toBe("session-2"));
+    host.conversations.select({ sourceId: "codex", conversationId: "session-2" });
     await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-2"));
   });
   it("keeps a child list row separate from its aggregate detail in all view", async () => {
@@ -249,6 +257,66 @@ describe("Lit data controllers", () => {
 
     expect(host.conversations.selected?.activities.map(({ name }) => name)).toEqual(["first", "second"]);
     expect(host.conversations.selected?.hasMore).toBe(false);
+  });
+
+  it("reveals an activity on the newer side of a resident mid-window", async () => {
+    const anchor = { ...activity("anchor"), id: "anchor" };
+    const target = { ...activity("file read"), id: "file-read" };
+    const current = { ...session([anchor]), activityCount: 102, activityOffset: 100, hasEarlier: true, hasMore: true, previousPageToken: "newer", nextPageToken: "older" };
+    const client = {
+      listSessions: vi.fn().mockResolvedValue([current]),
+      getSession: vi.fn().mockResolvedValue(current),
+      listSessionActivities: vi.fn().mockResolvedValue({ activities: [target], total: 102, offset: 0, hasEarlier: false, hasMore: true, nextPageToken: "older-2" }),
+    } as unknown as AgentmetryClient;
+    conversationsClient = client;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+
+    await vi.waitFor(() => expect(host.conversations.selected?.activityOffset).toBe(100));
+    await expect(host.conversations.revealActivity("file-read")).resolves.toBe(true);
+    expect(client.listSessionActivities).toHaveBeenCalledWith("codex", "session-1", "newer", 0, 100, "newer", undefined, undefined, undefined, expect.any(AbortSignal));
+  });
+
+  it("returns false after revealing all available pages without finding an activity", async () => {
+    const current = { ...session([{ ...activity("middle"), id: "middle" }]), activityOffset: 1, hasEarlier: true, hasMore: true, previousPageToken: "newer", nextPageToken: "older" };
+    const client = {
+      listSessions: vi.fn().mockResolvedValue([current]),
+      getSession: vi.fn().mockResolvedValue(current),
+      listSessionActivities: vi.fn()
+        .mockResolvedValueOnce({ activities: [{ ...activity("newest"), id: "newest" }], total: 3, offset: 0, hasEarlier: false, hasMore: true, nextPageToken: "older-2" })
+        .mockResolvedValueOnce({ activities: [{ ...activity("oldest"), id: "oldest" }], total: 3, offset: 2, hasEarlier: true, hasMore: false }),
+    } as unknown as AgentmetryClient;
+    conversationsClient = client;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+
+    await vi.waitFor(() => expect(host.conversations.selected?.activityOffset).toBe(1));
+    await expect(host.conversations.revealActivity("missing")).resolves.toBe(false);
+    expect(client.listSessionActivities).toHaveBeenCalledTimes(2);
+  });
+
+  it("stops revealing when the source-qualified selected session changes", async () => {
+    let resolvePage!: (page: ActivityPage) => void;
+    const pendingPage = new Promise<ActivityPage>((resolve) => { resolvePage = resolve; });
+    const current = { ...session([{ ...activity("codex anchor"), id: "anchor" }]), hasMore: true };
+    const other = { ...current, sourceId: "claude", sources: [{ id: "claude", label: "Claude" }] };
+    const client = {
+      listSessions: vi.fn().mockResolvedValue([current, other]),
+      getSession: vi.fn().mockImplementation((sourceId: string) => Promise.resolve(sourceId === "claude" ? other : current)),
+      listSessionActivities: vi.fn().mockReturnValue(pendingPage),
+    } as unknown as AgentmetryClient;
+    conversationsClient = client;
+    const host = document.createElement("test-conversations-host") as ConversationsHost;
+    document.body.append(host);
+
+    await vi.waitFor(() => expect(host.conversations.selected?.sourceId).toBe("codex"));
+    const revealing = host.conversations.revealActivity("missing");
+    host.conversations.select({ sourceId: "claude", conversationId: "session-1" });
+    await vi.waitFor(() => expect(host.conversations.selected?.sourceId).toBe("claude"));
+    resolvePage({ activities: [{ ...activity("stale"), id: "stale" }], total: 2, offset: 1, hasEarlier: true, hasMore: false });
+
+    await expect(revealing).resolves.toBe(false);
+    expect(host.conversations.selected?.activities.map(({ id }) => id)).toEqual(["anchor"]);
   });
 
   it("clears manual conversation pagination when disconnected", async () => {
@@ -516,7 +584,7 @@ describe("Lit data controllers", () => {
     });
 
     expect(host.conversations.sessions.map(({ id }) => id)).toEqual(["session-2"]);
-    await vi.waitFor(() => expect(host.conversations.selected?.id).toBe("session-2"));
+    expect(host.conversations.selected).toBeUndefined();
   });
 
   it("detects removal of an affected requested session while its workspace is inactive", async () => {

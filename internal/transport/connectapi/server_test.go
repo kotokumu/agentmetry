@@ -3,6 +3,7 @@ package connectapi
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http/httptest"
@@ -104,10 +105,16 @@ type readerStub struct {
 	conversation   query.Session
 	trace          query.Trace
 	traceErr       error
+	traceList      query.TracePage
+	traceListErr   error
+	fileReads      query.SessionFileReadPage
+	fileReadsErr   error
 	lastDashboard  query.DashboardFilter
 	lastSessions   query.SessionListFilter
 	lastActivities query.ActivityPageFilter
 	lastTrace      query.TraceFilter
+	lastTraceList  query.TraceListFilter
+	lastFileReads  query.SessionFileReadFilter
 	rework         query.SessionRework
 	reworkIdentity query.ConversationIdentity
 }
@@ -139,6 +146,16 @@ func (reader *readerStub) ListSessionActivities(_ context.Context, filter query.
 func (reader *readerStub) GetTrace(_ context.Context, filter query.TraceFilter) (query.Trace, error) {
 	reader.lastTrace = filter
 	return reader.trace, reader.traceErr
+}
+
+func (reader *readerStub) ListTraces(_ context.Context, filter query.TraceListFilter) (query.TracePage, error) {
+	reader.lastTraceList = filter
+	return reader.traceList, reader.traceListErr
+}
+
+func (reader *readerStub) ListSessionFileReads(_ context.Context, filter query.SessionFileReadFilter) (query.SessionFileReadPage, error) {
+	reader.lastFileReads = filter
+	return reader.fileReads, reader.fileReadsErr
 }
 
 func TestConnectServerMapsDashboardAndFilters(t *testing.T) {
@@ -217,6 +234,101 @@ func TestConnectServerUsesOpaqueSessionPageToken(t *testing.T) {
 		if connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Errorf("invalid conditions accepted: %v", err)
 		}
+	}
+}
+
+func TestConnectServerBindsNewCatalogPageTokensAndPreservesInternalErrors(t *testing.T) {
+	reader := &readerStub{
+		traceList: query.TracePage{Traces: []query.TraceListEntry{{TraceID: "trace-1"}}, NextOffset: 1, HasMore: true},
+		fileReads: query.SessionFileReadPage{
+			Reads:      []query.SessionFileRead{{ID: "read-1", SourceID: "codex", SessionID: "session-1", Reference: "main.go", ActivityID: "activity-1", ContentEvidence: query.ContentEvidence{Source: "codex", ActivityID: "activity-1", Signal: "log", Kind: "reference", Evidence: "reference", Availability: "not_reported"}}},
+			NextOffset: 1, HasMore: true, Coverage: query.FileCoverageComplete,
+		},
+	}
+	_, handler := New(reader, nil, time.Now)
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	client := agentmetryv1connect.NewAgentmetryQueryServiceClient(server.Client(), server.URL)
+
+	traceRequest := func(source string, token string, pageSize int32) *v1.ListTracesRequest {
+		return &v1.ListTracesRequest{
+			Filter:     &v1.TimeFilter{SourceId: source},
+			Conditions: &v1.TraceConditions{FailureObservation: v1.TraceFailureObservation_TRACE_FAILURE_OBSERVATION_OBSERVED},
+			Page:       &v1.PageRequest{PageSize: pageSize, PageToken: token},
+		}
+	}
+	firstTrace, err := client.ListTraces(context.Background(), connect.NewRequest(traceRequest("codex", "", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if firstTrace.Msg.GetPage().GetNextPageToken() == "" {
+		t.Fatal("trace catalog did not return a bound next page token")
+	}
+	if _, err := client.ListTraces(context.Background(), connect.NewRequest(traceRequest("claude", firstTrace.Msg.GetPage().GetNextPageToken(), 1))); err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("trace token accepted for another source: %v", err)
+	}
+	if _, err := client.ListTraces(context.Background(), connect.NewRequest(traceRequest("codex", firstTrace.Msg.GetPage().GetNextPageToken(), 2))); err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("trace token accepted for another page size: %v", err)
+	}
+	rangeRequest := traceRequest("codex", firstTrace.Msg.GetPage().GetNextPageToken(), 1)
+	rangeRequest.Filter.Range = v1.TimeRange_TIME_RANGE_ONE_HOUR
+	if _, err := client.ListTraces(context.Background(), connect.NewRequest(rangeRequest)); err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("trace token accepted for another time range: %v", err)
+	}
+	secondTrace, err := client.ListTraces(context.Background(), connect.NewRequest(traceRequest("codex", firstTrace.Msg.GetPage().GetNextPageToken(), 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastTraceList.Page.Offset() != 1 || reader.lastTraceList.SourceID != "codex" {
+		t.Fatalf("bound trace token was not decoded into its original request: %#v", reader.lastTraceList)
+	}
+	if secondTrace.Msg.GetPage().GetPreviousPageToken() == "" {
+		t.Fatal("second trace page did not return a bound previous page token")
+	}
+	if _, err := client.ListTraces(context.Background(), connect.NewRequest(traceRequest("codex", secondTrace.Msg.GetPage().GetPreviousPageToken(), 1))); err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastTraceList.Page.Offset() != 0 {
+		t.Fatalf("bound trace previous token did not return to the first page: %#v", reader.lastTraceList)
+	}
+
+	fileRequest := func(session, reference, token string, pageSize int32) *v1.ListSessionFileReadsRequest {
+		return &v1.ListSessionFileReadsRequest{SourceId: "codex", SessionId: session, Reference: reference, Page: &v1.PageRequest{PageSize: pageSize, PageToken: token}}
+	}
+	firstReads, err := client.ListSessionFileReads(context.Background(), connect.NewRequest(fileRequest("session-1", "main.go", "", 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	readToken := firstReads.Msg.GetPage().GetNextPageToken()
+	if readToken == "" {
+		t.Fatal("file read catalog did not return a bound next page token")
+	}
+	if _, err := client.ListSessionFileReads(context.Background(), connect.NewRequest(fileRequest("session-2", "main.go", readToken, 1))); err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("file read token accepted for another identity: %v", err)
+	}
+	if _, err := client.ListSessionFileReads(context.Background(), connect.NewRequest(fileRequest("session-1", "other.go", readToken, 1))); err == nil || connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("file read token accepted for another reference: %v", err)
+	}
+	secondReads, err := client.ListSessionFileReads(context.Background(), connect.NewRequest(fileRequest("session-1", "main.go", readToken, 1)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastFileReads.Page.Offset() != 1 || reader.lastFileReads.Identity.SourceID() != "codex" {
+		t.Fatalf("bound file read token was not decoded: %#v", reader.lastFileReads)
+	}
+	if secondReads.Msg.GetPage().GetPreviousPageToken() == "" {
+		t.Fatal("second file read page did not return a bound previous page token")
+	}
+	if _, err := client.ListSessionFileReads(context.Background(), connect.NewRequest(fileRequest("session-1", "main.go", secondReads.Msg.GetPage().GetPreviousPageToken(), 1))); err != nil {
+		t.Fatal(err)
+	}
+	if reader.lastFileReads.Page.Offset() != 0 {
+		t.Fatalf("bound file read previous token did not return to the first page: %#v", reader.lastFileReads)
+	}
+
+	reader.traceListErr = errors.New("database unavailable")
+	if _, err := client.ListTraces(context.Background(), connect.NewRequest(traceRequest("codex", "", 1))); err == nil || connect.CodeOf(err) != connect.CodeInternal {
+		t.Fatalf("trace reader error was not mapped to internal: %v", err)
 	}
 }
 

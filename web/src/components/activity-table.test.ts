@@ -21,6 +21,21 @@ afterEach(() => {
 });
 
 describe("activity reading", () => {
+  it("shows the model reported by each activity next to its agent", async () => {
+    const table = new ActivityTable();
+    table.activities = [activity({ agentId: "agent-01", agentDefinition: "Reviewer", model: "GPT-6 Astra" }), activity({ id: "activity-b", agentId: "agent-02", model: "" })];
+    document.body.append(table);
+    await table.updateComplete;
+
+    const cells = table.shadowRoot?.querySelectorAll("tbody tr td:nth-child(3)");
+    expect(cells?.[0]?.textContent).toContain("agent-01");
+    expect(cells?.[0]?.textContent).toContain("Reviewer");
+    expect(cells?.[0]?.textContent).toContain("GPT-6 Astra");
+    expect(cells?.[0]?.textContent?.match(/agent-01/g)).toHaveLength(1);
+    expect(cells?.[1]?.textContent).toContain("agent-02");
+    expect(cells?.[1]?.textContent).toContain("Not reported");
+  });
+
   it("keeps rows compact and opens the chosen full body with its metadata", async () => {
     const longBody = `received output\n${"a-very-long-token".repeat(150)}\nfinal line`;
     const table = new ActivityTable();
@@ -47,6 +62,22 @@ describe("activity reading", () => {
     expect(detail?.textContent).toContain("model-a");
     expect(detail?.textContent).toContain("Error");
     expect(detail?.textContent).not.toContain("Other body");
+  });
+
+  it("offers an exact activity to the referenced-file workspace", async () => {
+    const table = new ActivityTable();
+    table.activities = [activity({ id: "activity-file", content: "src/selection.ts" })];
+    const requested = vi.fn();
+    table.addEventListener("activity-files-requested", requested);
+    document.body.append(table);
+    await table.updateComplete;
+
+    table.shadowRoot?.querySelector<HTMLButtonElement>('tr[data-activity-id="activity-file"] button.select-activity')?.click();
+    await table.updateComplete;
+    table.shadowRoot?.querySelector<HTMLButtonElement>("button.view-files")?.click();
+
+    expect(requested).toHaveBeenCalledOnce();
+    expect((requested.mock.calls[0][0] as CustomEvent).detail).toEqual({ activityId: "activity-file" });
   });
 
   it("shows each newly selected activity from the top of the detail pane", async () => {

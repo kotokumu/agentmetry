@@ -27,7 +27,7 @@ export class MCPConnection extends LocalizedElement {
       border-radius: 8px;
       padding: 7px 10px;
       color: var(--am-text);
-      background: rgba(18, 25, 35, .82);
+      background: var(--am-surface-raised);
       font: 700 .64rem/1 "SFMono-Regular", "Cascadia Code", monospace;
       letter-spacing: .04em;
       cursor: pointer;
@@ -51,7 +51,7 @@ export class MCPConnection extends LocalizedElement {
       border: 1px solid var(--am-border-strong);
       border-radius: 12px;
       padding: 17px;
-      background: linear-gradient(145deg, rgba(18, 25, 35, .99), rgba(7, 10, 15, .99));
+      background: var(--am-surface-raised);
       box-shadow: 0 24px 70px rgba(0, 0, 0, .48), inset 0 1px 0 rgba(255, 255, 255, .035);
       text-align: left;
     }
@@ -61,7 +61,7 @@ export class MCPConnection extends LocalizedElement {
     .intro { margin: 7px 0 14px; color: var(--am-muted); font: .75rem/1.55 Inter, ui-sans-serif, sans-serif; }
     .label { display: block; margin-bottom: 6px; color: var(--am-muted); font: 700 .6rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .11em; text-transform: uppercase; }
     .endpoint { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
-    .endpoint-value { width: 100%; min-width: 0; border: 1px solid var(--am-border); border-radius: 8px; padding: 10px; color: var(--am-text); background: rgba(3, 7, 11, .72); font: .7rem/1.35 "SFMono-Regular", "Cascadia Code", monospace; }
+    .endpoint-value { width: 100%; min-width: 0; border: 1px solid var(--am-border); border-radius: 8px; padding: 10px; color: var(--am-text); background: var(--am-surface); font: .7rem/1.35 "SFMono-Regular", "Cascadia Code", monospace; }
     .endpoint-value:focus { border-color: var(--am-border-strong); outline: 2px solid var(--am-accent); outline-offset: 2px; }
     .copy { border: 1px solid var(--am-border-strong); border-radius: 8px; padding: 0 12px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 .63rem/1 "SFMono-Regular", "Cascadia Code", monospace; cursor: pointer; }
     .copy:hover { background: rgba(var(--am-accent-rgb), .18); }

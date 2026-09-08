@@ -45,6 +45,46 @@ type TraceFilter struct {
 	Tail   bool
 }
 
+type TraceFailureObservation string
+
+const (
+	TraceFailureUnspecified TraceFailureObservation = "unspecified"
+	TraceFailureObserved    TraceFailureObservation = "observed"
+	TraceFailureNotObserved TraceFailureObservation = "not_observed"
+	TraceFailureNotReported TraceFailureObservation = "not_reported"
+)
+
+type TraceConditions struct {
+	FailureObservation TraceFailureObservation
+	MinDurationMS      *float64
+}
+
+type TraceListFilter struct {
+	Since      time.Time
+	SourceID   string
+	Conditions TraceConditions
+	Page       Page
+}
+
+type TraceListEntry struct {
+	TraceID            string
+	StartedAt          *time.Time
+	EndedAt            *time.Time
+	DurationMS         *float64
+	Status             TraceStatus
+	ActivityCount      int64
+	RootSpanCount      int64
+	MissingParentCount int64
+	Conversations      []ConversationRef
+}
+
+type TracePage struct {
+	Traces            []TraceListEntry
+	NextOffset        int
+	HasMore           bool
+	AppliedConditions *TraceConditions
+}
+
 type Trace struct {
 	TraceID            string            `json:"traceId"`
 	StartedAt          time.Time         `json:"startedAt"`
@@ -62,6 +102,10 @@ type Trace struct {
 
 type TraceReader interface {
 	GetTrace(context.Context, TraceFilter) (Trace, error)
+}
+
+type TraceListReader interface {
+	ListTraces(context.Context, TraceListFilter) (TracePage, error)
 }
 
 const TraceOverviewLimit = 5000

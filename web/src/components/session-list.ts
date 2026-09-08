@@ -20,23 +20,23 @@ export class SessionList extends LocalizedElement {
 
   static styles = css`
     :host { display: block; }
-    .view-control { display: flex; align-items: center; gap: 8px; font-size: .8rem; padding: 10px 0; cursor: pointer; }
-    details { color: var(--am-muted); font-size: .72rem; line-height: 1.5; margin-bottom: 12px; }
+    .view-control { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 10px 0; cursor: pointer; }
+    details { color: var(--am-muted); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
     summary { cursor: pointer; }
     button { margin-top: 10px; padding: 8px 12px; border: 1px solid var(--am-border); border-radius: 6px; background: var(--am-surface); color: var(--am-text); cursor: pointer; }
     button:focus-visible, input:focus-visible, summary:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 2px; }
     button:disabled { cursor: wait; opacity: .6; }
-    nav { display: grid; gap: 5px; }
-    a { position: relative; display: block; width: 100%; overflow: hidden; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--am-text); padding: 9px 10px; text-align: left; cursor: pointer; text-decoration: none; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
+    nav { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr)); gap: 10px; }
+    a { position: relative; display: block; box-sizing: border-box; width: 100%; min-width: 0; min-height: 112px; overflow: hidden; border: 1px solid var(--am-border); border-radius: 8px; background: var(--am-surface); color: var(--am-text); padding: 12px 14px; text-align: left; cursor: pointer; text-decoration: none; transition: border-color .18s ease, background .18s ease, transform .18s ease; }
     a:hover { border-color: var(--am-border); background: rgba(255, 255, 255, .02); transform: translateX(2px); }
     a[aria-current="page"] { border-color: var(--am-border-strong); background: linear-gradient(90deg, var(--am-accent-soft), rgba(109, 244, 214, .02)); box-shadow: inset 2px 0 0 var(--am-accent); }
     a:focus-visible { border-color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
-    strong { display: block; overflow: hidden; text-overflow: ellipsis; font: 0.76rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; }
-    small { color: var(--am-muted); font-size: .68rem; }
+    strong { display: block; overflow: hidden; text-overflow: ellipsis; font: 14px/1.45 "SFMono-Regular", "Cascadia Code", monospace; }
+    small { color: var(--am-muted); font-size: 12px; }
     .native-id { display: block; overflow-wrap: anywhere; }
     .name-metadata { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 4px 0; }
     .sources { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 5px; }
-    .source { border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 2px 5px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 .58rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .04em; }
+    .source { border: 1px solid var(--am-border-strong); border-radius: 4px; padding: 3px 6px; color: var(--am-accent); background: var(--am-accent-soft); font: 700 12px/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .04em; }
     .empty { color: var(--am-muted); padding: 18px 0; }
     @media (prefers-reduced-motion: reduce) { a { transition: none; transform: none; } }
   `;

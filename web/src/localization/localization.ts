@@ -86,7 +86,8 @@ export const localization = {
   whenReady(): Promise<void> { return localeReady; },
 
   t(key: MessageKey, parameters: MessageParameters = {}): string {
-    return sourceMessages[key](parameters);
+    const message = sourceMessages[key];
+    return typeof message === "function" ? message(parameters) : key;
   },
 
   number(value: number | bigint, options?: Intl.NumberFormatOptions): string {

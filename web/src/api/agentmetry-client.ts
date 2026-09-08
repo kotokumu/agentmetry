@@ -8,6 +8,7 @@ import {
   ActivityMutationOperation,
   PageDirection,
   ProjectionTargetKind,
+  TraceFailureObservation,
   TimeRange,
   SessionListView,
   SessionRole,
@@ -41,6 +42,7 @@ import type {
   TokenUsage,
   Trace,
 } from "../model/telemetry";
+import type { SessionFileReadPage, TraceCatalogPage, TraceCatalogEntry, SessionFileRead, TraceCatalogConditions } from "../model/trace-catalog";
 import type { TraceInvestigationWindow, TraceOverview, TraceWindowResult } from "../model/trace-investigation";
 
 import { compareHarnessContexts, displayComparisonDirection, type ComparisonMetricID, type ComparisonSubject, type ComparisonValue, type ReworkComparisonPair, type ReworkComparisonRow, type SharedReworkComparison } from "../model/rework-comparison";
@@ -117,6 +119,23 @@ export const agentmetryClient = {
     return mapSessionListResponse(response, query.view);
   },
 
+  async listTraces(range: UiTimeRange, sourceId: string, pageToken = "", signal?: AbortSignal, conditions: TraceCatalogConditions = {}): Promise<TraceCatalogPage> {
+    const response = await client.listTraces({
+      filter: { range: toTimeRange(range), sourceId },
+      page: { pageSize: 50, pageToken },
+      conditions: hasTraceCatalogConditions(conditions) ? mapTraceCatalogConditions(conditions) : undefined,
+    }, signal ? { signal } : undefined);
+    if (response.page?.hasMore && !response.page.nextPageToken) throw new Error("Trace list unavailable");
+    const appliedConditions = mapTraceCatalogConditionsResponse(response.appliedConditions);
+    if (!sameTraceCatalogConditions(conditions, appliedConditions)) throw new Error("Trace conditions were not applied");
+    return {
+      traces: response.traces.map(mapTraceCatalogEntry),
+      nextPageToken: response.page?.hasMore ? response.page.nextPageToken : undefined,
+      hasMore: response.page?.hasMore ?? false,
+      appliedConditions,
+    };
+  },
+
   async getSession(sourceId: string, sessionId: string, traceId?: string, spanId?: string, signal?: AbortSignal): Promise<Session> {
 	const session = await this.getSessionSummary(sourceId, sessionId, signal);
     const page = await this.listSessionActivities(sourceId, sessionId, "older", 0, 100, "", traceId, spanId, undefined, signal);
@@ -187,6 +206,22 @@ export const agentmetryClient = {
 	const response = await client.getSession({ sourceId, sessionId }, signal ? { signal } : undefined);
 	if (!response.session) throw new Error("Session response was empty");
 	return mapSession(response.session, response.traceIds);
+  },
+
+  async listSessionFileReads(sourceId: string, sessionId: string, pageToken = "", reference = "", signal?: AbortSignal): Promise<SessionFileReadPage> {
+    const response = await client.listSessionFileReads({
+      sourceId, sessionId, reference, page: { pageSize: 50, pageToken },
+    }, signal ? { signal } : undefined);
+    const coverage = response.coverage === "complete" || response.coverage === "partial" || response.coverage === "unavailable"
+      ? response.coverage : "unavailable";
+    if (response.page?.hasMore && !response.page.nextPageToken) throw new Error("Session file reads unavailable");
+    return {
+      reads: response.reads.map((value) => mapSessionFileRead(value, coverage)),
+      distinctReferenceCount: Number(response.distinctReferenceCount),
+      nextPageToken: response.page?.hasMore ? response.page.nextPageToken : undefined,
+      hasMore: response.page?.hasMore ?? false,
+      coverage,
+    };
   },
 
   async syncSessionActivities(sourceId: string, sessionId: string, afterCursor: string, throughCursor: string, pageToken = "", signal?: AbortSignal): Promise<ActivitySyncPage> {
@@ -479,6 +514,50 @@ const mapTrace = (response: GetTraceResponse, offset = 0): Trace => {
     previousPageToken: page?.previousPageToken || undefined,
   };
 };
+
+function mapTraceCatalogEntry(value: { traceId: string; startedAt?: Timestamp; endedAt?: Timestamp; durationMs?: number; status: string; activityCount: bigint; rootSpanCount: bigint; missingParentCount: bigint; conversations: readonly { sourceId: string; id: string }[] }): TraceCatalogEntry {
+  return {
+    traceId: value.traceId, startedAt: timeValue(value.startedAt), endedAt: timeValue(value.endedAt),
+    durationMs: value.durationMs, status: value.status, activityCount: Number(value.activityCount),
+    rootSpanCount: Number(value.rootSpanCount), missingParentCount: Number(value.missingParentCount),
+    conversations: value.conversations.map((conversation) => ({ sourceId: conversation.sourceId, id: conversation.id })),
+  };
+}
+
+function mapSessionFileRead(value: { id: string; sourceId: string; sessionId: string; reference: string; activityId: string; observedAt?: Timestamp; agentId: string; model: string; outputContent: string; outputAvailability: string; outputMapping: string; contentEvidence?: { source: string; activityId: string; signal: string; kind: string; evidence: string; availability: string; fields: readonly string[]; truncated: boolean; redactionReason: string } }, coverage: SessionFileRead["coverage"]): SessionFileRead {
+  const outputAvailability = ["available", "not_reported", "redacted", "not_returned", "not_confirmed"].includes(value.outputAvailability)
+    ? value.outputAvailability as SessionFileRead["outputAvailability"] : "not_confirmed";
+  const outputMapping = value.outputMapping === "confirmed" ? "confirmed" : "not_confirmed";
+  return {
+    id: value.id, sourceId: value.sourceId, sessionId: value.sessionId, reference: value.reference,
+    activityId: value.activityId, observedAt: timeValue(value.observedAt), agentId: value.agentId,
+    model: value.model, outputContent: value.outputContent || undefined, outputAvailability, outputMapping, coverage,
+    contentEvidence: mapFileReadEvidence(value.contentEvidence, value),
+  };
+}
+
+function mapFileReadEvidence(value: { source: string; activityId: string; signal: string; kind: string; evidence: string; availability: string; fields: readonly string[]; truncated: boolean; redactionReason: string } | undefined, read: { sourceId: string; activityId: string }): ContentEvidence {
+  const fallback: ContentEvidence = { source: read.sourceId, activityId: read.activityId, signal: "log", kind: "reference", evidence: "reference", availability: "not_reported", fields: [], truncated: false };
+  if (!value || value.source !== read.sourceId || value.activityId !== read.activityId) return fallback;
+  const kinds = ["prompt", "response", "tool_input", "tool_output", "tool_input_output", "model_input", "reference", "unknown"];
+  const evidence = ["reference", "read_output", "explicit_model_input", "unknown"];
+  const availability = ["available", "not_reported", "redacted", "not_returned"];
+  if (!kinds.includes(value.kind) || !evidence.includes(value.evidence) || !availability.includes(value.availability)) return fallback;
+  const fields = value.fields.filter((field) => ["prompt", "response", "tool_input", "tool_parameters", "full_command", "file_path", "file_paths", "error", "body", "body_ref", "arguments.message", "output"].includes(field));
+  const redactionReason = ["producer_redacted", "encrypted_input"].includes(value.redactionReason) ? value.redactionReason as ContentEvidence["redactionReason"] : undefined;
+  return { source: value.source, activityId: value.activityId, signal: value.signal, kind: value.kind as ContentEvidence["kind"], evidence: value.evidence as ContentEvidence["evidence"], availability: value.availability as ContentEvidence["availability"], fields, truncated: value.truncated, ...(redactionReason ? { redactionReason } : {}) };
+}
+
+const hasTraceCatalogConditions = (conditions: TraceCatalogConditions) => conditions.failureObservation !== undefined || conditions.minDurationMs !== undefined;
+const mapTraceCatalogConditions = (conditions: TraceCatalogConditions) => ({
+  failureObservation: conditions.failureObservation === "observed" ? TraceFailureObservation.OBSERVED : conditions.failureObservation === "not_observed" ? TraceFailureObservation.NOT_OBSERVED : conditions.failureObservation === "not_reported" ? TraceFailureObservation.NOT_REPORTED : TraceFailureObservation.UNSPECIFIED,
+  minDurationMs: conditions.minDurationMs,
+});
+const mapTraceCatalogConditionsResponse = (value: { failureObservation?: TraceFailureObservation; minDurationMs?: number } | undefined): TraceCatalogConditions => ({
+  ...(value?.failureObservation === TraceFailureObservation.OBSERVED ? { failureObservation: "observed" as const } : value?.failureObservation === TraceFailureObservation.NOT_OBSERVED ? { failureObservation: "not_observed" as const } : value?.failureObservation === TraceFailureObservation.NOT_REPORTED ? { failureObservation: "not_reported" as const } : {}),
+  ...(value?.minDurationMs !== undefined ? { minDurationMs: value.minDurationMs } : {}),
+});
+const sameTraceCatalogConditions = (requested: TraceCatalogConditions, applied: TraceCatalogConditions) => requested.failureObservation === applied.failureObservation && requested.minDurationMs === applied.minDurationMs;
 
 export const mapTraceOverview = (response: GetTraceOverviewResponse): TraceOverview => ({
   traceId: response.traceId,
