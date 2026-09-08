@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.17.2](https://github.com/kotokumu/agentmetry/compare/v1.17.1...v1.17.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* **sessions:** display observed Codex session names from telemetry ([255f6a7](https://github.com/kotokumu/agentmetry/commit/255f6a7a08024ba17c2020465216aa9bb39622e2))
+* **sessions:** display observed Codex session names from telemetry ([237b49c](https://github.com/kotokumu/agentmetry/commit/237b49c9e508d19123fb536426f72b7177885945))
+
 ## [1.17.1](https://github.com/kotokumu/agentmetry/compare/v1.17.0...v1.17.1) (2026-09-08)
 
 
