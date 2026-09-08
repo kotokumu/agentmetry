@@ -17,6 +17,7 @@ const updaterStub = (overrides: Partial<DesktopUpdater> = {}) => {
   let listener: ((event: AppUpdateEvent) => void) | undefined;
   const updater: DesktopUpdater = {
     supported: true,
+    getVersion: vi.fn().mockResolvedValue("1.0.2"),
     check: vi.fn().mockResolvedValue(updateResult()),
     install: vi.fn().mockResolvedValue(undefined),
     subscribe: vi.fn().mockImplementation(async (next) => {
@@ -45,12 +46,17 @@ describe("app update control", () => {
 
     expect(control.shadowRoot?.querySelector("button")).toBeNull();
     expect(control.shadowRoot?.textContent?.trim()).toBe("");
+    expect(updater.getVersion).not.toHaveBeenCalled();
+    expect(updater.check).not.toHaveBeenCalled();
   });
 
   it("reports when the installed version is current", async () => {
     const { updater } = updaterStub();
     const control = await renderControl(updater);
 
+    expect(control.shadowRoot?.textContent).toContain("Current version:");
+    expect(control.shadowRoot?.textContent).toContain("v1.0.2");
+    expect(updater.getVersion).toHaveBeenCalledOnce();
     control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.click();
     await vi.waitFor(() => expect(control.shadowRoot?.textContent).toContain("v1.0.2 is up to date"));
     expect(updater.check).toHaveBeenCalledOnce();
@@ -63,6 +69,7 @@ describe("app update control", () => {
     const control = await renderControl(updater);
 
     control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.click();
+    expect(control.shadowRoot?.textContent).toContain("v1.0.2");
     await vi.waitFor(() => expect(control.shadowRoot?.textContent).toContain("v1.1.0 available"));
     control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.click();
     await vi.waitFor(() => expect(updater.install).toHaveBeenCalledOnce());
@@ -87,7 +94,58 @@ describe("app update control", () => {
 
     control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.click();
     await vi.waitFor(() => expect(control.shadowRoot?.textContent).toContain("network unavailable"));
+    expect(control.shadowRoot?.textContent).toContain("v1.0.2");
     expect(control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.disabled).toBe(false);
     expect(control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.textContent).toContain("Try again");
+  });
+
+  it("keeps checking usable when installed-version metadata is unavailable", async () => {
+    const { updater } = updaterStub({ getVersion: vi.fn().mockRejectedValue(new Error("metadata unavailable")) });
+    const control = await renderControl(updater);
+
+    await vi.waitFor(() => expect(control.shadowRoot?.textContent).toContain("Current version: Installed version unavailable"));
+    const button = control.shadowRoot?.querySelector<HTMLButtonElement>("button");
+    button?.click();
+    await vi.waitFor(() => expect(updater.check).toHaveBeenCalledOnce());
+    await vi.waitFor(() => expect(button?.disabled).toBe(false));
+  });
+
+  it("ignores an installed-version result after disconnecting", async () => {
+    let resolveVersion!: (version: string) => void;
+    const { updater } = updaterStub({ getVersion: vi.fn().mockReturnValue(new Promise<string>((resolve) => { resolveVersion = resolve; })) });
+    const control = await renderControl(updater);
+    control.remove();
+    resolveVersion("9.9.9");
+    await Promise.resolve();
+    expect(control.shadowRoot?.textContent).not.toContain("9.9.9");
+  });
+
+  it("keeps a current version obtained by check when metadata later fails", async () => {
+    let rejectVersion!: (error: Error) => void;
+    const { updater } = updaterStub({ getVersion: vi.fn().mockReturnValue(new Promise<string>((_, reject) => { rejectVersion = reject; })) });
+    const control = await renderControl(updater);
+    control.shadowRoot?.querySelector<HTMLButtonElement>("button")?.click();
+    await vi.waitFor(() => expect(control.shadowRoot?.textContent).toContain("v1.0.2 is up to date"));
+    rejectVersion(new Error("metadata unavailable"));
+    await control.updateComplete;
+    expect(control.shadowRoot?.textContent).toContain("Current version:");
+    expect(control.shadowRoot?.textContent).toContain("v1.0.2");
+  });
+
+  it("keeps the known version visible when reconnect metadata fails", async () => {
+    const getVersion = vi.fn()
+      .mockResolvedValueOnce("1.0.2")
+      .mockRejectedValueOnce(new Error("metadata unavailable"));
+    const { updater } = updaterStub({ getVersion });
+    const control = await renderControl(updater);
+    await vi.waitFor(() => expect(control.shadowRoot?.textContent).toContain("v1.0.2"));
+
+    control.remove();
+    document.body.append(control);
+    await vi.waitFor(() => expect(getVersion).toHaveBeenCalledTimes(2));
+    await control.updateComplete;
+    expect(control.shadowRoot?.textContent).toContain("Current version:");
+    expect(control.shadowRoot?.textContent).toContain("v1.0.2");
+    expect(control.shadowRoot?.textContent).not.toContain("Reading installed version");
   });
 });

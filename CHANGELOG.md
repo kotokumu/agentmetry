@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/kotokumu/agentmetry/compare/v1.17.0...v1.17.1) (2026-09-08)
+
+
+### Bug Fixes
+
+* **web:** show current version and updates at the top of settings ([#67](https://github.com/kotokumu/agentmetry/issues/67)) ([0d338d6](https://github.com/kotokumu/agentmetry/commit/0d338d631a7bb8766678fe966f6fd20ee6736523))
+
 ## [1.17.0](https://github.com/kotokumu/agentmetry/compare/v1.16.0...v1.17.0) (2026-09-08)
 
 
