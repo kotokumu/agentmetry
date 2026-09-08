@@ -1,6 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "./connections-settings";
 import type { ConnectionsSettings } from "./connections-settings";
+import type { DesktopUpdater } from "../api/desktop-updater";
+
+const supportedUpdater = (): DesktopUpdater => ({
+  supported: true,
+  getVersion: vi.fn().mockResolvedValue("1.17.0"),
+  check: vi.fn().mockResolvedValue({ available: false, currentVersion: "1.17.0" }),
+  install: vi.fn().mockResolvedValue({ available: false, currentVersion: "1.17.0" }),
+  subscribe: vi.fn().mockResolvedValue(() => undefined),
+});
 
 afterEach(() => {
   document.body.replaceChildren();
@@ -23,7 +32,23 @@ describe("connections settings", () => {
     expect(settings.shadowRoot?.querySelector("am-mcp-connection[inline]")).not.toBeNull();
     expect(settings.shadowRoot?.querySelector("am-language-selector")).not.toBeNull();
     expect(settings.shadowRoot?.querySelector("am-appearance-settings")).not.toBeNull();
-    expect(settings.shadowRoot?.querySelector("am-app-update-control")).not.toBeNull();
+    expect(settings.shadowRoot?.querySelector("am-app-update-control")).toBeNull();
+    expect(settings.shadowRoot?.textContent).not.toContain("Installed version");
+  });
+
+  it("places one update section first for supported desktop settings", async () => {
+    const settings = document.createElement("am-connections-settings") as ConnectionsSettings;
+    settings.updater = supportedUpdater();
+    document.body.append(settings);
+    await settings.updateComplete;
+
+    const stack = settings.shadowRoot?.querySelector(".stack");
+    expect(stack?.firstElementChild?.matches("am-app-update-control")).toBe(true);
+    expect(stack?.querySelectorAll("am-app-update-control")).toHaveLength(1);
+    const control = stack?.querySelector("am-app-update-control");
+    await (control as { updateComplete: Promise<unknown> }).updateComplete;
+    expect(control?.shadowRoot?.textContent).toContain("Current version:");
+    expect(control?.shadowRoot?.textContent).toContain("v1.17.0");
   });
 
   it("keeps source setup copy-only when clipboard is unavailable", async () => {

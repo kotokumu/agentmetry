@@ -2438,6 +2438,22 @@
   <source>Available in session details</source>
   <target>詳細で確認</target>
 </trans-unit>
+<trans-unit id="update.heading">
+  <source>Updates</source>
+  <target>更新</target>
+</trans-unit>
+<trans-unit id="update.currentVersionLabel">
+  <source>Current version:</source>
+  <target>現在のバージョン：</target>
+</trans-unit>
+<trans-unit id="update.versionLoading">
+  <source>Reading installed version…</source>
+  <target>現在のバージョンを読み込み中…</target>
+</trans-unit>
+<trans-unit id="update.versionUnavailable">
+  <source>Installed version unavailable</source>
+  <target>現在のバージョンを取得できません</target>
+</trans-unit>
 </body>
 </file>
 </xliff>
