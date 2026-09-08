@@ -5,7 +5,9 @@ import (
 	"database/sql"
 	_ "embed"
 	"path/filepath"
+	"strings"
 	"testing"
+	"time"
 
 	"ariga.io/atlas/sql/schema"
 	"github.com/google/go-cmp/cmp"
@@ -84,6 +86,131 @@ INSERT INTO logs (
 	}
 	if diff := cmp.Diff([]any{"retained", "", int64(0)}, []any{body, targetAgentType, inputTokens}); diff != "" {
 		t.Errorf("legacy row mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestCodexNameIndexMigration(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "index.db")
+	database := must(sql.Open("sqlite", path))
+	database.SetMaxOpenConns(1)
+	t.Cleanup(func() { _ = database.Close() })
+	if err := convergeSchema(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	// Remove only the new index to reproduce the prior schema, retaining data.
+	must(database.Exec(`DROP INDEX IF EXISTS logs_codex_session_names_idx`))
+	must(database.Exec(`PRAGMA user_version = 42`))
+	must(database.Exec(`WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x+1 FROM n WHERE x<100000)
+INSERT INTO logs (source,observed_at,severity,name,body,trace_id,span_id,activity_kind,tool_name,target_agent_id,agent_id,agent_type,parent_agent_id,run_id,model,attributes_json)
+SELECT 'codex','2026-09-09T00:00:00Z','INFO','gen_ai.tool_result','retained','','','tool',CASE WHEN x%10000=0 THEN 'list_threads' ELSE 'exec_command' END,'','','','','executor','','{}' FROM n`))
+	must(database.Exec(`PRAGMA query_only=ON`))
+	err := convergeSchema(ctx, database)
+	if diff := cmp.Diff(true, err != nil); diff != "" {
+		t.Fatalf("write denial must fail index creation: %s", diff)
+	}
+	var indexes, count, generation int
+	if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name='logs_codex_session_names_idx'`).Scan(&indexes); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(0, indexes); diff != "" {
+		t.Fatal(diff)
+	}
+	if err := database.QueryRow(`SELECT count(*) FROM logs WHERE body='retained'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`PRAGMA user_version`).Scan(&generation); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]int{100000, 42}, []int{count, generation}); diff != "" {
+		t.Fatal(diff)
+	}
+	must(database.Exec(`PRAGMA query_only=OFF`))
+	started := time.Now()
+	if err := convergeSchema(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("100000 logs / 10 candidates: schema convergence and index build %s", time.Since(started))
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database = must(sql.Open("sqlite", path))
+	if err := verifyConverged(ctx, database, must(evaluateDesiredSchema())); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name='logs_codex_session_names_idx'`).Scan(&indexes); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(1, indexes); diff != "" {
+		t.Fatal(diff)
+	}
+	if err := database.QueryRow(`SELECT count(*) FROM logs WHERE body='retained'`).Scan(&count); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.QueryRow(`PRAGMA user_version`).Scan(&generation); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]int{100000, 42}, []int{count, generation}); diff != "" {
+		t.Fatal(diff)
+	}
+	plan := must(database.QueryContext(ctx, "EXPLAIN QUERY PLAN "+codexSessionNameCandidatesSQL))
+	var details []string
+	for plan.Next() {
+		var id, parent, unused int
+		var detail string
+		if err := plan.Scan(&id, &parent, &unused, &detail); err != nil {
+			t.Fatal(err)
+		}
+		details = append(details, detail)
+	}
+	if err := plan.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = plan.Close()
+	if diff := cmp.Diff(true, strings.Contains(strings.Join(details, " "), "logs_codex_session_names_idx")); diff != "" {
+		t.Fatalf("partial index plan %v: %s", details, diff)
+	}
+	started = time.Now()
+	rows := must(database.QueryContext(ctx, codexSessionNameCandidatesSQL))
+	var candidates []string
+	for rows.Next() {
+		var executor, name, attrs string
+		if err := rows.Scan(&executor, &name, &attrs); err != nil {
+			t.Fatal(err)
+		}
+		candidates = append(candidates, executor)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	_ = rows.Close()
+	if diff := cmp.Diff(10, len(candidates)); diff != "" {
+		t.Fatal(diff)
+	}
+	t.Logf("candidate read %s; plan %v", time.Since(started), details)
+}
+
+func TestExtraIndexDowngradeRules(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "downgrade.db")
+	database := must(sql.Open("sqlite", path))
+	t.Cleanup(func() { _ = database.Close() })
+	if err := convergeSchema(ctx, database); err != nil {
+		t.Fatal(err)
+	}
+	// Characterize the same DropIndex difference an older desired schema sees;
+	// this is not execution of an old binary or of its full journal replay.
+	must(database.Exec(`CREATE INDEX future_codex_name_idx ON logs(id) WHERE source='codex' AND tool_name='list_threads'`))
+	rebuild, err := RequiresProjectionRebuild(ctx, database)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff(true, rebuild); diff != "" {
+		t.Fatal(diff)
+	}
+	_, err = Open(path)
+	if diff := cmp.Diff(true, err != nil); diff != "" {
+		t.Fatalf("low-level Open must reject DropIndex: %s", diff)
 	}
 }
 

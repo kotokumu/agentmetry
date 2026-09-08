@@ -423,61 +423,75 @@ func TestPublishedReleaseCohortsUpgradeDirectlyIntoCurrent(t *testing.T) {
 }
 
 func TestMigrateIfNeededRebuildsCurrentJournalWhenAtlasProjectionDiffIsUnsafe(t *testing.T) {
-	path := createCurrentDatabase(t)
-	database, err := store.Open(path, builtin.Registry())
-	if err != nil {
-		t.Fatal(err)
-	}
-	raw := semanticTracePayload(t, 3)
-	accepted, err := otel.ReplayExport(canonical.SignalTrace, ingest.TransportGRPC, time.Now(), raw, builtin.Registry())
-	if err != nil {
-		t.Fatal(err)
-	}
-	accepted.Journal.Harness = harness.ReceiptEvidence{
-		State: harness.ReceiptReported, Scope: "project-7f2a",
-		Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "AGENTS v2",
-	}
-	if err := database.CommitExport(context.Background(), accepted); err != nil {
-		t.Fatal(err)
-	}
-	if err := database.Close(); err != nil {
-		t.Fatal(err)
-	}
-	sqlDB, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var wantHash string
-	if err := sqlDB.QueryRow("SELECT payload_sha256 FROM otlp_exports").Scan(&wantHash); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := sqlDB.Exec("ALTER TABLE observations ADD COLUMN obsolete_projection_json TEXT NOT NULL DEFAULT ''"); err != nil {
-		t.Fatal(err)
-	}
-	if err := sqlDB.Close(); err != nil {
-		t.Fatal(err)
-	}
+	for _, tt := range []struct{ name, ddl string }{
+		{name: "extra column", ddl: "ALTER TABLE observations ADD COLUMN obsolete_projection_json TEXT NOT NULL DEFAULT ''"},
+		{name: "extra index uses full startup rebuild path", ddl: "CREATE INDEX future_codex_name_idx ON logs(id) WHERE source='codex' AND tool_name='list_threads'"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := createCurrentDatabase(t)
+			database, err := store.Open(path, builtin.Registry())
+			if err != nil {
+				t.Fatal(err)
+			}
+			raw := semanticTracePayload(t, 3)
+			accepted, err := otel.ReplayExport(canonical.SignalTrace, ingest.TransportGRPC, time.Now(), raw, builtin.Registry())
+			if err != nil {
+				t.Fatal(err)
+			}
+			accepted.Journal.Harness = harness.ReceiptEvidence{
+				State: harness.ReceiptReported, Scope: "project-7f2a",
+				Fingerprint: "sha256:8643ebd621ce63157c7bdeaef885ab93885202e45a4ae7c185c4c7b42bb839db", Label: "AGENTS v2",
+			}
+			if err := database.CommitExport(context.Background(), accepted); err != nil {
+				t.Fatal(err)
+			}
+			if err := database.Close(); err != nil {
+				t.Fatal(err)
+			}
+			sqlDB, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var wantHash string
+			if err := sqlDB.QueryRow("SELECT payload_sha256 FROM otlp_exports").Scan(&wantHash); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := sqlDB.Exec(tt.ddl); err != nil {
+				t.Fatal(err)
+			}
+			if err := sqlDB.Close(); err != nil {
+				t.Fatal(err)
+			}
 
-	result, err := MigrateIfNeeded(context.Background(), path, builtin.Registry(), nil)
-	if err != nil || !result.Migrated {
-		t.Fatalf("result=%#v err=%v", result, err)
-	}
-	verifyDB, err := sql.Open("sqlite", path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer verifyDB.Close()
-	var gotHash, harnessState, harnessScope, harnessFingerprint, harnessLabel string
-	if err := verifyDB.QueryRow(`SELECT payload_sha256, harness_receipt_state, harness_scope,
+			result, err := MigrateIfNeeded(context.Background(), path, builtin.Registry(), nil)
+			if err != nil || !result.Migrated {
+				t.Fatalf("result=%#v err=%v", result, err)
+			}
+			verifyDB, err := sql.Open("sqlite", path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer verifyDB.Close()
+			var gotHash, harnessState, harnessScope, harnessFingerprint, harnessLabel string
+			if err := verifyDB.QueryRow(`SELECT payload_sha256, harness_receipt_state, harness_scope,
 harness_fingerprint, harness_label FROM otlp_exports`).Scan(&gotHash, &harnessState, &harnessScope, &harnessFingerprint, &harnessLabel); err != nil || gotHash != wantHash {
-		t.Fatalf("journal hash=%q want=%q err=%v", gotHash, wantHash, err)
-	}
-	if harnessState != "reported" || harnessScope != "project-7f2a" || harnessFingerprint != accepted.Journal.Harness.Fingerprint || harnessLabel != "AGENTS v2" {
-		t.Fatalf("harness receipt was not preserved: %q/%q/%q/%q", harnessState, harnessScope, harnessFingerprint, harnessLabel)
-	}
-	hasObsolete, err := columnExists(context.Background(), verifyDB, "observations", "obsolete_projection_json")
-	if err != nil || hasObsolete {
-		t.Fatalf("obsolete projection schema remains: exists=%v err=%v", hasObsolete, err)
+				t.Fatalf("journal hash=%q want=%q err=%v", gotHash, wantHash, err)
+			}
+			if harnessState != "reported" || harnessScope != "project-7f2a" || harnessFingerprint != accepted.Journal.Harness.Fingerprint || harnessLabel != "AGENTS v2" {
+				t.Fatalf("harness receipt was not preserved: %q/%q/%q/%q", harnessState, harnessScope, harnessFingerprint, harnessLabel)
+			}
+			hasObsolete, err := columnExists(context.Background(), verifyDB, "observations", "obsolete_projection_json")
+			if err != nil || hasObsolete {
+				t.Fatalf("obsolete projection schema remains: exists=%v err=%v", hasObsolete, err)
+			}
+			var extraIndexes int
+			if err := verifyDB.QueryRow("SELECT count(*) FROM sqlite_master WHERE name='future_codex_name_idx'").Scan(&extraIndexes); err != nil || extraIndexes != 0 {
+				t.Fatalf("extra indexes=%d err=%v", extraIndexes, err)
+			}
+			if err := validateInstalledDatabase(path, CurrentStorageGeneration); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
 

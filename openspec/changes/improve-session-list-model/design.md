@@ -2,9 +2,9 @@
 
 ## Context
 
-- Risk: High（一覧の公開API追加）。入力はテレメトリーのみ。DBスキーマ・世代・取り込み動作は変更しない。名前は保存済みデータを読み取り時に解釈する。
+- Risk: High（sourcepluginの公開契約追加と候補取得用DBインデックス追加）。入力はテレメトリーのみ。世代・取り込み解釈・既存の行は変更しない。名前は保存済みデータを読み取り時に解釈する。
 - Human direction: 「タスクをすべて終わらせてPR作ったらmainにマージして」に加え、2026-09-06の「テレメトリーデータ以外は使えない」「それ前提で進めて」を適用する。
-- Evidence packet v4と2026-09-08のモデル・選択規則承認、PR作成指示を適用する。Claude生成名を実装し、Codex・改名追跡・実画面照合は未完了のdraft PRとする。
+- Evidence packet v5とCodex観測名の対象範囲承認を適用する。Claude生成名はPR #59で提供済み。2026-09-09にユーザーは部分index・forward-fixの設計に「はい、PR出してマージするところまで」と承認した。独立設計レビューcodex_name_design_review_v5は旧版起動経路のP2修正を再確認し、残る指摘なし。全件取得・未観測の改名・実画面照合の未完了は維持する。
 
 ---
 
@@ -18,7 +18,7 @@
 
 ### Non-Goals
 
-- Codex名抽出、改名同期、タイトル用DB、別のprovider registry、SDK adapter、新しい詳細エンドポイント。
+- 改名同期、タイトル用の独立したDB、別のprovider registry、SDK adapter、新しい詳細エンドポイント。
 
 ---
 
@@ -136,14 +136,24 @@ PlausibleはEvidence-backed plausibleを表す。適用後もconcept追加は不
 
 - 親イベント未観測で子がROOTに残る → 説明文に観測上の分類と明記する。
 - offsetページ間の更新で重複・抜けが発生し得る → 同一行をdedupし、ライブ更新では先頭から取得する。固定snapshot保証はしない。
-- 現在の製品名との一致は未検証 → Claude生成名と説明し、実画面照合を未完了で保持する。
+- 現在の製品名との一致は未検証 → Claude生成名とCodex一覧結果の観測名を区別し、実画面照合を未完了で保持する。
 - 独立レビューは実装前と実装後に行い、blocking findingを解消する。
 
 ---
 
 ## Migration / Rollback
 
-DBスキーマ・generationは不変。旧binaryは同じDBを使用できる。変更のrevertは一覧のALL機能を除去し、既定ROOTSを残す。raw再投影・compactionに独立authorityを追加しない。
+Codex候補用の部分インデックスを追加する。generation・raw・活動の行は不変。既存Atlas convergenceのAddIndexを利用し、取り込み開始前のtransactionで作成する。失敗時は起動を失敗させ、索引なしの高負荷な一覧取得へ切り替えない。
+
+| Compatibility / operation | Validation | Failure / rollback | Owner / approval |
+|---|---|---|---|
+| 更新前DBから更新版へ | 一時DBで既存データ・generation・名前取得、再openのschema差分なしを検証 | 作成失敗はtransaction rollback、再起動で再試行 | SQLite。2026-09-09ユーザー承認済み |
+| インデックス追加後の不具合 | 索引を維持し、名前解釈の修正または無効化を行う更新版で確認 | 原則forward-fix。rawの再取り込み不要 | Agentmetryの修正版 |
+| 更新前binaryへ戻す | 低位sqlite.OpenのDropIndex拒否と、実起動経路MigrateIfNeededの再投影判定を一時DBで区別して確認 | 旧版の実起動は追加indexを差分とみなし、全journal再投影・DB置換を行い得る。直接downgradeを通常のrollbackにしない。必要なら停止後に追加indexだけを除去する別途承認済み手順を用いる | 運用者。利用者DBではこの作業を実行しない |
+
+索引構築には既存logsの一回走査と追加ディスクが必要である。検証時は一時DBだけに書き込み、利用者DBでは読取確認に限定する。raw再投影・compactionに独立した名前のauthorityを追加しない。
+
+現行の起動は[main.go](https://github.com/kotokumu/agentmetry/blob/main/cmd/agentmetry/main.go)から[compaction](https://github.com/kotokumu/agentmetry/blob/main/internal/compaction/compaction.go)を経由してSQLiteを開く。rollback評価を[低位schema convergence](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/migration.go)だけで完結させない。
 
 ---
 
@@ -168,22 +178,23 @@ ROOTS/ALLの未解決事項はない。追加の名前表示についてはmodel
 
 ---
 
-## Claude Generated Name Design
+## Name Observation Design
 
-この節は名前表示の構築前に承認した設計と実装時の境界判断を記録する。ROOTS/ALLの検証記録は名前表示の完了証拠にはならない。
+この節はClaude生成名とCodex観測名の設計をまとめる。検証記録は取得元ごとに区別する。
 
 ### Responsibility and Interface Mapping
 
 | Concept / contract | Owner / consumer | Signature or physical representation | Constraint / simpler alternative |
 |---|---|---|---|
 | 名前の観測 | Claude plugin / Registry | optional SessionNameExtractor: SessionName(Event) (SessionName, bool)。値はConversationID, Text, Origin, ObservedAt | provider解釈は既存pluginに置く。必須Plugin契約は変えない |
-| source選択 | Registry / SQLite | SessionName(sourceID, Event) (SessionName, bool) | 指定sourceだけへ委譲。非対応sourceはfalse。新registry不要 |
+| 複数の名前の観測 | Codex plugin / Registry | optional SessionNamesExtractor: SessionNames(Event) []SessionName | 一覧結果が複数対象を持つため。一件へ制限するとSC-9を満たせない |
+| source選択 | Registry / SQLite | SessionNames(sourceID, Event) []SessionName | 複数契約を優先し、未実装なら既存の単数契約へfallback。両方を呼んで二重化しない。非対応sourceは空 |
 | 名前選択 | query / SQLite | SelectSessionName([]SessionName) *SessionName。値はText, Origin, ObservedAt | pure function。SQLやUIに新旧判断を置かない |
 | 一覧結果 | query / Connect | SessionListEntry.Name *SessionName | 会話identityと詳細Sessionは不変 |
-| wire | Connect / Web | SessionCatalog field 4=name。SessionName: text=1, origin=2, observed_at=3 | additive。既存のrole/root/parentと独立 |
+| wire | Connect / Web | 既存SessionCatalog.nameとSessionNameを再利用。originにcodex_app.list_threadsを追加 | protoのフィールド追加なし。旧Webは未知originの名前だけを無視 |
 | label | Web mapper / component | optional catalog.name | 名称・由来・ID・観測時刻を確認可能。URLと選択はID |
 
-処理の対応: `profiles.SessionName(row.SourceID, event)` → 対象会話ID照合 → `query.SelectSessionName(observations)`。
+呼出関係: Registryの複数抽出 → ページ内の対象会話IDへ対応付け → queryの名前選択。旧SessionNameメソッドと単数契約を残し、既存pluginのsource互換性を維持する。抽出は入力不変・外部I/Oなし。無効な根拠は空の結果、DBエラーはSQLiteから返す。
 
 ### Decision: Read-time interpretation
 
@@ -193,6 +204,16 @@ ROOTS/ALLの未解決事項はない。追加の名前表示についてはmodel
 - 時刻はevent.timestampのRFC3339。欠落・不正・UTC換算で年1〜9999の範囲外なら不明であり、受信時刻で代替しない。originはclaude_code.generate_session_title。
 - 不正な名前は名前の根拠だけ無視する。既存のrawや活動の投影は変更しない。
 
+### Decision: Codex list-result interpretation
+
+- source=codex、event.name=codex.tool_result（属性省略時は正規化済みgen_ai.tool_resultも可）、tool_namespace=mcp__codex_app、tool_name=list_threads、successがtrueの結果に限定する。明示的に矛盾するイベント名・namespaceは受理しない。
+- outputの既知包絡は`Wall time: <非負の数値> seconds`と改行後の`Output:`である。包絡なしのJSON objectも受理する。任意の本文からJSONらしい部分を検索しない。
+- schemaVersion=4のトップレベルpinnedThreads/threads配列のみを走査する。未知バージョン、重複schemaVersionや同じ配列キー、完全なJSONの後の余分な本文は結果全体を無効とする。他のトップレベル値は正しく読み飛ばす。
+- 各項目はJSON objectとして完結し、kind=codex、非空の文字列id、空白だけでない文字列titleを持つこと。id/kind/titleの重複キー、マスク・省略マーカーを含む値は無効とする。任意のsummaryや入れ子から名前を拾わない。ChatGPT項目は無視する。
+- output_truncated=trueかつ末尾が既知の`[... telemetry preview truncated ...]`の場合、マーカーを除いたJSON prefixを逐次解釈する。EOFによる未完結に限って、確定済みの先行項目を返す。構文エラーでの途中復旧はしない。不完全な最後の項目は、id/titleだけ先に読めても採用しない。
+- 同じ結果内の同一IDの別項目も観測として保持し、競合の判定はqueryの既存選択に委ねる。対象IDと実行元conversation.idが異なることは正常である。source修飾はRegistryが選択したcodexを使い、結果内のkindだけでsourceを変更しない。
+- originはcodex_app.list_threads。時刻はevent.timestampのRFC3339Nano、欠落・不正・UTC年1〜9999外は不明。項目のupdatedAt、ログ受信時刻、走査順を新旧判断に使わない。省略された未観測部分や削除・改名を推測しない。
+
 ### Decision: Page-scoped lookup
 
 - 既存rollupでページを確定後、同じread transaction内で表示行のClaude sourceとIDに一致するlogs候補を取得する。期間より前の生成名も対象とする。
@@ -200,11 +221,79 @@ ROOTS/ALLの未解決事項はない。追加の名前表示についてはmodel
 - 既存source/run indexを利用し、ページ外の会話を読まない。会話内検索の費用は残るため、代表query planと実データ読み取り時間を記録する。
 - DBエラーは一覧全体の失敗。子の名前をrootへ転用しない。backfill・DB migration・workerは不要。
 
+Claudeの候補取得は上記のまま維持する。Codexは対象IDが別会話の結果内にあるため、実行元run_idで絞り込まない。
+
+- `logs`のidを対象に、`source = 'codex' AND tool_name = 'list_threads'`の部分インデックス`logs_codex_session_names_idx`をschema.hclへ追加する。namespace・結果構造・名前の妥当性は索引条件ではなくCodex pluginが検証する。
+- ページにCodex行がなければ読取を省略する。ある場合は同一read transactionでインデックス条件に合う保存済み結果を走査し、逐次抽出した観測のうちページ内対象IDだけを保持する。日時の下限・候補件数の上限で過去の根拠を黙って落とさない。
+- 名前のない会話や結果内で初めて現れる会話の行を作らない。ルートがページ内にあり、その名前が子のツール結果に含まれる場合は、項目の対象IDがルートと一致するときだけ採用する。
+- source indexによる全Codex活動の走査は不要な本文読取が多い。専用の名前テーブル・backfill workerは追加状態と同期が必要になるため採らない。部分indexと既存read-time境界を採る。
+- 候補結果数に比例する取得費用は残る。一時DBのEXPLAINで部分index利用を検証し、候補の少ない通常活動を大量に含むfixtureで読取時間と索引構築時間を記録する。実DBへ索引を試作しない。
+- 統計未作成の一時DBではsource indexが選択されたため、候補queryにINDEXED BYを指定する。部分index欠落は要求失敗とし、全Codexログ走査へfallbackしない。
+
 ### Decision: Order-independent selection
 
 - 最新の既知時刻と時刻不明の候補を比較する。候補の名前・取得元が異なればnil。全て同名なら採用し、不明時刻を含めば返却時刻も不明とする。
 - 既知の古い候補は最新候補の競合に影響しない。重複・到着順に依存せず、入力を変更しない。
-- UIは「自動生成名」、native ID、観測時刻（あれば）を表示し、現在の画面名への同期は保証しない。未知origin・不正metadata・旧serverはID表示。HTMLではなくテキストとして描画する。
+- UIはsourceとoriginの組を検証する。Claudeは「自動生成名」、Codexは「観測名」と表示し、Codex名が一覧取得結果由来であることを説明する。native IDと観測時刻（あれば）を維持する。現在の画面名への同期は保証せず、未知origin・不正metadata・旧serverはID表示。HTMLではなくテキストとして描画する。
+
+### Codex Responsibility and Boundary Check
+
+| Responsibility / boundary | Owner / authority | Consumer / constraint | Expected dependency | Simpler alternative / decision |
+|---|---|---|---|---|
+| 複数対象のprovider解釈 | Codex plugin、既知の受信形状 | SQLite、誤った会話への転用防止 | SQLite→Registry→plugin | 必須Plugin変更を避けoptional契約を追加 |
+| 実行元と対象の分離 | 名前の観測、対象ID | SQLite、source/ID不変 | storage→query値 | 実行元への別名扱いは誤り |
+| 最新/競合 | queryの名前選択 | storage、重複/順序非依存 | storage→query | SQLとUIで規則を複製しない |
+| 候補探索とsnapshot | SQLite、保存logs | list caller、既存データと整合性 | adapter→storage | 部分index。別キャッシュ管理者は不要 |
+| 意味の表示と互換性 | Web mapper/component、origin | 利用者、生成名との区別 | UI→API adapter | 既存のoptional metadataを再利用 |
+
+SRPはprovider形状・名前選択・DB探索・表示に分離する。OCP/ISPは既存単数pluginを壊さないoptional複数契約に限定する。LSPは単数fallbackと旧APIのID表示を維持する。DIPはquery/sourcepluginをSQLite・protobuf・SDKから独立させる。
+
+### Codex Independent Scenario Stress Test
+
+codex_name_scenarios_v5は凍結packet v5だけからシナリオを作成し、初期minimality記録後に開示した。
+
+| Scenarios / confidence | Owner | Expected propagation | Unexplained impact / verdict |
+|---|---|---|---|
+| S1実行元と複数対象 / Observed | 名前の観測、Registry、SQLite | 複数抽出と対象IDで対応 | なし / Pass |
+| S2混在種別・Claude、S3一部未観測 / Observed・Committed | Codex解釈、Web | kind/source分離、ID fallback | なし / Pass |
+| S4内容競合、S6再送・逆順 / Committed・Evidence-backed plausible | query | 既存の観測時刻選択を再利用 | なし / Pass |
+| S5末尾省略位置 / Observed・Evidence-backed plausible | Codex解釈 | prefix内の完結項目と未完結項目を区別 | なし / Pass |
+| S7既存16GB、S10実DB不変 / Observed・Committed | SQLite / 検証 | 部分index、起動時構築の失敗と一時DB検証 | ユーザー承認済み / Design pass |
+| S8追加収集禁止 / Committed | 外部境界 | 既存logsだけを読み外部呼出なし | なし / Pass |
+| S9ROOTS/ALL・URL・集計 / Committed | 一覧単位、UI | page決定後のlabelのみ変更 | なし / Pass |
+| S11実画面正解fixture / Committed | 受入検証 | 名前観測のテストと実画面の証明を分離 | 未完了を維持 |
+
+適用後のminimality再確認でも新しい会話種別・同期lifecycle・managerは不要。schemaVersionの将来変更や別保存技術への移行は根拠がなく、拡張点を追加しない。
+
+### Codex Interfaces, Test Specification and Construction Plan
+
+| Unit / contract | Requirement / Given → When → Then | Simplest representation / hidden detail | Migration / rollback |
+|---|---|---|---|
+| sourceplugin.SessionNamesExtractor / Registry.SessionNames | SC-9、一件/複数/非対応plugin→抽出→所有sourceだけの観測列 | optional interface、既存単数fallback、入力不変。DB/protoを隠す | 旧plugin維持 |
+| Codex plugin | SC-9/10、混在・完全/末尾省略・未知schema・偽namespace・失敗・重複キー→抽出→正しい対象と文字列だけ | 無状態関数と既存Plugin。JSON形状をprovider内に隠す | raw不変 |
+| query.SelectSessionName | SC-9/10、同じ対象の同時刻競合・逆順・未知時刻→一覧→規則通りの名前かID | 既存pure functionを再利用。entry.updatedAt非利用も検証 | 規則変更なし |
+| SQLite/schema | SC-9、A内にB/C名・Aが期間外/別page・同ID別source・親未活動→normalize/store/reopen/list→正しい名前と既存行/集計 | 部分indexと既存transaction。名前だけで行を作らない | 上記Migration表 |
+| Connect/Web | SC-11、Codex origin・Claude origin・未知/不正/source不一致・HTML→API/画面→観測名/生成名/IDを正しく区別 | 既存protoとmapper/component。URL・選択・狭幅の最新UIを維持 | 旧WebはCodex名を無視 |
+| privacy/acceptance | SC-5/7/8、依存とfixtureを監査→非telemetry入力なし・実画面照合を未完了で記録 | 構造fixtureは匿名化。新しいlive呼出や実DB更新なし | archiveしない |
+
+新規挙動は各単位でRed→Green→Refactor。queryとClaudeは既存回帰を維持する。名前の返却値・UI・ID/集計を検証し、private helperの順序を固定しない。Go全体/統合/race、Web tests/build、buf lint/breaking、OpenSpec strict、diff check、独立実装レビューを完了条件とする。
+
+### Codex Construction and Verification
+
+- Go全体、integration全体、sourceplugin/Codex/Claude/query/SQLite/Connect/compactionのrace、buf lint/breaking、OpenSpec strict、diff checkは成功。main a9146e40を取り込んだ状態でGo全体・integrationを再確認し、Web 37 files / 388 testsとproduction buildも成功。
+
+| Unit | Red | Green / refactor evidence |
+|---|---|---|
+| Registry | 単数fallback・複数対象の期待にnilで失敗 | optional契約を優先し、所有sourceだけへ委譲。入力不変と旧単数APIを確認 |
+| Codex plugin | 有効な受信結果で観測列が空となり失敗 | 38ケース成功。抽出はprovider内に閉じ、完結項目・明示省略・重複キー・偽namespace・kind・時刻を確認 |
+| SQLite | 別会話内の対象名がnilとなり失敗 | normalize→store→reopenでROOTS/ALL、同ID別source、期間外実行元、ページング、集計不変、末尾省略、遅着した古い名前を確認 |
+| Index | 追加前はwrite denialでconvergenceが成功し失敗。追加後は既存source indexを選ぶplanで失敗 | INDEXED BYで部分indexを使用。作成失敗、データ/generation保持、再試行、再openの無差分を確認 |
+| Web | Codex metadataが破棄され、badgeがGenerated nameとなり失敗 | source/originの組を受理し、日英の観測名、安全なテキスト、元ID・時刻・選択・URLを確認 |
+
+- 一時DBの100,000 logs・候補10件でschema convergenceと索引構築は単回19.716375ms、候補読取は34.291µs。planはSCAN logs USING INDEX logs_codex_session_names_idx。これは代表fixtureの参考値であり、利用者の16GB DBの時間保証ではない。
+- 旧版相当のDropIndex差分について、低位Openの拒否とRequiresProjectionRebuild=trueを確認。起動経路のMigrateIfNeededでもjournal再投影を確認し、hash・generationを保持する。実旧binaryの試験とは区別する。
+- 独立実装レビューcodex_name_design_review_v5はモデル・最小性・責務・interface・parser・storage・Webを確認し、P0/P1/P2の指摘なし。名前選択をqueryへ集約し、新しい会話種別・同期状態・managerは追加しない。
+- 利用者DB・telemetry設定を更新せず、一時DBだけで検証する。SDK、session files、app-server、追加の一覧取得で補完しない。D-3〜D-5と実画面の受入fixtureは未完了を維持する。
 
 ### Independent Scenario Stress Test
 
@@ -221,7 +310,7 @@ title_scenarios_v4は要件と実観測のみから15シナリオを生成し、
 
 全件性・異種根拠の優先権・将来providerの具体仕様には根拠がなく、同期機構や新しい拡張点を要求しない。責務と境界を変更せず全シナリオを再適用できる。構築前の独立設計レビューでP0/P1なしを確認済み。
 
-### Test Specification and TDD Plan
+### Claude Test Specification and TDD Plan
 
 | Unit / criterion | Given → When → Then | Construction / simplest representation |
 |---|---|---|
@@ -232,7 +321,7 @@ title_scenarios_v4は要件と実観測のみから15シナリオを生成し、
 | SC-7 | 実画面と同一会話のtelemetry → 照合 → 対応範囲の証明 | 未完了。匿名化構造fixtureでは代替しない |
 | SC-8 | PR/文書 → audit → Codex/改名/実画面照合を未完了で記載 | document verification |
 
-SC-1〜5は既存回帰、SC-6は上記automated testsで検証する。Go tests・Web tests/build・buf lint/breaking・OpenSpec strict・diff checkを実行する。新しいDB schema/世代/取り込み挙動はないためmigration検証はN/A。revertでID表示に戻り、保存済みtelemetryは不変。
+Claude実装分のSC-1〜5は既存回帰、SC-6は上記automated testsで検証する。Claude分にはDB schema/世代/取り込み挙動の変更はない。Codex分のmigration検証と追加の完了条件はCodexの構築計画に従う。
 
 ### Generated Name Verification Results
 

@@ -6,7 +6,7 @@
 |---|---|---|
 | Product capability | session-catalog | 会話の識別、名前表示、一覧の表示単位を所有 |
 | Change classification | behavior change | 名前表示の追加。ルート／全件の既存動作は維持 |
-| Included behavior | テレメトリー由来の同一性・親子・名前を使う一覧 | proposal SC-1〜SC-8、モデル修正承認 2026-09-08 |
+| Included behavior | テレメトリー由来の同一性・親子・名前を使う一覧。Codexの一覧取得結果に含まれる完全な項目を含む | proposal SC-1〜SC-11、Codex対応範囲のユーザー承認 |
 | Excluded behavior | 非テレメトリー入力、独自の名前生成、合成セッション | ユーザーの入力制約 |
 | Risk / review scope | Highとして扱う。名前の公開契約と複数モジュールにまたがる責務への影響を設計で評価 | 本書は概念の修正。DB変更・公開API変更・構築の承認ではない |
 
@@ -21,6 +21,8 @@
 | 利用者 | 子の行が存在 | 行を選ぶ | 既存の親子集約詳細。単独行は維持 |
 | OTLP exporter | 既存の親子情報 | 関係を追加する | 次回一覧／ライブ更新に解決済み関係を反映 |
 | 利用者 | Claude Codeのタイトル生成応答を受信済み | 一覧を開く | 対象会話に対応する名前。名前の観測と現在名の保証を混同しない |
+| 利用者 | Codexの別会話で実行した一覧結果に対象会話の名前が存在 | 対象会話を一覧で見る | 実行元ではなく対象会話の観測名を表示 |
+| 利用者 | Codexの一覧結果が途中で省略 | 一覧を開く | 完全な項目の観測名だけを使用。不完全な項目から名前を推測しない |
 | 利用者 | 名前を裏付けるテレメトリーがない | 一覧を開く | native IDと取得制限。通常の応答本文を名前に転用しない |
 | 受入テストの検証者 | 同じ会話のテレメトリーと製品画面の証拠がある | 表示名を照合する | 対象製品・バージョン・画面・時点を限定した一致／不一致の結果 |
 
@@ -35,6 +37,7 @@
 | Projected Membership | 解決済みの親・ルート | 既存session graph | session-catalog: 一覧単位の根拠 |
 | Session List View / Unit | ROOTSは成分、ALLは単独会話 | SC-1, SC-4 | session-catalog: 選択単位 |
 | 名前の観測 | 会話と、その会話について得た名前の根拠を分離 | SC-6、タイトル生成応答の実観測 | session-catalog: 名前の対象と根拠の意味を所有 |
+| 観測の実行元と対象会話 | 一つの受信イベントが複数会話の名前を伝え得る。対象はイベント所有者とは独立 | SC-9、Codex一覧取得結果 | session-catalog: 名前の観測の関係として扱い、新しい会話種別を作らない |
 | 一覧ラベル | 名前の観測を参照する表示値、またはnative IDによる代替表示 | SC-6, SC-8 | session-catalog: 表示値と同一性の関係を所有 |
 | 実画面との照合結果 | 実行時の会話状態ではなく受入テストの証拠 | SC-7 | テストの検証記録。独立した製品capabilityにはしない |
 
@@ -52,10 +55,11 @@
 | 実画面との照合結果 / 会話の実行時状態 | 統合すると非テレメトリー入力と永続的な一致保証を持ち込む | Keep outside runtime model | テスト時点の一致は以後の手動変更を保証しない |
 | Name Authority / Enrichment Lifecycle | 非テレメトリーの同期や未観測の改名を前提とする | Reject | 名前の観測に必要な根拠は残し、未確認の同期ライフサイクルは作らない |
 | Catalog manager / provider factory | 意味の追加がない | Reject | 実装手順であり概念ではない |
+| 一覧取得結果 / 名前の観測 | 結果全体と項目を同一視すると一部省略で完全な項目も失う | Keep relationship only | 一つの受信結果はゼロ個以上の名前の観測を伝える。別の同期ライフサイクルは不要 |
 
 - Unitと一覧行は受動的な読み取り結果として扱う。名前の観測にも、製品に改名を要求する振る舞いや独立した会話の同一性は持たせない。
 - 名前の選択は同種の観測の集合に対する規則であり、別の管理サービスは作らない。根拠・時刻・名前の分離を除去すると同時刻の競合や未観測の改名を説明できないため、初期minimality確認を通過する。
-- Evidence packet v4はv2の「名前を取得しない」という前提を変更するmaterial revisionである。v2に対する合格を流用しない。独立agent title_scenarios_v4は要件と実観測だけからシナリオを作成し、初期minimality確認後に提示する。適用結果はdesignに記録する。
+- Packet v5はCodex観測名を追加するmaterial revisionである。実行元と対象の分離・一対多の観測を加えて初期minimality確認を通過する。既存のNative Conversation・名前の観測・一覧ラベルで意味を表せる。過去の設計合格を流用せず、独立agent codex_name_scenarios_v5の結果はこの初期確認後に受け取る。
 
 ---
 
@@ -72,12 +76,16 @@ Native Conversationは一つのテレメトリーsource内の会話である。�
 
 名前の観測は、テレメトリーが伝える名前の値と、その根拠である。一つの観測の対象は一つのNative Conversationであり、一つの会話にはゼロ個以上の観測が対応する。名前の一致は会話の同一性を意味しない。
 
+一つの受信イベントはゼロ個以上の名前の観測を伝える。イベントを実行した会話は名前の対象会話と同じとは限らない。一覧取得結果の完全な項目と、項目途中で省略された部分は別であり、後者は名前の観測を成立させない。
+
 | 要素 | 意味 |
 |---|---|
 | 対象会話 | 名前が指すsourceとnative IDの組。イベントを実行した会話と対象会話は同じとは限らない |
 | 名前の値 | 取得根拠が伝える名前の文字列。会話を識別するキーではない |
 | 取得元 | 名前の意味と対象会話への対応を裏付けるテレメトリーの根拠。任意の本文に名前らしい文字列があることとは区別する |
 | 観測時刻 | 取得元が名前の値を観測した時点。Agentmetryへの受信時刻とは異なる。根拠から時点を特定できない場合は不明である |
+
+Codex一覧結果由来の観測時刻は一覧取得のイベント時刻である。会話の最終更新時刻は名前の観測時刻や改名時刻を意味しない。
 
 取得根拠は、それが何を示すかで区別する。生成結果の観測は製品が名前を生成したことを示す。製品表示名の観測は、その取得元・時点における表示名を示す。生成結果だけでは製品画面への採用を証明せず、表示名の観測でも後の未観測の改名は証明しない。
 
@@ -126,7 +134,7 @@ flowchart LR
 | provider-native-session-identity | exporter→list caller | source修飾の会話単位を維持 | Native Conversation | invariant | happy, compatibility |
 | evidence-backed-session-role | caller→list | 解決済み関係から役割を返す | Evidence, Membership | decision | happy, boundary |
 | explicit-session-list-views | caller→query | 選んだ単位で検索・集計・ページング | View, Unit | decision | happy, boundary |
-| telemetry-only-session-labels | exporter→list caller | 対象会話の生成名を選択。最新候補の競合時はID表示 | Native Conversation、名前の観測、一覧ラベル | decision, invariant | happy, boundary, concurrency, idempotency, compatibility |
+| telemetry-only-session-labels | exporter→list caller | Claude生成名とCodex一覧結果由来の名前を対象会話に対応。最新候補の競合時はID表示 | Native Conversation、名前の観測、一覧ラベル | decision, invariant | happy, boundary, concurrency, idempotency, compatibility |
 | session-list-view-negotiation | caller→API | 既定値と適用表示を明示 | View | partition | happy, error, compatibility |
 | session-list-presentation | user→UI | 表示切替・履歴・最新要求と行の整合性、名前の取得範囲を説明 | View, Unit、一覧ラベル | prose | happy, boundary, concurrency, compatibility |
 | codex-event-normalization | exporter→ingest | 互換イベントの親子条件を維持 | Evidence | decision | happy, boundary, idempotency |
@@ -138,20 +146,21 @@ flowchart LR
 | ID | 状態 | 判断・残る証拠 |
 |---|---|---|
 | D-1 | PR対象の規則を確定 | 同種の根拠で時刻が比較可能なら最新。最新時刻と時刻不明の候補が異なる名前ならID。同名の重複は結果に影響しない。異種の取得元を混合しない |
-| D-2 | PR対象の表示を確定 | Claude自動生成名として表示し、IDを併記する。取得元・観測時刻を返す。現在の製品画面との一致を保証しない |
-| D-3 | 未解決・PR対象外 | Codexの全件・継続取得。現在の実装はCodexの名前を抽出しない。要望は未完了で維持 |
+| D-2 | 表示の意味を確定 | Claudeは自動生成名、Codexは一覧結果で観測した名前と表示する。ID・取得元・観測時刻を維持し、現在の画面名との一致は保証しない |
+| D-3 | 全件・継続取得は未解決 | Codexの受信済み一覧結果から完全な項目を取得する範囲は承認済み。全件性・未送信名の取得は含まない |
 | D-4 | 未解決・PR対象外 | 手動変更後の名前の追跡。生成名を同期済み現在名としない |
 | D-5 | 受入検証未完了 | 実画面と同一会話のテレメトリーを対応付けたfixture。構造を匿名化した実データ由来テストは代替証明にならない |
 
-- 2026-09-08の「PRまで進めて」を、直前の選択規則と承認済みモデルに基づく文書・実装・レビュー・draft PR作成への指示として扱う。文書ごとの停止は行わない。
-- D-3〜D-5は名前表示要望全体の完了・公開を妨げる残課題であり、確定したClaude生成名の規則を未決にしない。このchangeはarchiveせず、draft PRに制限を明記する。
+- ユーザーはCodexの完全なID・名前の組の対応と関連文書・コード更新を承認済み。2026-09-09に部分indexとforward-fixを含むHigh risk設計を承認し、PR作成・マージまで指示した。
+- D-3〜D-5は名前表示要望全体の完了・archiveを妨げる残課題であり、承認済みの観測名表示規則を未決にしない。
 
 ---
 
 ## 7. Sources
 
-- Evidence packet v4: 2026-09-06の再調査結果、proposal・モデル修正承認、2026-09-08のPR作成指示。独立シナリオには実観測・要件・制約だけを渡す。
+- Evidence packet v5: 2026-09-09に凍結。Codex観測名の対象範囲・テレメトリー限定・未観測/競合のID表示を承認済み。独立シナリオには実観測・要件・制約だけを渡し、モデルや解法を渡さない。
 - Claude Code: ローカルAgentmetryの直近10万件のClaudeログの調査では、`query_source=generate_session_title` の `assistant_response` に有効なJSONの `title` が45会話分存在する。全45件でnative session IDと保存会話ID、対応するAPIリクエストを照合済み。これは生成応答の取得証拠であり、実画面との一致証拠ではない。
-- Codex: 受信済みの `mcp__codex_app.list_threads` の成功ツール結果から、完結したID・titleの組を11会話に対応付け済み。結果には送信時点の省略があり、全件性や現在名を保証しない。調査用のAPI呼び出しによる補完はしない。
+- Codex: 直近10万件の保存logsのread-only調査で、成功したmcp__codex_app.list_threads結果6件を確認。全件にoutput_truncatedがある。完結した項目30件の内訳はCodex25・ChatGPT5で、保存済みCodexの異なる7会話と対応する。schemaVersion=4、pinnedThreads/threads、末尾省略マーカーの形状を確認済み。過去の11会話というsampleとは期間が異なる。調査用のAPI呼び出しによる補完はしない。
+- 基点はmainの8d6e9246。最新UI変更を含むが、Codexの名前を返さない実装と会話同一性は同じである。SQLiteの既存source/run indexは実行元による探索に適し、対象会話IDを一覧結果の中に持つ観測は別の取得計画が必要である。
 - 上記は調査時点の限定sampleであり、全製品版への保証ではない。evidence/provider-title-correlation.mdに残るpacket v2の記録を、名前不存在の根拠として使用しない。個人のID・本文・タイトルは本書に記載しない。
 - [既存一覧](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/api.go)、[既存関係解決](https://github.com/kotokumu/agentmetry/blob/main/internal/storage/sqlite/session_graph.go)。raw保持は復元境界であり、表示名が存在する根拠ではない。

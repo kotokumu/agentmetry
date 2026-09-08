@@ -87,9 +87,11 @@ Agentmetry MUST 選択したViewのUnitを検索・集計・並び替え・ペ�
 
 ### Requirement: telemetry-only-session-labels
 
-Agentmetry MUST 受信済みテレメトリーで対象会話を確認できるClaude Codeのタイトル生成結果を一覧ラベルとして表示し、根拠がない場合はnative IDを表示する。
+Agentmetry MUST 受信済みテレメトリーで対象会話を確認できるClaude Codeのタイトル生成結果とCodexの一覧取得結果の名前を一覧ラベルとして表示し、根拠がない場合はnative IDを表示する。
 
-- **Input and Acceptance**: Claude Codeのタイトル生成専用の応答を対象とする。名前は空白だけでない文字列とし、受信値を保持する。通常の応答、マスク済み・省略済み・壊れた生成応答、会話IDが欠落または矛盾する応答は名前の根拠として受け入れない。Codexの名前はこの受入契約に含まない。
+- **Input and Acceptance**: 名前は空白だけでない文字列とし、受信値を保持する。名前の対象はsource修飾された会話IDであり、欠落・矛盾した対象IDや重複した識別フィールドは受理しない。
+  Claude Codeはタイトル生成専用の応答を対象とする。通常の応答、マスク済み・省略済み・壊れた生成応答は名前の根拠として受け入れない。
+  Codexは成功したCodexアプリの一覧取得結果から、Codex会話であること・対象ID・名前を確認できる完全な項目だけを受理する。ChatGPTなど対象外の項目、任意のツール本文、未対応の結果形式は名前の根拠にしない。送信側の末尾省略が明示された結果では、構造的に到達できる完全な項目を受理し、不完全な最後の項目は受理しない。壊れた中間部分を読み飛ばして後続の名前を探さない。末尾省略以外の構造不正、重複した一覧・形式識別フィールドはその結果全体を名前の根拠にしない。
 - **Behavior Rules**:
 
   | Rule | Condition: 有効な名前の観測 | Output or response | Side Effects |
@@ -99,13 +101,14 @@ Agentmetry MUST 受信済みテレメトリーで対象会話を確認できるC
   | N3 | 新旧不明の観測を含むが、最新時刻の候補と不明時刻の候補が全て同じ名前 | その名前。時刻不明なら不明のまま | なし |
   | N4 | 最新候補が異なる名前で競合し、新旧を確定できない | native ID | なし |
 
-  同じ受信の重複は表示結果を変えない。新旧の比較に受信順を使わない。ROOTSではルートの名前、ALLでは行の会話の名前だけを使用する。名前によってsource・会話ID・URL・集計・検索の単位を変更しない。
+  同じ受信の重複は表示結果を変えない。新旧の比較に受信順を使わない。Codex一覧結果の名前は項目内の対象会話に帰属し、一覧を取得した会話には帰属させない。観測時刻は一覧取得イベントの時刻を使い、会話の最終更新時刻で代替しない。欠落・不正な時刻は不明とする。ROOTSではルートの名前、ALLでは行の会話の名前だけを使用する。期間・source・ページ条件で実行元の会話が一覧外でも、対象会話の有効な名前を使用する。名前によってsource・会話ID・URL・集計・検索の単位を変更しない。
 - **Invariants**:
   - セッション一覧機能 MUST SDK、ローカルセッションファイル、app-server、追加hookなどの非テレメトリー入力を使用しない。
   - 名前の表示 MUST 通常のprompt・response・slug・agent.nameから名前を推測せず、製品側の現在名との一致を未観測のまま保証しない。
 - **Side Effects**: 既存の受信データにも同じ解釈を適用する。raw保持と活動・費用の集計は変えない。受信側設定を変更しない。
 - **Concurrency and Idempotency**: 一覧と名前は同じ読み取りsnapshotを使う。新しい観測は次回取得で反映し、同じ観測集合なら到着順と重複に依存しない。
 - **Failure Handling**: 解釈できない名前は無視し、既存テレメトリーを破棄しない。保存データの取得に失敗した場合は一覧要求を失敗とし、名前がない成功レスポンスに置き換えない。
+- **References**: [code] [Codex interpretation](https://github.com/kotokumu/agentmetry/tree/main/internal/source/codex)、[api] [Name metadata](https://github.com/kotokumu/agentmetry/blob/main/proto/agentmetry/v1/agentmetry.proto)
 
 #### Scenario: Prompt and slug are not a title [happy]
 
@@ -124,6 +127,24 @@ Agentmetry MUST 受信済みテレメトリーで対象会話を確認できるC
 - **GIVEN** 利用者の会話Sに時刻t2の名前Bが存在し、t1はt2より前である
 - **WHEN** 時刻t1の名前Aが遅れて届き、一覧を再取得する
 - **THEN** Sの名前はBのままである
+
+#### Scenario: Codex name belongs to the listed conversation [happy]
+
+- **GIVEN** 利用者のCodex会話Aの一覧取得結果に、Codex会話Bの完全なIDと名前Tが存在し、A自身の名前は未観測である
+- **WHEN** Bを含む一覧ページを取得し、Aはそのページに含まれない
+- **THEN** Bは観測名Tと元IDで表示され、Aや同じIDのClaude会話へTを転用しない
+
+#### Scenario: Truncated list retains complete entries [boundary]
+
+- **GIVEN** 利用者の受信済みCodex一覧取得結果に、完全な会話Bの項目と、名前の途中で切れた会話Cの項目があり、末尾省略が明示されている
+- **WHEN** BとCの一覧を取得する
+- **THEN** Bの観測名を表示し、他に名前の根拠がないCはID表示となる
+
+#### Scenario: Name observation does not create activity [compatibility]
+
+- **GIVEN** 利用者の受信済みCodex一覧取得結果に、活動も親子関係もない会話Bの名前が含まれる
+- **WHEN** ROOTSとALLの一覧を取得する
+- **THEN** 名前の観測だけを理由にBの一覧行や活動を作らない
 
 #### Scenario: Conflicting latest names [boundary]
 
@@ -183,7 +204,7 @@ Agentmetry MUST 利用者がルートにまとめる表示と全件表示を切�
 
 - **Input and Acceptance**: URLの単一のview=allだけをALLとする。省略・重複・未知値はROOTSとし、URLはROOTSならviewなし、ALLなら単一のview=allに正規化する。保存フィルターの意味は変更しない。
 - **Behavior Rules**: 日本語・英語の切替操作と説明を提供する。操作はキーボードから可能でaccessible nameを持つ。CHILD行には子であることを表示する。ROOTは「親を未観測」の可能性を説明し、人間作成とは断定しない。子の選択は既存のルート集約詳細を開き、一覧の単独行は維持する。全件一覧に詳細からルート行を追加しない。
-  名前の値は実行可能なHTMLではなく文字列として表示する。名前がある行でもnative IDを確認できる。Claudeの取得名には自動生成名であることを示し、手動変更後の現在名との一致は未保証と説明する。名前metadataがない旧レスポンス、未知の取得元、不正な名前metadataはID表示を維持する。
+  名前の値は実行可能なHTMLではなく文字列として表示する。名前がある行でもnative IDを確認できる。Claudeは自動生成名、Codexは一覧取得結果で観測した名前と区別する。観測時刻があれば確認でき、手動変更後を含む現在名との一致は未保証と説明する。名前metadataがない旧レスポンス、未知の取得元、sourceと取得元の不一致、不正な名前metadataはID表示を維持する。
 - **Side Effects**: View・検索・条件・ページサイズが変わると旧一覧とpage tokenを破棄する。追加ページは同じ条件で要求する。履歴・再読込で表示選択を復元する。ライブ更新は現在の条件で先頭ページを再取得する。
 - **Concurrency and Idempotency**: 古い要求の成功・失敗・ページ追加は最新状態を上書きしない。同じ追加ページ要求は一回にまとめ、sourceとIDが重複する行を二重追加しない。切断後の応答は状態を更新しない。
 - **Failure Handling**: 要求失敗と未対応の表示を利用不可として示す。再試行を可能にし、エラー本文をそのまま表示しない。

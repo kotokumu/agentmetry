@@ -58,16 +58,19 @@ func TestSessionListViewContract(t *testing.T) {
 
 func TestSessionNameWireContract(t *testing.T) {
 	for _, tt := range []struct {
-		name  string
-		input *query.SessionName
-		want  *v1.SessionName
+		name   string
+		source string
+		input  *query.SessionName
+		want   *v1.SessionName
 	}{
+		{name: "codex observed name with time", source: "codex", input: &query.SessionName{Text: "Observed", Origin: "codex_app.list_threads", ObservedAt: time.Unix(1788652800, 0)}, want: &v1.SessionName{Text: "Observed", Origin: "codex_app.list_threads", ObservedAt: timestamppb.New(time.Unix(1788652800, 0))}},
+		{name: "codex observed name unknown time", source: "codex", input: &query.SessionName{Text: "Observed", Origin: "codex_app.list_threads"}, want: &v1.SessionName{Text: "Observed", Origin: "codex_app.list_threads"}},
 		{name: "absent stays absent"},
-		{name: "generated name with unknown time", input: &query.SessionName{Text: "改善する", Origin: "claude_code.generate_session_title"}, want: &v1.SessionName{Text: "改善する", Origin: "claude_code.generate_session_title"}},
-		{name: "generated name with observation time", input: &query.SessionName{Text: "Improve sessions", Origin: "claude_code.generate_session_title", ObservedAt: time.Unix(1788652800, 0)}, want: &v1.SessionName{Text: "Improve sessions", Origin: "claude_code.generate_session_title", ObservedAt: timestamppb.New(time.Unix(1788652800, 0))}},
+		{name: "generated name with unknown time", source: "claude", input: &query.SessionName{Text: "改善する", Origin: "claude_code.generate_session_title"}, want: &v1.SessionName{Text: "改善する", Origin: "claude_code.generate_session_title"}},
+		{name: "generated name with observation time", source: "claude", input: &query.SessionName{Text: "Improve sessions", Origin: "claude_code.generate_session_title", ObservedAt: time.Unix(1788652800, 0)}, want: &v1.SessionName{Text: "Improve sessions", Origin: "claude_code.generate_session_title", ObservedAt: timestamppb.New(time.Unix(1788652800, 0))}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			got := mapSessions([]query.SessionListEntry{{Session: query.Session{ID: "session", SourceID: "claude"}, RootSessionID: "session", Name: tt.input}})
+			got := mapSessions([]query.SessionListEntry{{Session: query.Session{ID: "session", SourceID: tt.source}, RootSessionID: "session", Name: tt.input}})
 			if diff := cmp.Diff(tt.want, got[0].Catalog.Name, protocmp.Transform()); diff != "" {
 				t.Fatal(diff)
 			}

@@ -5,6 +5,24 @@ import { ListSessionsResponseSchema, SessionListView, SessionRole } from "../gen
 import { mapSessionListResponse } from "./agentmetry-client";
 
 describe("telemetry session catalog mapping", () => {
+  it.each([true, false])("maps observed Codex names without changing identity (known time: %s)", (knownTime) => {
+    const observedAt = knownTime ? timestampFromDate(new Date("2026-09-09T01:02:03Z")) : undefined;
+    const response = create(ListSessionsResponseSchema, { appliedView: SessionListView.ROOTS, sessions: [{
+      id: "native", sourceId: "codex", catalog: { role: SessionRole.ROOT, rootSessionId: "native",
+        name: { text: " <b>Observed</b> ", origin: "codex_app.list_threads", observedAt } },
+    }] });
+    expect(mapSessionListResponse(response, "roots").sessions[0]).toMatchObject({
+      id: "native", sourceId: "codex", catalog: { name: { text: " <b>Observed</b> ", origin: "codex_app.list_threads",
+        ...(knownTime ? { observedAt: "2026-09-09T01:02:03.000Z" } : {}) } },
+    });
+  });
+  it.each(["claude", "unknown"])("does not transfer Codex names to %s", (sourceId) => {
+    const response = create(ListSessionsResponseSchema, { appliedView: SessionListView.ALL, sessions: [{
+      id: "child", sourceId, catalog: { role: SessionRole.CHILD, rootSessionId: "root", parentSessionId: "parent",
+        name: { text: "Wrong source", origin: "codex_app.list_threads" } },
+    }] });
+    expect(mapSessionListResponse(response, "all").sessions[0].catalog).toEqual({ role: "child", rootSessionId: "root", parentSessionId: "parent" });
+  });
   it.each([true, false])("maps a generated name without changing identity (known time: %s)", (knownTime) => {
     const observedAt = knownTime ? timestampFromDate(new Date("2026-09-01T12:00:00Z")) : undefined;
     const response = create(ListSessionsResponseSchema, { appliedView: SessionListView.ROOTS, sessions: [{
