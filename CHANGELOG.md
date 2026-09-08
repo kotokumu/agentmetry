@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.3](https://github.com/kotokumu/agentmetry/compare/v1.17.2...v1.17.3) (2026-09-08)
+
+
+### Bug Fixes
+
+* **web:** group update details and add a browser preview ([#71](https://github.com/kotokumu/agentmetry/issues/71)) ([ee0ddba](https://github.com/kotokumu/agentmetry/commit/ee0ddba9b2da7ff8a83e0732dfd4e104f1ebd235))
+
 ## [1.17.2](https://github.com/kotokumu/agentmetry/compare/v1.17.1...v1.17.2) (2026-09-08)
 
 
