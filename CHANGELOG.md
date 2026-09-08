@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.17.0](https://github.com/kotokumu/agentmetry/compare/v1.16.0...v1.17.0) (2026-09-08)
+
+
+### Features
+
+* **web:** complete investigation workspace and connection settings ([44e184c](https://github.com/kotokumu/agentmetry/commit/44e184c6a6cddc3cad76614692904dc946fdad37))
+* **web:** complete investigation workspace and connection settings ([d2026f8](https://github.com/kotokumu/agentmetry/commit/d2026f8c348195aec11ec882f052a9c698ab4df0))
+
 ## [1.16.0](https://github.com/kotokumu/agentmetry/compare/v1.15.0...v1.16.0) (2026-09-08)
 
 
