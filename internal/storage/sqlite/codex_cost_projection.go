@@ -59,6 +59,66 @@ WHERE call_id IN (SELECT call_id FROM model_calls WHERE source = 'codex' AND nat
 	return publishCorroboratingSpanChanges(ctx, transaction, sequence, "codex", sessionID)
 }
 
+// rebuildAllCodexCorroboratingSupports derives Codex trace membership from a
+// complete replay snapshot. Unlike live ingestion, replay has no affected-run
+// boundary, so set-wide statements avoid repeating the same scans per session.
+func rebuildAllCodexCorroboratingSupports(ctx context.Context, transaction *sql.Tx) error {
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM model_call_activity_links
+WHERE evidence_role = 'corroborating' AND call_id IN (
+  SELECT call_id FROM model_calls WHERE source = 'codex'
+)`); err != nil {
+		return fmt.Errorf("clear replay Codex corroborating activity links: %w", err)
+	}
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM model_call_trace_supports
+WHERE support_kind = 'corroborating' AND call_id IN (
+  SELECT call_id FROM model_calls WHERE source = 'codex'
+)`); err != nil {
+		return fmt.Errorf("clear replay Codex corroborating trace supports: %w", err)
+	}
+	const candidates = `WITH identities AS (
+  SELECT l.run_id, l.usage_id, MIN(links.call_id) AS call_id
+  FROM model_calls calls INDEXED BY model_calls_session_filter_idx
+  CROSS JOIN model_call_activity_links links INDEXED BY model_call_activity_call_idx
+  CROSS JOIN logs l INDEXED BY logs_activity_id_idx
+  WHERE calls.source = 'codex' AND links.call_id = calls.call_id
+    AND l.activity_id = links.activity_id AND l.source = 'codex'
+    AND l.run_id = calls.native_session_id AND l.usage_id <> ''
+  GROUP BY l.run_id, l.usage_id HAVING COUNT(DISTINCT links.call_id) = 1
+)
+`
+	if _, err := transaction.ExecContext(ctx, candidates+`INSERT INTO model_call_activity_links (activity_id, call_id, evidence_role)
+SELECT spans.activity_id, identities.call_id, 'corroborating'
+FROM identities
+CROSS JOIN spans INDEXED BY spans_source_run_usage_idx
+WHERE spans.source = 'codex' AND spans.run_id = identities.run_id
+  AND spans.usage_id = identities.usage_id
+  AND COALESCE(json_extract(spans.attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'`); err != nil {
+		return fmt.Errorf("project replay Codex corroborating links: %w", err)
+	}
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO model_call_trace_supports (call_id, trace_id, activity_id, support_kind)
+SELECT links.call_id, spans.trace_id, spans.activity_id, 'corroborating'
+FROM model_calls calls INDEXED BY model_calls_session_filter_idx
+CROSS JOIN model_call_activity_links links INDEXED BY model_call_activity_call_idx
+CROSS JOIN spans INDEXED BY spans_activity_id_idx
+WHERE calls.source = 'codex' AND links.call_id = calls.call_id
+  AND spans.activity_id = links.activity_id AND spans.source = 'codex'
+  AND spans.trace_id <> '' AND links.evidence_role = 'corroborating'`); err != nil {
+		return fmt.Errorf("project replay Codex corroborating trace supports: %w", err)
+	}
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM model_call_trace_memberships
+WHERE call_id IN (SELECT call_id FROM model_calls WHERE source = 'codex')`); err != nil {
+		return fmt.Errorf("replace replay Codex trace memberships: %w", err)
+	}
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO model_call_trace_memberships (call_id, trace_id)
+SELECT DISTINCT supports.call_id, supports.trace_id
+FROM model_call_trace_supports supports
+JOIN model_calls calls ON calls.call_id = supports.call_id
+WHERE calls.source = 'codex'`); err != nil {
+		return fmt.Errorf("derive replay Codex trace memberships: %w", err)
+	}
+	return nil
+}
+
 func publishCorroboratingSpanChanges(ctx context.Context, transaction *sql.Tx, sequence int64, source, sessionID string) error {
 	rows, err := transaction.QueryContext(ctx, `SELECT activity_id, run_id, trace_id FROM spans
 WHERE source = ? AND run_id = ?

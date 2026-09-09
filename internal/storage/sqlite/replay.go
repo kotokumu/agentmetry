@@ -215,17 +215,7 @@ FROM model_call_evidence WHERE source = 'claude' ORDER BY native_session_id`)
 	if err := repriceCodexCalls(ctx, transaction, 0); err != nil {
 		return err
 	}
-	codexSessions, err := queryStrings(ctx, transaction, `SELECT DISTINCT native_session_id
-FROM model_calls WHERE source = 'codex' ORDER BY native_session_id`)
-	if err != nil {
-		return err
-	}
-	for _, sessionID := range codexSessions {
-		if err := rebuildCodexCorroboratingSupports(ctx, transaction, 0, sessionID); err != nil {
-			return err
-		}
-	}
-	return nil
+	return rebuildAllCodexCorroboratingSupports(ctx, transaction)
 }
 
 func rebuildReplaySessionMemberships(ctx context.Context, transaction *sql.Tx) error {
