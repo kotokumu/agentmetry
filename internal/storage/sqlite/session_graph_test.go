@@ -1,6 +1,9 @@
 package sqlite
 
-import "testing"
+import (
+	"fmt"
+	"testing"
+)
 
 func TestSessionGraphBuildsNestedGroupsAndDeduplicatesEdges(t *testing.T) {
 	parent := sessionRef{sourceID: "codex", sessionID: "parent"}
@@ -59,5 +62,26 @@ func TestSessionGraphNamespacesIdenticalConversationIDsBySource(t *testing.T) {
 	}
 	if graph.root(claudeChild) != claudeChild {
 		t.Fatalf("cross-source child was grouped")
+	}
+}
+
+func TestSessionGraphResolvesLongDelegationChain(t *testing.T) {
+	const size = 10_000
+	nodes := make(map[sessionRef]struct{}, size)
+	candidates := make(map[sessionRef]map[sessionRef]struct{}, size-1)
+	refs := make([]sessionRef, size)
+	for index := range refs {
+		refs[index] = sessionRef{sourceID: "codex", sessionID: fmt.Sprintf("session-%05d", index)}
+		nodes[refs[index]] = struct{}{}
+		if index > 0 {
+			candidates[refs[index]] = map[sessionRef]struct{}{refs[index-1]: {}}
+		}
+	}
+	graph := newSessionGraph(nodes, candidates)
+	if got := graph.root(refs[size-1]); got != refs[0] {
+		t.Fatalf("long-chain root = %#v, want %#v", got, refs[0])
+	}
+	if got := len(graph.members(refs[size-1])); got != size {
+		t.Fatalf("long-chain members = %d, want %d", got, size)
 	}
 }

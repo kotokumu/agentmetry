@@ -297,14 +297,6 @@ func repriceCodexCalls(ctx context.Context, transaction *sql.Tx, sequence int64)
 	if err != nil {
 		return err
 	}
-	rows, err := transaction.QueryContext(ctx, `SELECT c.call_id, c.representative_activity_id, c.native_session_id, c.occurred_at, c.model, c.mode,
-  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
-  input_reported, output_reported, cache_read_reported, cache_write_reported, reasoning_reported,
-  a.basis, a.amount_micro_usd, a.primary_reason, a.rate_entry_id
-FROM model_calls c JOIN model_call_attributions a USING(call_id) WHERE c.source = 'codex'`)
-	if err != nil {
-		return fmt.Errorf("load Codex calls for repricing: %w", err)
-	}
 	type retainedCall struct {
 		id, activityID, sessionID, occurredAt, model, mode string
 		usage                                              canonical.TokenUsage
@@ -312,78 +304,106 @@ FROM model_calls c JOIN model_call_attributions a USING(call_id) WHERE c.source 
 		rateID                                             sql.NullString
 		amount                                             sql.NullInt64
 	}
-	var calls []retainedCall
-	for rows.Next() {
-		var call retainedCall
-		var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported bool
-		if err := rows.Scan(&call.id, &call.activityID, &call.sessionID, &call.occurredAt, &call.model, &call.mode,
-			&call.usage.Input, &call.usage.Output, &call.usage.CacheRead, &call.usage.CacheWrite, &call.usage.Reasoning,
-			&inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported,
-			&call.basis, &call.amount, &call.reason, &call.rateID); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("scan Codex call for repricing: %w", err)
+	const pageSize = 512
+	afterCallID := ""
+	for {
+		rows, err := transaction.QueryContext(ctx, `SELECT c.call_id, c.representative_activity_id, c.native_session_id, c.occurred_at, c.model, c.mode,
+  input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
+  input_reported, output_reported, cache_read_reported, cache_write_reported, reasoning_reported,
+  a.basis, a.amount_micro_usd, a.primary_reason, a.rate_entry_id
+FROM model_calls c JOIN model_call_attributions a USING(call_id)
+WHERE c.source = 'codex' AND c.call_id > ? ORDER BY c.call_id LIMIT ?`, afterCallID, pageSize)
+		if err != nil {
+			return fmt.Errorf("load Codex calls for repricing: %w", err)
 		}
-		call.usage.Presence = canonical.TokenPresence{Input: inputReported && call.usage.Input == 0, Output: outputReported && call.usage.Output == 0, CacheRead: cacheReadReported && call.usage.CacheRead == 0, CacheWrite: cacheWriteReported && call.usage.CacheWrite == 0, Reasoning: reasoningReported && call.usage.Reasoning == 0}
-		calls = append(calls, call)
+		calls := make([]retainedCall, 0, pageSize)
+		for rows.Next() {
+			var call retainedCall
+			var inputReported, outputReported, cacheReadReported, cacheWriteReported, reasoningReported bool
+			if err := rows.Scan(&call.id, &call.activityID, &call.sessionID, &call.occurredAt, &call.model, &call.mode,
+				&call.usage.Input, &call.usage.Output, &call.usage.CacheRead, &call.usage.CacheWrite, &call.usage.Reasoning,
+				&inputReported, &outputReported, &cacheReadReported, &cacheWriteReported, &reasoningReported,
+				&call.basis, &call.amount, &call.reason, &call.rateID); err != nil {
+				_ = rows.Close()
+				return fmt.Errorf("scan Codex call for repricing: %w", err)
+			}
+			call.usage.Presence = canonical.TokenPresence{Input: inputReported && call.usage.Input == 0, Output: outputReported && call.usage.Output == 0, CacheRead: cacheReadReported && call.usage.CacheRead == 0, CacheWrite: cacheWriteReported && call.usage.CacheWrite == 0, Reasoning: reasoningReported && call.usage.Reasoning == 0}
+			calls = append(calls, call)
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if err := rows.Close(); err != nil {
+			return err
+		}
+		if len(calls) == 0 {
+			return nil
+		}
+		for _, call := range calls {
+			if err := repriceCodexCall(ctx, transaction, sequence, rates, call.id, call.activityID, call.sessionID, call.occurredAt, call.model, call.mode, call.usage, call.basis, call.amount, call.reason, call.rateID); err != nil {
+				return err
+			}
+		}
+		afterCallID = calls[len(calls)-1].id
+		if len(calls) < pageSize {
+			return nil
+		}
 	}
-	if err := rows.Close(); err != nil {
+}
+
+func repriceCodexCall(ctx context.Context, transaction *sql.Tx, sequence int64, rates []billing.Rate, callID, activityID, sessionID, occurredAtText, model, mode string, usage canonical.TokenUsage, basis string, amount sql.NullInt64, reason string, rateID sql.NullString) error {
+	var occurredAt time.Time
+	var err error
+	if occurredAtText != "" {
+		occurredAt, err = time.Parse(time.RFC3339Nano, occurredAtText)
+		if err != nil {
+			return fmt.Errorf("parse Codex call occurred_at: %w", err)
+		}
+	}
+	attribution := attributeCodexCall(model, mode, occurredAt, usage, rates)
+	if sameStoredAttribution(basis, amount, reason, rateID.String, attribution) {
+		return nil
+	}
+	var nextRateID any
+	if attribution.rateID != "" {
+		nextRateID = attribution.rateID
+	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE model_call_attributions SET basis = ?, amount_micro_usd = ?, primary_reason = ?, rate_entry_id = ?,
+  input_micro_usd = ?, cache_read_micro_usd = ?, cache_write_micro_usd = ?, output_micro_usd = ? WHERE call_id = ?`,
+		attribution.basis, attribution.amount, attribution.reason, nextRateID, attribution.breakdown.InputMicroUSD,
+		attribution.breakdown.CacheReadMicroUSD, attribution.breakdown.CacheWriteMicroUSD, attribution.breakdown.OutputMicroUSD, callID); err != nil {
+		return fmt.Errorf("reprice Codex call: %w", err)
+	}
+	clearUnavailable := reason != "pending_replay_finalization"
+	if err := publishRepresentativeCost(ctx, transaction, activityID, attribution.amount, clearUnavailable); err != nil {
 		return err
 	}
-	for _, call := range calls {
-		var occurredAt time.Time
-		if call.occurredAt != "" {
-			occurredAt, err = time.Parse(time.RFC3339Nano, call.occurredAt)
-			if err != nil {
-				return fmt.Errorf("parse Codex call occurred_at: %w", err)
-			}
-		}
-		attribution := attributeCodexCall(call.model, call.mode, occurredAt, call.usage, rates)
-		if sameStoredAttribution(call.basis, call.amount, call.reason, call.rateID.String, attribution) {
-			continue
-		}
-		var rateID any
-		if attribution.rateID != "" {
-			rateID = attribution.rateID
-		}
-		if _, err := transaction.ExecContext(ctx, `UPDATE model_call_attributions SET basis = ?, amount_micro_usd = ?, primary_reason = ?, rate_entry_id = ?,
-  input_micro_usd = ?, cache_read_micro_usd = ?, cache_write_micro_usd = ?, output_micro_usd = ? WHERE call_id = ?`,
-			attribution.basis, attribution.amount, attribution.reason, rateID, attribution.breakdown.InputMicroUSD,
-			attribution.breakdown.CacheReadMicroUSD, attribution.breakdown.CacheWriteMicroUSD, attribution.breakdown.OutputMicroUSD, call.id); err != nil {
-			return fmt.Errorf("reprice Codex call: %w", err)
-		}
-		var legacy any
-		if attribution.amount != nil {
-			legacy = float64(*attribution.amount) / 1_000_000
-		}
-		if _, err := transaction.ExecContext(ctx, `UPDATE logs SET cost_usd = ? WHERE activity_id = ?`, legacy, call.activityID); err != nil {
-			return fmt.Errorf("update repriced activity: %w", err)
-		}
-		if _, err := transaction.ExecContext(ctx, `UPDATE model_calls SET projection_sequence = ? WHERE call_id = ?`, sequence, call.id); err != nil {
+	if _, err := transaction.ExecContext(ctx, `UPDATE model_calls SET projection_sequence = ? WHERE call_id = ?`, sequence, callID); err != nil {
+		return err
+	}
+	if sessionID != "" {
+		if err := appendActivityChange(ctx, transaction, sequence, 0, "session", "codex", sessionID, activityID, "upsert"); err != nil {
 			return err
 		}
-		if call.sessionID != "" {
-			if err := appendActivityChange(ctx, transaction, sequence, 0, "session", "codex", call.sessionID, call.activityID, "upsert"); err != nil {
-				return err
-			}
-		}
-		traceRows, err := transaction.QueryContext(ctx, `SELECT trace_id FROM model_call_trace_memberships WHERE call_id = ?`, call.id)
-		if err != nil {
+	}
+	traceRows, err := transaction.QueryContext(ctx, `SELECT trace_id FROM model_call_trace_memberships WHERE call_id = ?`, callID)
+	if err != nil {
+		return err
+	}
+	for traceRows.Next() {
+		var traceID string
+		if err := traceRows.Scan(&traceID); err != nil {
+			_ = traceRows.Close()
 			return err
 		}
-		for traceRows.Next() {
-			var traceID string
-			if err := traceRows.Scan(&traceID); err != nil {
-				_ = traceRows.Close()
-				return err
-			}
-			if err := appendActivityChange(ctx, transaction, sequence, 0, "trace", "", traceID, call.activityID, "upsert"); err != nil {
-				_ = traceRows.Close()
-				return err
-			}
-		}
-		if err := traceRows.Close(); err != nil {
+		if err := appendActivityChange(ctx, transaction, sequence, 0, "trace", "", traceID, activityID, "upsert"); err != nil {
+			_ = traceRows.Close()
 			return err
 		}
+	}
+	if err := traceRows.Close(); err != nil {
+		return err
 	}
 	return nil
 }

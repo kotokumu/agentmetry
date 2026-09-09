@@ -241,6 +241,7 @@ WHERE support_kind = 'corroborating' AND call_id IN (
     json_extract(attributes_json, '$."gen_ai.client.request.id"') AS alias_value
   FROM spans
   WHERE source = 'claude'
+    AND run_id = ?
     AND COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
     AND json_type(attributes_json, '$."gen_ai.client.request.id"') = 'text'
     AND json_extract(attributes_json, '$."gen_ai.client.request.id"') <> ''
@@ -249,6 +250,7 @@ WHERE support_kind = 'corroborating' AND call_id IN (
     json_extract(attributes_json, '$."gen_ai.request.id"')
   FROM spans
   WHERE source = 'claude'
+    AND run_id = ?
     AND COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
     AND json_type(attributes_json, '$."gen_ai.request.id"') = 'text'
     AND json_extract(attributes_json, '$."gen_ai.request.id"') <> ''
@@ -257,28 +259,32 @@ WHERE support_kind = 'corroborating' AND call_id IN (
     CAST(json_extract(attributes_json, '$."event.sequence"') AS TEXT)
   FROM spans
   WHERE source = 'claude'
+    AND run_id = ?
     AND COALESCE(json_extract(attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
     AND json_type(attributes_json, '$."event.sequence"') = 'integer'
     AND json_extract(attributes_json, '$."event.sequence"') >= 0
+), typed_identities AS (
+  SELECT aliases.alias_basis, aliases.alias_value, MIN(links.call_id) AS call_id
+  FROM model_call_evidence evidence
+  JOIN model_call_evidence_aliases aliases USING (activity_id)
+  JOIN model_call_activity_links links USING (activity_id)
+  WHERE evidence.source = 'claude' AND evidence.native_session_id = ?
+  GROUP BY aliases.alias_basis, aliases.alias_value HAVING COUNT(DISTINCT links.call_id) = 1
 ), typed_base AS (
-  SELECT DISTINCT span_aliases.activity_id, span_aliases.trace_id, links.call_id
-  FROM span_aliases
-  JOIN model_call_evidence evidence
-    ON evidence.source = 'claude' AND evidence.native_session_id = span_aliases.run_id
-  JOIN model_call_evidence_aliases aliases
-    ON aliases.activity_id = evidence.activity_id
-    AND aliases.alias_basis = span_aliases.alias_basis
-    AND aliases.alias_value = span_aliases.alias_value
-  JOIN model_call_activity_links links ON links.activity_id = evidence.activity_id
-  WHERE span_aliases.run_id = ?
-), usage_base AS (
-  SELECT DISTINCT spans.activity_id, spans.trace_id, links.call_id
-  FROM spans
-  JOIN logs ON logs.source = 'claude' AND logs.source = spans.source AND logs.run_id = spans.run_id
-    AND logs.usage_id <> '' AND logs.usage_id = spans.usage_id
+  SELECT span_aliases.activity_id, span_aliases.trace_id, typed_identities.call_id
+  FROM span_aliases JOIN typed_identities USING (alias_basis, alias_value)
+), usage_identities AS (
+  SELECT logs.usage_id,
+    json_extract(logs.attributes_json, '$."gen_ai.usage.id.basis"') AS usage_basis,
+    MIN(links.call_id) AS call_id
+  FROM logs JOIN model_call_activity_links links USING (activity_id)
+  WHERE logs.source = 'claude' AND logs.run_id = ? AND logs.usage_id <> ''
     AND COALESCE(json_extract(logs.attributes_json, '$."gen_ai.usage.id.basis"'), '') <> ''
-    AND json_extract(logs.attributes_json, '$."gen_ai.usage.id.basis"') = json_extract(spans.attributes_json, '$."gen_ai.usage.id.basis"')
-  JOIN model_call_activity_links links ON links.activity_id = logs.activity_id
+  GROUP BY logs.usage_id, usage_basis HAVING COUNT(DISTINCT links.call_id) = 1
+), usage_base AS (
+  SELECT spans.activity_id, spans.trace_id, usage_identities.call_id
+  FROM spans JOIN usage_identities ON usage_identities.usage_id = spans.usage_id
+    AND usage_identities.usage_basis = json_extract(spans.attributes_json, '$."gen_ai.usage.id.basis"')
   WHERE spans.source = 'claude' AND spans.run_id = ?
     AND COALESCE(json_extract(spans.attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
 ), base AS (
@@ -291,11 +297,14 @@ WHERE support_kind = 'corroborating' AND call_id IN (
 )
 `
 	if _, err := transaction.ExecContext(ctx, candidates+`INSERT INTO model_call_activity_links (activity_id, call_id, evidence_role)
-SELECT activity_id, call_id, 'corroborating' FROM unique_candidates`, sessionID, sessionID); err != nil {
+SELECT activity_id, call_id, 'corroborating' FROM unique_candidates`, sessionID, sessionID, sessionID, sessionID, sessionID, sessionID); err != nil {
 		return fmt.Errorf("project Claude corroborating links: %w", err)
 	}
-	if _, err := transaction.ExecContext(ctx, candidates+`INSERT INTO model_call_trace_supports (call_id, trace_id, activity_id, support_kind)
-SELECT call_id, trace_id, activity_id, 'corroborating' FROM unique_candidates WHERE trace_id <> ''`, sessionID, sessionID); err != nil {
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO model_call_trace_supports (call_id, trace_id, activity_id, support_kind)
+SELECT links.call_id, spans.trace_id, spans.activity_id, 'corroborating'
+FROM spans JOIN model_call_activity_links links USING (activity_id)
+WHERE spans.source = 'claude' AND spans.run_id = ? AND spans.trace_id <> ''
+  AND links.evidence_role = 'corroborating'`, sessionID); err != nil {
 		return fmt.Errorf("project Claude corroborating trace supports: %w", err)
 	}
 	return deriveClaudeTraceMemberships(ctx, transaction, sessionID)

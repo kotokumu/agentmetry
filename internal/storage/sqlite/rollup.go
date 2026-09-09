@@ -348,7 +348,20 @@ func rebuildSessionRollupTx(ctx context.Context, transaction *sql.Tx, sourceID, 
 	if _, err := transaction.ExecContext(ctx, "DELETE FROM session_rollups WHERE source = ? AND run_id = ?", sourceID, runID); err != nil {
 		return fmt.Errorf("delete session rollup: %w", err)
 	}
-	const statement = `INSERT INTO session_rollups (
+	result, err := transaction.ExecContext(ctx, sessionRollupAggregateInsert(`AND source = ? AND run_id = ?`, `AND source = ? AND run_id = ?`), sourceID, runID, sourceID, runID)
+	if err != nil {
+		return fmt.Errorf("insert session rollup: %w", err)
+	}
+	if rows, err := result.RowsAffected(); err != nil {
+		return fmt.Errorf("read session rollup result: %w", err)
+	} else if rows > 1 {
+		return fmt.Errorf("session rollup produced %d rows", rows)
+	}
+	return nil
+}
+
+func sessionRollupAggregateInsert(spanFilter, logFilter string) string {
+	return `INSERT INTO session_rollups (
   source, run_id, started_at, ended_at, activity_count, trace_count, log_count, agent_count,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_reported, output_reported, cache_read_reported, cache_write_reported, reasoning_reported, cost_usd, cost_reported
@@ -370,23 +383,13 @@ FROM (
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
     cache_write_tokens_reported, reasoning_tokens_reported
-  FROM spans WHERE source = ? AND run_id = ? AND activity_kind <> 'unknown'
+  FROM spans WHERE run_id <> '' AND activity_kind <> 'unknown' ` + spanFilter + `
   UNION ALL
   SELECT 'log' AS signal, source, run_id, observed_at, agent_id, cost_usd,
     input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
     input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
     cache_write_tokens_reported, reasoning_tokens_reported
-  FROM logs WHERE source = ? AND run_id = ? AND activity_kind <> 'unknown'
+  FROM logs WHERE run_id <> '' AND activity_kind <> 'unknown' ` + logFilter + `
 ) AS activity
 GROUP BY source, run_id`
-	result, err := transaction.ExecContext(ctx, statement, sourceID, runID, sourceID, runID)
-	if err != nil {
-		return fmt.Errorf("insert session rollup: %w", err)
-	}
-	if rows, err := result.RowsAffected(); err != nil {
-		return fmt.Errorf("read session rollup result: %w", err)
-	} else if rows > 1 {
-		return fmt.Errorf("session rollup produced %d rows", rows)
-	}
-	return nil
 }

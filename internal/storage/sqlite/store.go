@@ -54,7 +54,8 @@ type ReplayCandidateConfig struct {
 // It deliberately does not embed Store, so online ingestion cannot accidentally
 // acquire the larger replay transaction boundary.
 type ReplayCandidate struct {
-	store *Store
+	store     *Store
+	finalized bool
 }
 
 // OpenReplayCandidate creates a candidate and installs its complete pricing
@@ -242,10 +243,11 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 	if err != nil {
 		return err
 	}
-	if err := store.commitProjection(ctx, transaction, batch, sequence, plan.previousSpans, nil); err != nil {
+	sequences := projectionSequences{row: sequence, change: sequence}
+	if err := store.commitProjection(ctx, transaction, batch, sequences, plan.previousSpans, nil); err != nil {
 		return err
 	}
-	attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, batch, plan.previousSpans, sequence)
+	attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, batch, plan.previousSpans, sequences)
 	if err != nil {
 		return err
 	}
@@ -300,8 +302,10 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 	return nil
 }
 
-// CommitReplayBatch applies a non-empty, source-ordered journal prefix in one
-// transaction. Any preparation or SQL failure rolls back the whole batch.
+// CommitReplayBatch persists a non-empty, source-ordered journal prefix and
+// its replay facts in one transaction. Query-facing derived projections remain
+// private and incomplete until FinalizeReplay succeeds. Any preparation or SQL
+// failure rolls back the whole batch.
 func (candidate *ReplayCandidate) CommitReplayBatch(ctx context.Context, exports []ingest.AcceptedExport) error {
 	if len(exports) == 0 {
 		return fmt.Errorf("commit replay batch: no exports")
@@ -309,28 +313,25 @@ func (candidate *ReplayCandidate) CommitReplayBatch(ctx context.Context, exports
 	store := candidate.store
 	store.writeMu.Lock()
 	defer store.writeMu.Unlock()
+	if candidate.finalized {
+		return fmt.Errorf("commit replay batch: candidate is finalized")
+	}
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin replay batch: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	changed := false
 	for index, accepted := range exports {
 		prepared, err := prepareExport(accepted)
 		if err != nil {
 			return fmt.Errorf("prepare replay export %d: %w", index+1, err)
 		}
-		sequence, err := store.commitExportTx(ctx, transaction, accepted, prepared)
-		if err != nil {
+		if err := store.commitReplayExportTx(ctx, transaction, accepted, prepared); err != nil {
 			return fmt.Errorf("commit replay export %d: %w", index+1, err)
 		}
-		changed = changed || sequence > 0
 	}
 	if err := transaction.Commit(); err != nil {
 		return fmt.Errorf("commit replay batch: %w", err)
-	}
-	if changed {
-		store.signalProjectionChange()
 	}
 	return nil
 }
@@ -356,13 +357,14 @@ func (store *Store) commitExportTx(ctx context.Context, transaction *sql.Tx, acc
 			return 0, err
 		}
 		var logActivityIDs []string
-		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequence, plan.previousSpans, &logActivityIDs); err != nil {
+		sequences := projectionSequences{row: sequence, change: sequence}
+		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequences, plan.previousSpans, &logActivityIDs); err != nil {
 			return 0, err
 		}
 		if err := store.persistModelCalls(ctx, transaction, exportID, accepted, prepared, logActivityIDs, sequence, plan.previousSpans); err != nil {
 			return 0, err
 		}
-		attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, accepted.Projection, plan.previousSpans, sequence)
+		attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, accepted.Projection, plan.previousSpans, sequences)
 		if err != nil {
 			return 0, err
 		}
@@ -388,7 +390,14 @@ func (store *Store) commitExportTx(ctx context.Context, transaction *sql.Tx, acc
 	return 0, nil
 }
 
-func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, sequence int64, previousSpans map[storedSpanKey]storedSpanScope, logActivityIDs *[]string) error {
+type projectionSequences struct {
+	// row may be a temporary replay order that never enters the change feed.
+	row int64
+	// change is zero when the private replay candidate must publish nothing.
+	change int64
+}
+
+func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, sequences projectionSequences, previousSpans map[storedSpanKey]storedSpanScope, logActivityIDs *[]string) error {
 	ordinal := 0
 	for _, span := range batch.Spans {
 		if !canonical.IsSemanticSpan(span) {
@@ -399,29 +408,29 @@ func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, b
 		if previous.present && (previous.source != normalizeSource(span.Source) || previous.session != span.Agent.RunID) {
 			if previous.session != "" {
 				ordinal++
-				if err := appendActivityChange(ctx, transaction, sequence, ordinal, "session", previous.source, previous.session, activityID, "remove"); err != nil {
+				if err := appendActivityChange(ctx, transaction, sequences.change, ordinal, "session", previous.source, previous.session, activityID, "remove"); err != nil {
 					return err
 				}
 			}
 		}
-		if err := putSpan(ctx, transaction, span, sequence, activityID); err != nil {
+		if err := putSpan(ctx, transaction, span, sequences.row, activityID); err != nil {
 			return err
 		}
 		if span.Agent.RunID != "" {
 			ordinal++
-			if err := appendActivityChange(ctx, transaction, sequence, ordinal, "session", normalizeSource(span.Source), span.Agent.RunID, activityID, "upsert"); err != nil {
+			if err := appendActivityChange(ctx, transaction, sequences.change, ordinal, "session", normalizeSource(span.Source), span.Agent.RunID, activityID, "upsert"); err != nil {
 				return err
 			}
 		}
 		if span.TraceID != "" {
 			ordinal++
-			if err := appendActivityChange(ctx, transaction, sequence, ordinal, "trace", "", span.TraceID, activityID, "upsert"); err != nil {
+			if err := appendActivityChange(ctx, transaction, sequences.change, ordinal, "trace", "", span.TraceID, activityID, "upsert"); err != nil {
 				return err
 			}
 		}
 	}
 	for _, log := range batch.Logs {
-		activityID, err := store.appendLog(ctx, transaction, log, sequence)
+		activityID, err := store.appendLog(ctx, transaction, log, sequences.row)
 		if err != nil {
 			return err
 		}
@@ -430,19 +439,19 @@ func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, b
 		}
 		if log.Kind != canonical.ActivityUnknown && log.Agent.RunID != "" {
 			ordinal++
-			if err := appendActivityChange(ctx, transaction, sequence, ordinal, "session", normalizeSource(log.Source), log.Agent.RunID, activityID, "upsert"); err != nil {
+			if err := appendActivityChange(ctx, transaction, sequences.change, ordinal, "session", normalizeSource(log.Source), log.Agent.RunID, activityID, "upsert"); err != nil {
 				return err
 			}
 		}
 		if log.TraceID != "" {
 			ordinal++
-			if err := appendActivityChange(ctx, transaction, sequence, ordinal, "trace", "", log.TraceID, activityID, "upsert"); err != nil {
+			if err := appendActivityChange(ctx, transaction, sequences.change, ordinal, "trace", "", log.TraceID, activityID, "upsert"); err != nil {
 				return err
 			}
 		}
 	}
 	for _, metric := range batch.Metrics {
-		if err := appendMetric(ctx, transaction, metric, sequence); err != nil {
+		if err := appendMetric(ctx, transaction, metric, sequences.row); err != nil {
 			return err
 		}
 	}

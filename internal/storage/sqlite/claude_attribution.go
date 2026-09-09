@@ -37,9 +37,13 @@ type claudeAttributionResult struct {
 // reconcileClaudeModelCallAgents combines the independent authorities emitted
 // for one Claude model call. The request log keeps usage and descriptive
 // metadata; the corroborating trace supplies runtime agent identity.
-func reconcileClaudeModelCallAgents(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, previous map[storedSpanKey]storedSpanScope, sequence int64) (claudeAttributionResult, error) {
+func reconcileClaudeModelCallAgents(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, previous map[storedSpanKey]storedSpanScope, sequences projectionSequences) (claudeAttributionResult, error) {
+	return reconcileClaudeModelCallAgentKeys(ctx, transaction, claudeModelCallKeys(batch, previous), previous, sequences)
+}
+
+func reconcileClaudeModelCallAgentKeys(ctx context.Context, transaction *sql.Tx, keys map[claudeModelCallKey]struct{}, previous map[storedSpanKey]storedSpanScope, sequences projectionSequences) (claudeAttributionResult, error) {
 	result := claudeAttributionResult{traceIDs: make(map[string]struct{})}
-	for key, usageIDs := range groupClaudeModelCallKeys(claudeModelCallKeys(batch, previous)) {
+	for key, usageIDs := range groupClaudeModelCallKeys(keys) {
 		evidence, err := loadClaudeRuntimeAgentEvidence(ctx, transaction, key, usageIDs)
 		if err != nil {
 			return result, err
@@ -61,23 +65,23 @@ func reconcileClaudeModelCallAgents(ctx context.Context, transaction *sql.Tx, ba
 SET agent_id = ?, parent_agent_id = ? WHERE id = ?`, agentID, parentAgentID, log.id); err != nil {
 				return result, fmt.Errorf("attribute Claude request log to runtime agent: %w", err)
 			}
-			if log.projectionSequence != sequence {
+			if log.projectionSequence != sequences.row {
 				historicalAgentIDs[normalizedAgentID(log.agentID, key.runID)] = struct{}{}
 				historicalAgentIDs[normalizedAgentID(agentID, key.runID)] = struct{}{}
 				if log.traceID != "" {
 					result.traceIDs[log.traceID] = struct{}{}
 				}
 			}
-			if err := appendActivityChange(ctx, transaction, sequence, 0, "session", key.source, key.runID, log.activityID, "upsert"); err != nil {
+			if err := appendActivityChange(ctx, transaction, sequences.change, 0, "session", key.source, key.runID, log.activityID, "upsert"); err != nil {
 				return result, err
 			}
 			if log.traceID != "" {
-				if err := appendActivityChange(ctx, transaction, sequence, 0, "trace", "", log.traceID, log.activityID, "upsert"); err != nil {
+				if err := appendActivityChange(ctx, transaction, sequences.change, 0, "trace", "", log.traceID, log.activityID, "upsert"); err != nil {
 					return result, err
 				}
 			}
 		}
-		if err := rebuildHistoricalSessionAgents(ctx, transaction, key, historicalAgentIDs, sequence); err != nil {
+		if err := rebuildHistoricalSessionAgents(ctx, transaction, key, historicalAgentIDs, sequences.row); err != nil {
 			return result, err
 		}
 		if len(historicalAgentIDs) > 0 && len(previous) > 0 {

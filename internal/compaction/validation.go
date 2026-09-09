@@ -5,10 +5,10 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
-	"github.com/kotokumu/agentmetry/internal/canonical"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/journal"
 )
@@ -30,10 +30,8 @@ type journalIdentity struct {
 }
 
 type validationExpectation struct {
-	journals      []journalIdentity
-	spanKeys      map[string]struct{}
-	sessionLinks  map[string]struct{}
-	sessionNodes  map[string]struct{}
+	journalCount  int64
+	journalDigest [sha256.Size]byte
 	observations  int64
 	logs          int64
 	metrics       int64
@@ -41,8 +39,8 @@ type validationExpectation struct {
 	rates         int64
 }
 
-func (expected *validationExpectation) add(record storedExport, accepted ingest.AcceptedExport) {
-	expected.journals = append(expected.journals, journalIdentity{
+func (expected *validationExpectation) add(record storedExport, accepted ingest.AcceptedExport) error {
+	identity := journalIdentity{
 		ReceivedAt: record.ReceivedAt.UTC().Format(time.RFC3339Nano),
 		Signal:     string(record.Signal), Transport: string(record.Transport), Size: record.Size,
 		Hash: record.Hash, Source: record.Metadata.Source,
@@ -51,34 +49,30 @@ func (expected *validationExpectation) add(record storedExport, accepted ingest.
 		NormalizationError: record.NormalizationError,
 		HarnessState:       string(record.Metadata.Harness.State), HarnessScope: record.Metadata.Harness.Scope,
 		HarnessFingerprint: record.Metadata.Harness.Fingerprint, HarnessLabel: record.Metadata.Harness.Label,
-	})
+	}
+	expected.journalCount++
+	digest, err := extendJournalDigest(expected.journalDigest, identity)
+	if err != nil {
+		return err
+	}
+	expected.journalDigest = digest
 	expected.observations += int64(len(accepted.Observations))
 	expected.logs += int64(len(accepted.Projection.Logs))
 	expected.metrics += int64(len(accepted.Projection.Metrics))
-	if expected.spanKeys == nil {
-		expected.spanKeys = make(map[string]struct{})
+	return nil
+}
+
+func extendJournalDigest(previous [sha256.Size]byte, identity journalIdentity) ([sha256.Size]byte, error) {
+	payload, err := json.Marshal(identity)
+	if err != nil {
+		return [sha256.Size]byte{}, fmt.Errorf("encode journal identity: %w", err)
 	}
-	for _, span := range accepted.Projection.Spans {
-		if canonical.IsSemanticSpan(span) {
-			expected.spanKeys[span.TraceID+"\x00"+span.SpanID] = struct{}{}
-		}
-	}
-	if expected.sessionLinks == nil {
-		expected.sessionLinks = make(map[string]struct{})
-		expected.sessionNodes = make(map[string]struct{})
-	}
-	for _, link := range accepted.Projection.SessionLinks {
-		if link.ParentSessionID == "" || link.ChildSessionID == "" || link.ParentSessionID == link.ChildSessionID {
-			continue
-		}
-		sourceID := link.Source
-		if sourceID == "" {
-			sourceID = "unknown"
-		}
-		expected.sessionLinks[sourceID+"\x00"+link.ParentSessionID+"\x00"+link.ChildSessionID] = struct{}{}
-		expected.sessionNodes[sourceID+"\x00"+link.ParentSessionID] = struct{}{}
-		expected.sessionNodes[sourceID+"\x00"+link.ChildSessionID] = struct{}{}
-	}
+	hasher := sha256.New()
+	_, _ = hasher.Write(previous[:])
+	_, _ = hasher.Write(payload)
+	var digest [sha256.Size]byte
+	copy(digest[:], hasher.Sum(nil))
+	return digest, nil
 }
 
 func validateCandidate(ctx context.Context, path string, expected validationExpectation) error {
@@ -107,12 +101,12 @@ FROM otlp_exports ORDER BY id`)
 		return err
 	}
 	defer rows.Close()
-	index := 0
+	var journalDigest [sha256.Size]byte
+	var index int64
 	for rows.Next() {
-		if index >= len(expected.journals) {
+		if index >= expected.journalCount {
 			return fmt.Errorf("candidate contains unexpected export %d", index+1)
 		}
-		want := expected.journals[index]
 		var received, signal, transport, codecText, hashText, sourceID, status, normalizationError string
 		var harnessState, harnessScope, harnessFingerprint, harnessLabel string
 		var stored []byte
@@ -134,24 +128,25 @@ FROM otlp_exports ORDER BY id`)
 			Source: sourceID, NormalizerVersion: normalizerVersion, Status: status, NormalizationError: normalizationError,
 			HarnessState: harnessState, HarnessScope: harnessScope, HarnessFingerprint: harnessFingerprint, HarnessLabel: harnessLabel,
 		}
-		if got != want {
-			return fmt.Errorf("candidate export %d metadata differs: got %#v want %#v", index+1, got, want)
+		journalDigest, err = extendJournalDigest(journalDigest, got)
+		if err != nil {
+			return err
 		}
 		index++
 	}
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	if index != len(expected.journals) {
-		return fmt.Errorf("candidate exports %d, want %d", index, len(expected.journals))
+	if index != expected.journalCount {
+		return fmt.Errorf("candidate exports %d, want %d", index, expected.journalCount)
+	}
+	if journalDigest != expected.journalDigest {
+		return fmt.Errorf("candidate journal identity digest differs")
 	}
 	wantCounts := map[string]int64{
 		"observations":         expected.observations,
-		"spans":                int64(len(expected.spanKeys)),
 		"logs":                 expected.logs,
 		"metrics":              expected.metrics,
-		"session_links":        int64(len(expected.sessionLinks)),
-		"session_memberships":  int64(len(expected.sessionNodes)),
 		"plan_usage_snapshots": expected.planSnapshots,
 		"model_rates":          expected.rates,
 	}
@@ -175,7 +170,7 @@ FROM otlp_exports ORDER BY id`)
 	if err := foreignKeys.Close(); err != nil {
 		return err
 	}
-	var calls, attributions, missingSupport, missingMembership int64
+	var calls, attributions, missingSupport, missingMembership, pendingCosts, replaySequences int64
 	if err := database.QueryRowContext(ctx, `SELECT
   (SELECT COUNT(*) FROM model_calls),
   (SELECT COUNT(*) FROM model_call_attributions),
@@ -184,11 +179,18 @@ FROM otlp_exports ORDER BY id`)
   )),
   (SELECT COUNT(*) FROM model_call_trace_supports s WHERE NOT EXISTS (
     SELECT 1 FROM model_call_trace_memberships m WHERE m.call_id = s.call_id AND m.trace_id = s.trace_id
-  ))`).Scan(&calls, &attributions, &missingSupport, &missingMembership); err != nil {
+  )),
+  (SELECT COUNT(*) FROM model_call_attributions WHERE primary_reason = 'pending_replay_finalization'),
+  (SELECT COUNT(*) FROM spans WHERE projection_sequence <> 0)
+    + (SELECT COUNT(*) FROM logs WHERE projection_sequence <> 0)
+    + (SELECT COUNT(*) FROM metrics WHERE projection_sequence <> 0)
+    + (SELECT COUNT(*) FROM model_calls WHERE projection_sequence <> 0)`).Scan(
+		&calls, &attributions, &missingSupport, &missingMembership, &pendingCosts, &replaySequences,
+	); err != nil {
 		return fmt.Errorf("validate candidate cost projection: %w", err)
 	}
-	if calls != attributions || missingSupport != 0 || missingMembership != 0 {
-		return fmt.Errorf("candidate cost projection is incomplete: calls=%d attributions=%d membership_without_support=%d support_without_membership=%d", calls, attributions, missingSupport, missingMembership)
+	if calls != attributions || missingSupport != 0 || missingMembership != 0 || pendingCosts != 0 || replaySequences != 0 {
+		return fmt.Errorf("candidate projection is incomplete: calls=%d attributions=%d membership_without_support=%d support_without_membership=%d pending_costs=%d replay_sequences=%d", calls, attributions, missingSupport, missingMembership, pendingCosts, replaySequences)
 	}
 	return nil
 }

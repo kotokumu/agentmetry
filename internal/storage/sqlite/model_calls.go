@@ -14,8 +14,28 @@ import (
 	codexsource "github.com/kotokumu/agentmetry/internal/source/codex"
 )
 
+type modelCallProjectionMode uint8
+
+const (
+	// Online ingestion publishes complete cost and correlation projections in
+	// the export transaction; private replay persists identity facts first.
+	projectModelCallDerived modelCallProjectionMode = iota
+	deferModelCallDerived
+)
+
 func (store *Store) persistModelCalls(ctx context.Context, transaction *sql.Tx, exportID int64, accepted ingest.AcceptedExport, prepared preparedExport, activityIDs []string, sequence int64, previousSpans map[storedSpanKey]storedSpanScope) error {
+	return store.persistModelCallsWithMode(ctx, transaction, exportID, accepted, prepared, activityIDs, sequence, previousSpans, projectModelCallDerived)
+}
+
+func (store *Store) persistReplayModelCallFacts(ctx context.Context, transaction *sql.Tx, exportID int64, accepted ingest.AcceptedExport, prepared preparedExport, activityIDs []string, sequence int64) error {
+	return store.persistModelCallsWithMode(ctx, transaction, exportID, accepted, prepared, activityIDs, sequence, nil, deferModelCallDerived)
+}
+
+func (store *Store) persistModelCallsWithMode(ctx context.Context, transaction *sql.Tx, exportID int64, accepted ingest.AcceptedExport, prepared preparedExport, activityIDs []string, sequence int64, previousSpans map[storedSpanKey]storedSpanScope, projectionMode modelCallProjectionMode) error {
 	if accepted.Envelope.Signal != canonical.SignalLog {
+		if projectionMode == deferModelCallDerived {
+			return nil
+		}
 		oldClaudeSessions := make(map[string]struct{})
 		newClaudeSessions := make(map[string]struct{})
 		oldCodexSessions := make(map[string]struct{})
@@ -70,9 +90,13 @@ func (store *Store) persistModelCalls(ctx context.Context, transaction *sql.Tx, 
 		return fmt.Errorf("load export occurrence: %w", err)
 	}
 	payloadHash := prepared.payload.SHA256()
-	rates, err := loadRates(ctx, transaction)
-	if err != nil {
-		return err
+	var rates []billing.Rate
+	if projectionMode == projectModelCallDerived {
+		loadedRates, err := loadRates(ctx, transaction)
+		if err != nil {
+			return err
+		}
+		rates = loadedRates
 	}
 	claudeSessions := make(map[string]struct{})
 	codexSessions := make(map[string]struct{})
@@ -138,20 +162,24 @@ ON CONFLICT(call_id) DO NOTHING`, callID, observed.Source, identityBasisText(bas
 			continue
 		}
 		codexSessions[observed.SessionID] = struct{}{}
-		attribution := attributeCodexCall(observed.Model, mode, observed.OccurredAt, observed.Usage, rates)
+		attribution := storedAttribution{basis: "unavailable", reason: "pending_replay_finalization"}
+		if projectionMode == projectModelCallDerived {
+			attribution = attributeCodexCall(observed.Model, mode, observed.OccurredAt, observed.Usage, rates)
+		}
 		if err := insertAttribution(ctx, transaction, callID, observed.Source, attribution); err != nil {
 			return err
 		}
-		if attribution.amount != nil {
-			if _, err := transaction.ExecContext(ctx, `UPDATE logs SET cost_usd = ? WHERE activity_id = ?`, float64(*attribution.amount)/1_000_000, activityIDs[observed.Ordinal]); err != nil {
-				return fmt.Errorf("update representative activity cost: %w", err)
-			}
+		if err := publishRepresentativeCost(ctx, transaction, activityIDs[observed.Ordinal], attribution.amount, false); err != nil {
+			return err
 		}
 		if observed.TraceID != "" {
 			if _, err := transaction.ExecContext(ctx, `INSERT OR IGNORE INTO model_call_trace_supports (call_id, trace_id, activity_id, support_kind) VALUES (?, ?, ?, 'direct')`, callID, observed.TraceID, activityIDs[observed.Ordinal]); err != nil {
 				return fmt.Errorf("link Codex direct trace support: %w", err)
 			}
 		}
+	}
+	if projectionMode == deferModelCallDerived {
+		return nil
 	}
 	for sessionID := range claudeSessions {
 		if err := rebuildClaudeCostProjection(ctx, transaction, sequence, sessionID); err != nil {
@@ -162,6 +190,24 @@ ON CONFLICT(call_id) DO NOTHING`, callID, observed.Source, identityBasisText(bas
 		if err := rebuildCodexCorroboratingSupports(ctx, transaction, sequence, sessionID); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+// publishRepresentativeCost applies the compatibility rule shared by initial
+// ingestion and repricing. A priced attribution overrides the legacy log cost;
+// an unavailable initial attribution preserves any producer-reported value.
+// Repricing may explicitly clear a previously derived value.
+func publishRepresentativeCost(ctx context.Context, transaction *sql.Tx, activityID string, amount *int64, clearUnavailable bool) error {
+	if amount == nil && !clearUnavailable {
+		return nil
+	}
+	var legacy any
+	if amount != nil {
+		legacy = float64(*amount) / 1_000_000
+	}
+	if _, err := transaction.ExecContext(ctx, `UPDATE logs SET cost_usd = ? WHERE activity_id = ?`, legacy, activityID); err != nil {
+		return fmt.Errorf("publish representative activity cost: %w", err)
 	}
 	return nil
 }

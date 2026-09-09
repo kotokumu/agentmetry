@@ -192,21 +192,7 @@ func rebuildTraceRollupTx(ctx context.Context, transaction *sql.Tx, traceID stri
 			return fmt.Errorf("clear trace rollup: %w", err)
 		}
 	}
-	_, err := transaction.ExecContext(ctx, `INSERT INTO trace_rollups (
-  trace_id, started_at, ended_at, status_rank, activity_count, root_span_count, missing_parent_count
-)
-SELECT ?, MIN(started_at), MAX(ended_at), MAX(status_rank), COUNT(*), SUM(root_span), SUM(missing_parent)
-FROM (
-  SELECT spans.started_at, spans.ended_at,
-    CASE lower(spans.status) WHEN 'error' THEN 2 WHEN 'ok' THEN 1 ELSE 0 END AS status_rank,
-    CASE WHEN spans.parent_span_id = '' THEN 1 ELSE 0 END AS root_span,
-    CASE WHEN spans.parent_span_id <> '' AND NOT EXISTS (
-      SELECT 1 FROM spans AS parent WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
-    ) THEN 1 ELSE 0 END AS missing_parent
-  FROM spans WHERE spans.trace_id = ?
-  UNION ALL
-  SELECT observed_at, observed_at, 0, 0, 0 FROM logs WHERE trace_id = ?
-) HAVING COUNT(*) > 0`, traceID, traceID, traceID)
+	_, err := transaction.ExecContext(ctx, traceRollupAggregateInsert(`AND spans.trace_id = ?`, `AND trace_id = ?`), traceID, traceID)
 	if err != nil {
 		return fmt.Errorf("rebuild trace rollup: %w", err)
 	}
@@ -219,6 +205,24 @@ UNION SELECT trace_id, source, run_id FROM logs WHERE trace_id = ? AND run_id <>
 		return fmt.Errorf("rebuild trace agents: %w", err)
 	}
 	return nil
+}
+
+func traceRollupAggregateInsert(spanFilter, logFilter string) string {
+	return `INSERT INTO trace_rollups (
+  trace_id, started_at, ended_at, status_rank, activity_count, root_span_count, missing_parent_count
+)
+SELECT trace_id, MIN(started_at), MAX(ended_at), MAX(status_rank), COUNT(*), SUM(root_span), SUM(missing_parent)
+FROM (
+  SELECT spans.trace_id, spans.started_at, spans.ended_at,
+    CASE lower(spans.status) WHEN 'error' THEN 2 WHEN 'ok' THEN 1 ELSE 0 END AS status_rank,
+    CASE WHEN spans.parent_span_id = '' THEN 1 ELSE 0 END AS root_span,
+    CASE WHEN spans.parent_span_id <> '' AND NOT EXISTS (
+      SELECT 1 FROM spans AS parent WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
+    ) THEN 1 ELSE 0 END AS missing_parent
+  FROM spans WHERE spans.trace_id <> '' ` + spanFilter + `
+  UNION ALL
+  SELECT trace_id, observed_at, observed_at, 0, 0, 0 FROM logs WHERE trace_id <> '' ` + logFilter + `
+) GROUP BY trace_id`
 }
 
 func upsertTraceMembers(ctx context.Context, transaction *sql.Tx, sequence int64) error {
