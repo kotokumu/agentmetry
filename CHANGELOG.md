@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.18.3](https://github.com/kotokumu/agentmetry/compare/v1.18.2...v1.18.3) (2026-09-09)
+
+
+### Performance Improvements
+
+* **compaction:** pipeline replay migration batches ([#84](https://github.com/kotokumu/agentmetry/issues/84)) ([17cb994](https://github.com/kotokumu/agentmetry/commit/17cb994db4d853855a9205758774286c52f4f77b))
+* **storage:** bulk rebuild Codex replay projections ([#86](https://github.com/kotokumu/agentmetry/issues/86)) ([2077e60](https://github.com/kotokumu/agentmetry/commit/2077e6050beab6b328b34a1331adebe9884efbf9))
+
 ## [1.18.2](https://github.com/kotokumu/agentmetry/compare/v1.18.1...v1.18.2) (2026-09-09)
 
 
