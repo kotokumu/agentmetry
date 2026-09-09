@@ -3,8 +3,16 @@
 <file target-language="ja" source-language="en" original="lit-localize-inputs" datatype="plaintext">
 <body>
 <trans-unit id="sessions.showAll">
-  <source>Show all, including child sessions</source>
-  <target>子セッションを含めてすべてを表示</target>
+  <source>Show child sessions</source>
+  <target>子セッションも表示</target>
+</trans-unit>
+<trans-unit id="workspace.hideList">
+  <source>Collapse session list</source>
+  <target>セッション一覧を折りたたむ</target>
+</trans-unit>
+<trans-unit id="workspace.showList">
+  <source>Expand session list</source>
+  <target>セッション一覧を展開</target>
 </trans-unit>
 <trans-unit id="sessions.telemetryScope">
   <source>About session grouping and names</source>
@@ -79,8 +87,8 @@
   <target>使用量</target>
 </trans-unit>
 <trans-unit id="app.connections">
-  <source>Connections &amp; settings</source>
-  <target>接続・設定</target>
+  <source>Settings</source>
+  <target>設定</target>
 </trans-unit>
 <trans-unit id="app.mainNavigation">
   <source>Main navigation</source>
@@ -2290,30 +2298,6 @@
   <source>Copy configuration</source>
   <target>設定をコピー</target>
 </trans-unit>
-<trans-unit id="workspaceCompletion.switchSession">
-  <source>Switch session</source>
-  <target>セッションを切り替え</target>
-</trans-unit>
-<trans-unit id="workspaceCompletion.loadMore">
-  <source>Load more</source>
-  <target>さらに読み込む</target>
-</trans-unit>
-<trans-unit id="workspaceCompletion.loadingMore">
-  <source>Loading more</source>
-  <target>追加読み込み中</target>
-</trans-unit>
-<trans-unit id="workspaceCompletion.retryList">
-  <source>Retry list</source>
-  <target>一覧を再取得</target>
-</trans-unit>
-<trans-unit id="workspaceCompletion.loadedSessionsPartial">
-  <source>Loaded sessions are partial</source>
-  <target>セッションの一部を読み込み済み</target>
-</trans-unit>
-<trans-unit id="workspaceCompletion.moreSessionsAvailable">
-  <source>More sessions available</source>
-  <target>ほかにもセッションがあります</target>
-</trans-unit>
 <trans-unit id="workspaceCompletion.elapsedTime">
   <source>Elapsed time</source>
   <target>経過時間</target>
@@ -2337,10 +2321,6 @@
 <trans-unit id="workspaceCompletion.reportedAgentCount">
   <source>Reported agent count</source>
   <target>報告されたエージェントの数</target>
-</trans-unit>
-<trans-unit id="workspaceCompletion.relatedTraces">
-  <source>Related traces</source>
-  <target>関連トレース</target>
 </trans-unit>
 <trans-unit id="workspaceCompletion.noMatchingSessions">
   <source>No matching sessions</source>

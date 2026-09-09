@@ -32,21 +32,39 @@ afterEach(() => {
 });
 
 describe("conversation workspace completion", () => {
-  it("keeps source-qualified session switching and partial list paging in the detail header", async () => {
+  it("keeps the two-pane layout and a list return while detail is loading or unavailable", async () => {
+    vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [session("one")], nextPageToken: "" });
+    vi.spyOn(agentmetryClient, "getSessionRework").mockRejectedValue(new Error("unused"));
+    let rejectDetail!: (error: Error) => void;
+    vi.spyOn(agentmetryClient, "getSession").mockReturnValue(new Promise((_, reject) => { rejectDetail = reject; }));
+    const workspace = document.createElement("am-conversation-workspace");
+    workspace.requestedConversation = { sourceId: "codex", conversationId: "one" };
+    document.body.append(workspace);
+    await workspace.updateComplete;
+    expect(workspace.shadowRoot!.querySelector(".workspace")!.classList.contains("list-only")).toBe(false);
+    expect(workspace.shadowRoot!.querySelector("am-session-list")!.hasAttribute("compact")).toBe(true);
+    expect(workspace.shadowRoot!.querySelector(".list-return")).toBeTruthy();
+    rejectDetail(new Error("unavailable"));
+    await Promise.resolve();
+    await workspace.updateComplete;
+    expect(workspace.shadowRoot!.querySelector(".list-return")).toBeTruthy();
+  });
+
+  it("keeps the session list beside details and switches using source-qualified links", async () => {
     const workspace = await mount();
     const selected = vi.fn();
     workspace.addEventListener("session-selected", selected);
 
-    const switcher = workspace.shadowRoot!.querySelector<HTMLSelectElement>("select[data-session-switcher]");
-    expect(switcher).toBeTruthy();
-    switcher!.value = "claude:two";
-    switcher!.dispatchEvent(new Event("change", { bubbles: true }));
+    const list = workspace.shadowRoot!.querySelector("am-session-list")!;
+    expect(list).toBeTruthy();
+    await list.updateComplete;
+    list.shadowRoot!.querySelector<HTMLAnchorElement>('a[href="/conversations/claude/two"]')!.click();
     expect((selected.mock.calls[0]![0] as CustomEvent).detail).toEqual({ sourceId: "claude", sessionId: "two" });
-    expect(workspace.shadowRoot!.textContent).toContain("More sessions available");
-    expect(workspace.shadowRoot!.querySelector("button[data-session-more]")).toBeTruthy();
+    expect(workspace.shadowRoot!.querySelector("select[data-session-switcher]")).toBeNull();
+    expect(workspace.shadowRoot!.querySelector("button[data-session-more]")).toBeNull();
   });
 
-  it("keeps the native dropdown aligned after direct, reload, and source switch renders", async () => {
+  it("preserves the list element and its scroll position across session navigation", async () => {
     const codex = session("one", "codex");
     const claude = session("two", "claude", "Claude report");
     vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [codex, claude], nextPageToken: "" });
@@ -58,21 +76,46 @@ describe("conversation workspace completion", () => {
     await workspace.updateComplete;
     await Promise.resolve();
     await workspace.updateComplete;
-    const switcher = () => workspace.shadowRoot!.querySelector<HTMLSelectElement>("select[data-session-switcher]")!;
-    expect(switcher().value).toBe("codex:one");
+    const list = workspace.shadowRoot!.querySelector("am-session-list")!;
+    expect(list).toBeTruthy();
+    list.scrollTop = 120;
+    expect(list.selected).toBe("one");
 
     workspace.requestedConversation = { sourceId: "claude", conversationId: "two" };
     await workspace.updateComplete;
     await Promise.resolve();
     await workspace.updateComplete;
-    expect(switcher().value).toBe("claude:two");
-    expect(switcher().selectedOptions[0]?.value).toBe("claude:two");
+    expect(workspace.shadowRoot!.querySelector("am-session-list")).toBe(list);
+    expect(list.selected).toBe("two");
+    expect(list.selectedSource).toBe("claude");
+    expect(list.scrollTop).toBe(120);
 
     workspace.requestedConversation = { sourceId: "codex", conversationId: "one" };
     await workspace.updateComplete;
     await Promise.resolve();
     await workspace.updateComplete;
-    expect(switcher().value).toBe("codex:one");
+    expect(list.selected).toBe("one");
+  });
+
+  it("collapses and restores the list without losing the detail", async () => {
+    const workspace = await mount();
+    const list = workspace.shadowRoot!.querySelector("am-session-list");
+    const collapse = workspace.shadowRoot!.querySelector<HTMLButtonElement>("[data-collapse-list]")!;
+    expect(collapse.textContent?.trim()).toBe("");
+    expect(collapse.getAttribute("aria-label")).toBe("Collapse session list");
+    expect(collapse.querySelector("svg")).toBeTruthy();
+    collapse.click();
+    await workspace.updateComplete;
+    const restore = workspace.shadowRoot!.querySelector<HTMLButtonElement>("[data-show-list]")!;
+    expect(restore).toBeTruthy();
+    expect(restore.textContent?.trim()).toBe("");
+    expect(restore.getAttribute("aria-label")).toBe("Expand session list");
+    expect(workspace.shadowRoot!.querySelector(".workspace")?.classList.contains("list-collapsed")).toBe(true);
+    expect(workspace.shadowRoot!.textContent).toContain("codex:one");
+    restore.click();
+    await workspace.updateComplete;
+    expect(workspace.shadowRoot!.querySelector(".workspace")?.classList.contains("list-collapsed")).toBe(false);
+    expect(workspace.shadowRoot!.querySelector("am-session-list")).toBe(list);
   });
 
   it("prioritizes a reported title, keeps the full id, and copies the exact id", async () => {
@@ -88,7 +131,7 @@ describe("conversation workspace completion", () => {
     expect(writeText).toHaveBeenCalledWith("codex:one");
   });
 
-  it("keeps compact primary metrics visible and links exact related traces", async () => {
+  it("keeps compact primary metrics visible without exposing a raw trace id list", async () => {
     const workspace = await mount();
     const header = workspace.shadowRoot!.querySelector(".session-head-panel")!;
     const primaryCards = Array.from(header.querySelectorAll(".session-metrics")[0]!.querySelectorAll<HTMLElement>("am-kpi-card"));
@@ -96,8 +139,8 @@ describe("conversation workspace completion", () => {
     expect(primaryCards).toHaveLength(4);
     expect(primaryCards.every((card) => card.hasAttribute("compact"))).toBe(true);
     expect(primaryCards.map((card) => card.shadowRoot?.textContent).join(" ")).toContain("1 min 30 s");
-    expect(header.textContent).toContain("trace/exact");
-    expect(header.querySelector<HTMLAnchorElement>('a[href="/traces/trace%2Fexact"]')).toBeTruthy();
+    expect(header.textContent).not.toContain("trace/exact");
+    expect(header.querySelector('a[href^="/traces/"]')).toBeNull();
     expect(header.textContent).not.toContain("participants");
   });
 

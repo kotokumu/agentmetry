@@ -1,4 +1,5 @@
-import { css, html } from "lit";
+import { css, html, type PropertyValues } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import { msg, str } from "@lit/localize";
 import { customElement, property, state } from "lit/decorators.js";
 import type { SessionListEntry, SessionListView } from "../model/session-catalog";
@@ -21,9 +22,12 @@ export class SessionList extends LocalizedElement {
   @property({ type: Boolean }) unavailable = false;
   @property({ attribute: false }) locationForSession: (sourceId: string, sessionId: string) => string = conversationPath;
   @state() private copyStatus?: Readonly<{ id: string; state: "copied" | "failed" }>;
+  private pageObserver?: IntersectionObserver;
+  private pageRequested = false;
+  private readingAnchor?: { row: Element; top: number };
 
   static styles = css`
-    :host { display: block; }
+    :host { display: block; overflow-anchor: none; }
     .view-control { display: flex; align-items: center; gap: 8px; font-size: 14px; padding: 10px 0; cursor: pointer; }
     details { color: var(--am-muted); font-size: 12px; line-height: 1.5; margin-bottom: 12px; }
     summary { cursor: pointer; }
@@ -52,6 +56,20 @@ export class SessionList extends LocalizedElement {
     .value { display: block; overflow-wrap: anywhere; }
     time { white-space: nowrap; }
     .empty { color: var(--am-muted); padding: 18px 0; }
+    .page-end { min-height: 28px; color: var(--am-muted); font-size: 12px; text-align: center; padding: 10px 0; }
+    :host([compact]) .table-header { display: none; }
+    :host([compact]) .session-table { border: 0; }
+    :host([compact]) .session-row { display: block; border-top: 0; border-bottom: 1px solid var(--am-border); border-radius: 5px; margin: 0 0 4px; }
+    :host([compact]) .session-link { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 12px 10px; }
+    :host([compact]) .cell-label { display: none; }
+    :host([compact]) .cell:nth-child(4), :host([compact]) .cell:nth-child(5) { display: none; }
+    :host([compact]) .name-metadata { display: none; }
+    :host([compact]) .native-id { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    :host([compact]) strong { font-family: inherit; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+    :host([compact]) .source { padding: 2px 5px; font-weight: 500; }
+    :host([compact]) .sources { margin: 0; }
+    :host([compact]) .copy-button { margin: 0 10px 8px; padding: 3px 6px; font-size: 12px; }
+    :host([compact]) .collection-meta { font-size: 12px; }
     @media (max-width: 950px) {
       .table-header { display: none; }
       .session-table { border: 0; overflow: visible; }
@@ -73,8 +91,42 @@ export class SessionList extends LocalizedElement {
       ${this.renderRows()}
       ${this.pageFailed && !this.unavailable ? html`<p role="alert" class="empty">${localization.t("sessions.unavailable")}</p>` : null}
       ${this.pageFailed || this.unavailable ? html`<button type="button" @click=${() => this.dispatchEvent(new CustomEvent("sessions-retry-requested", { bubbles: true, composed: true }))}>${localization.t("sessions.retry")}</button>` : null}
-      ${this.hasMore && !this.unavailable ? html`<button type="button" data-more ?disabled=${this.loading || this.loadingMore} @click=${() => this.dispatchEvent(new CustomEvent("sessions-more-requested", { bubbles: true, composed: true }))}>${localization.t(this.loadingMore ? "common.loading" : "sessions.loadMore")}</button>` : null}
+      <div class="page-end" role="status">${this.loadingMore ? localization.t("common.loading") : ""}</div>
     `;
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    this.requestUpdate();
+  }
+
+  protected willUpdate(changed: PropertyValues<this>) {
+    if (!changed.has("sessions") || this.scrollTop <= 0) return;
+    const top = this.getBoundingClientRect().top;
+    const row = [...(this.shadowRoot?.querySelectorAll(".session-row") ?? [])].find((item) => item.getBoundingClientRect().bottom > top);
+    this.readingAnchor = row ? { row, top: row.getBoundingClientRect().top } : undefined;
+  }
+
+  protected updated(changed: PropertyValues<this>) {
+    if (this.readingAnchor?.row.isConnected) this.scrollTop += this.readingAnchor.row.getBoundingClientRect().top - this.readingAnchor.top;
+    this.readingAnchor = undefined;
+    if (this.pageObserver && !(["sessions", "hasMore", "loading", "loadingMore", "pageFailed", "unavailable"] as const).some((key) => changed.has(key))) return;
+    this.pageRequested = false;
+    this.pageObserver?.disconnect();
+    if (!this.hasMore || this.loading || this.loadingMore || this.pageFailed || this.unavailable || typeof IntersectionObserver === "undefined") return;
+    this.pageObserver = new IntersectionObserver((entries) => {
+      if (!entries.some((entry) => entry.isIntersecting) || this.pageRequested || !this.isConnected || !this.hasMore || this.loading || this.loadingMore || this.pageFailed || this.unavailable) return;
+      this.pageRequested = true;
+      this.dispatchEvent(new CustomEvent("sessions-more-requested", { bubbles: true, composed: true }));
+    });
+    const end = this.shadowRoot?.querySelector(".page-end");
+    if (end) this.pageObserver.observe(end);
+  }
+
+  disconnectedCallback() {
+    this.pageObserver?.disconnect();
+    this.pageObserver = undefined;
+    super.disconnectedCallback();
   }
 
   private readonly viewChanged = (event: Event) => {
@@ -95,7 +147,7 @@ export class SessionList extends LocalizedElement {
         <span>${msg("Estimated cost", { id: "catalogCompletion.costColumn" })}</span>
         <span aria-hidden="true"></span>
       </div>
-      ${this.sessions.map((session) => this.renderRow(session))}
+      ${repeat(this.sessions, (session) => JSON.stringify([session.sourceId, session.id]), (session) => this.renderRow(session))}
     </div>`;
   }
 

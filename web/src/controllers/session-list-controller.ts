@@ -83,9 +83,19 @@ export class SessionListController implements ReactiveController {
     this.host.requestUpdate();
     const current = () => this.connected && this.isActive() && generation === this.generation && key === queryKey(this.query());
     try {
-      const page = await this.reader.listSessionsPage(query, abort.signal);
+      let page = await this.reader.listSessionsPage(query, abort.signal);
+      const residentCount = this.rows.length;
+      const refreshed = [...page.sessions];
+      const tokens = new Set<string>();
+      // Live refresh replaces the whole resident range, not just its first page.
+      while (mode === "replace" && current() && refreshed.length < residentCount && page.nextPageToken) {
+        if (tokens.has(page.nextPageToken)) throw new Error("Repeated session page token");
+        tokens.add(page.nextPageToken);
+        page = await this.reader.listSessionsPage({ ...query, pageToken: page.nextPageToken }, abort.signal);
+        refreshed.push(...page.sessions);
+      }
       if (!current()) return;
-      this.rows = uniqueRows(mode === "append" ? [...this.rows, ...page.sessions] : page.sessions);
+      this.rows = uniqueRows(mode === "append" ? [...this.rows, ...page.sessions] : refreshed);
       this.nextToken = page.nextPageToken;
     } catch {
       if (!current()) return;

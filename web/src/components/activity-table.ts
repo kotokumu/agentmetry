@@ -40,7 +40,7 @@ export class ActivityTable extends LocalizedElement {
   private cachedSelectedActivity?: Activity;
 
   static styles = [activityContentStyles, css`
-    :host { display: block; max-width: 100%; overflow: visible; }
+    :host { display: block; max-width: 100%; overflow: visible; container-type: inline-size; }
     .table-scroll { max-width: 100%; overflow-x: auto; scrollbar-color: var(--am-border-strong) var(--am-track); }
     .reading-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
     .activity-list, .activity-detail { min-width: 0; }
@@ -86,7 +86,7 @@ export class ActivityTable extends LocalizedElement {
     .continuation button { border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 8px 14px; cursor: pointer; }
     .continuation button:hover, .continuation button:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     .continuation button:disabled { cursor: wait; opacity: .55; }
-    @media (max-width: 1100px) {
+    @container (max-width: 1100px) {
       .reading-layout { grid-template-columns: minmax(0, 1fr); }
       .activity-detail { position: static; max-height: none; overflow: visible; scrollbar-gutter: auto; }
     }

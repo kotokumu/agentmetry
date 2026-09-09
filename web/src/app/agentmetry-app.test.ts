@@ -483,9 +483,9 @@ describe("Agentmetry app composition", () => {
     await localization.whenReady();
     await app.updateComplete;
 
-    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("接続・設定");
+    expect(app.shadowRoot?.querySelector("h1")?.textContent).toContain("設定");
     expect(document.documentElement.lang).toBe("ja");
-    expect(document.title).toBe("Agentmetry · 接続・設定");
+    expect(document.title).toBe("Agentmetry · 設定");
   });
 
   it("restores the selected file read and activity after a route remount", async () => {
@@ -971,7 +971,7 @@ describe("Agentmetry app composition", () => {
     expect(new URL(location.href).searchParams.get("section")).toBe("traces");
   });
 
-  it("keeps trace navigation at activity level instead of the session header", async () => {
+  it("does not expose raw trace ids in the session header", async () => {
     const overview = {
       ...emptyOverview,
       runCount: 1,
@@ -997,8 +997,8 @@ describe("Agentmetry app composition", () => {
 
     const content = workspaceRootOf(app)?.textContent ?? "";
     expect(content).not.toContain("2 traces");
-    expect(content).toContain("raw-trace-id-one");
-    expect(content).toContain("raw-trace-id-two");
+    expect(content).not.toContain("raw-trace-id-one");
+    expect(content).not.toContain("raw-trace-id-two");
     expect(workspaceRootOf(app)?.querySelector(".workspace .detail > .operations-panel am-activity-table")).not.toBeNull();
     const detail = workspaceRootOf(app)?.querySelector(".workspace .detail");
     const children = Array.from(detail?.children ?? []);
