@@ -118,6 +118,135 @@ func TestReplayCandidateDeferredProjectionMatchesSequentialCommit(t *testing.T) 
 	}
 }
 
+func TestReplayWideCodexCorroborationMatchesPerSessionProjection(t *testing.T) {
+	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	exports := replayWideCodexCostExports(at)
+	originalRandRead := randRead
+	t.Cleanup(func() { randRead = originalRandRead })
+
+	project := func(t *testing.T, replayWide bool) string {
+		t.Helper()
+		randRead = deterministicRandRead()
+		database, err := open(filepath.Join(t.TempDir(), "projection.db"), false, builtin.Registry())
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = database.Close() })
+		for _, exported := range exports {
+			if err := database.CommitExport(context.Background(), exported); err != nil {
+				t.Fatal(err)
+			}
+		}
+		feedBefore := projectionFeedSnapshot(t, database.db)
+
+		transaction, err := database.db.BeginTx(context.Background(), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if replayWide {
+			err = rebuildAllCodexCorroboratingSupports(context.Background(), transaction)
+		} else {
+			var sessions []string
+			sessions, err = queryStrings(context.Background(), transaction, `SELECT DISTINCT native_session_id
+FROM model_calls WHERE source = 'codex' ORDER BY native_session_id`)
+			if err == nil {
+				for _, sessionID := range sessions {
+					if err = rebuildCodexCorroboratingSupports(context.Background(), transaction, 0, sessionID); err != nil {
+						break
+					}
+				}
+			}
+		}
+		if err != nil {
+			_ = transaction.Rollback()
+			t.Fatal(err)
+		}
+		if err := transaction.Commit(); err != nil {
+			t.Fatal(err)
+		}
+		if feedAfter := projectionFeedSnapshot(t, database.db); feedAfter != feedBefore {
+			t.Fatalf("sequence-zero corroboration rebuild changed projection feed\n%s", firstSnapshotDifference(feedBefore, feedAfter))
+		}
+		var codexLinks, codexSupports, claudeLinks int
+		if err := database.db.QueryRow(`SELECT COUNT(*) FROM model_call_activity_links links
+JOIN model_calls calls USING (call_id)
+WHERE calls.source = 'codex' AND links.evidence_role = 'corroborating'`).Scan(&codexLinks); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.db.QueryRow(`SELECT COUNT(*) FROM model_call_trace_supports supports
+JOIN model_calls calls USING (call_id)
+WHERE calls.source = 'codex' AND supports.support_kind = 'corroborating'`).Scan(&codexSupports); err != nil {
+			t.Fatal(err)
+		}
+		if err := database.db.QueryRow(`SELECT COUNT(*) FROM model_call_activity_links links
+JOIN model_calls calls USING (call_id)
+WHERE calls.source = 'claude' AND links.evidence_role = 'corroborating'`).Scan(&claudeLinks); err != nil {
+			t.Fatal(err)
+		}
+		if codexLinks != 4 || codexSupports != 3 || claudeLinks != 1 {
+			t.Fatalf("projection fixture = Codex links %d supports %d, Claude links %d", codexLinks, codexSupports, claudeLinks)
+		}
+		return logicalDatabaseSnapshotForTables(t, database.db, map[string]struct{}{
+			"model_call_activity_links":    {},
+			"model_call_trace_supports":    {},
+			"model_call_trace_memberships": {},
+		})
+	}
+
+	reference := project(t, false)
+	if got := project(t, true); got != reference {
+		t.Fatalf("replay-wide Codex projection differs from per-session projection\n%s", firstSnapshotDifference(reference, got))
+	}
+}
+
+func TestReplayFinalizationRollsBackBulkCodexProjectionFailure(t *testing.T) {
+	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	candidate, err := OpenReplayCandidate(context.Background(), filepath.Join(t.TempDir(), "candidate.db"), ReplayCandidateConfig{
+		Profiles: builtin.Registry(), RateHistory: billing.BuiltinOpenAIRates(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = candidate.Close() })
+	exports := replayWideCodexCostExports(at)[:2]
+	if err := candidate.CommitReplayBatch(context.Background(), exports); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := candidate.store.db.Exec(`CREATE TRIGGER fail_replay_corroborating_link
+BEFORE INSERT ON model_call_activity_links
+WHEN NEW.evidence_role = 'corroborating'
+BEGIN SELECT RAISE(ABORT, 'injected corroborating projection failure'); END`); err != nil {
+		t.Fatal(err)
+	}
+	before := logicalDatabaseSnapshot(t, candidate.store.db)
+
+	err = candidate.FinalizeReplay(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "injected corroborating projection failure") {
+		t.Fatalf("FinalizeReplay() error = %v, want injected projection failure", err)
+	}
+	if candidate.finalized {
+		t.Fatal("failed candidate was marked finalized")
+	}
+	if after := logicalDatabaseSnapshot(t, candidate.store.db); after != before {
+		t.Fatalf("failed finalization changed candidate\n%s", firstSnapshotDifference(before, after))
+	}
+	var pending int
+	if err := candidate.store.db.QueryRow(`SELECT COUNT(*) FROM model_call_attributions
+WHERE primary_reason = 'pending_replay_finalization'`).Scan(&pending); err != nil {
+		t.Fatal(err)
+	}
+	if pending != 1 {
+		t.Fatalf("pending replay costs after rollback = %d, want 1", pending)
+	}
+
+	if _, err := candidate.store.db.Exec(`DROP TRIGGER fail_replay_corroborating_link`); err != nil {
+		t.Fatal(err)
+	}
+	if err := candidate.FinalizeReplay(context.Background()); err != nil {
+		t.Fatalf("retry FinalizeReplay(): %v", err)
+	}
+}
+
 func TestLiveExportBatchMatchesSequentialCommit(t *testing.T) {
 	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
 	exports := replayEquivalenceExports(at)
@@ -278,6 +407,75 @@ func BenchmarkReplayCostProjectionStrategy(b *testing.B) {
 	benchmarkReplayStrategies(b, exports)
 }
 
+func BenchmarkCodexCorroboratingReplayRebuild(b *testing.B) {
+	const sessions = 512
+	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	usage := canonical.TokenUsage{Input: 100, Output: 20, CacheRead: 10, CacheWrite: 5}
+	exports := make([]ingest.AcceptedExport, 0, sessions*2)
+	for index := range sessions {
+		sessionID := fmt.Sprintf("cost-replay-session-%04d", index)
+		usageID := fmt.Sprintf("usage-%04d", index)
+		exports = append(exports,
+			costExport(at.Add(time.Duration(index*2)*time.Second), "codex", "codex.sse_event", "gen_ai.response.completed", sessionID, "gpt-6-astra", usage, map[string]any{
+				"gen_ai.usage.role": "authoritative_call", "gen_ai.usage.id": usageID,
+			}),
+			replayCodexCorroboratingExport(at.Add(time.Duration(index*2+1)*time.Second), sessionID, usageID, index, true),
+		)
+	}
+
+	for _, strategy := range []struct {
+		name    string
+		rebuild func(context.Context, *sql.Tx) error
+	}{
+		{name: "per-session", rebuild: func(ctx context.Context, transaction *sql.Tx) error {
+			sessionIDs, err := queryStrings(ctx, transaction, `SELECT DISTINCT native_session_id
+FROM model_calls WHERE source = 'codex' ORDER BY native_session_id`)
+			if err != nil {
+				return err
+			}
+			for _, sessionID := range sessionIDs {
+				if err := rebuildCodexCorroboratingSupports(ctx, transaction, 0, sessionID); err != nil {
+					return err
+				}
+			}
+			return nil
+		}},
+		{name: "replay-wide", rebuild: rebuildAllCodexCorroboratingSupports},
+	} {
+		b.Run(strategy.name, func(b *testing.B) {
+			for iteration := 0; iteration < b.N; iteration++ {
+				b.StopTimer()
+				path := filepath.Join(b.TempDir(), fmt.Sprintf("%s-%d.db", strategy.name, iteration))
+				candidate, err := OpenReplayCandidate(context.Background(), path, ReplayCandidateConfig{})
+				if err != nil {
+					b.Fatal(err)
+				}
+				for start := 0; start < len(exports); start += 256 {
+					end := min(start+256, len(exports))
+					if err := candidate.CommitReplayBatch(context.Background(), exports[start:end]); err != nil {
+						b.Fatal(err)
+					}
+				}
+				transaction, err := candidate.store.db.BeginTx(context.Background(), nil)
+				if err != nil {
+					b.Fatal(err)
+				}
+				b.StartTimer()
+				if err := strategy.rebuild(context.Background(), transaction); err != nil {
+					b.Fatal(err)
+				}
+				if err := transaction.Commit(); err != nil {
+					b.Fatal(err)
+				}
+				b.StopTimer()
+				if err := candidate.Close(); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
 func benchmarkReplayStrategies(b *testing.B, exports []ingest.AcceptedExport) {
 	b.Helper()
 	b.Run("sequential", func(b *testing.B) {
@@ -349,6 +547,55 @@ func benchmarkCodexCorroboratingExport(at time.Time, index int, usageID string) 
 			StartedAt: at, EndedAt: at, Attributes: map[string]any{
 				"gen_ai.usage.role": "corroborating", "gen_ai.usage.id": usageID,
 			}, Agent: canonical.AgentContext{RunID: "cost-benchmark-session"},
+		}}},
+	}
+}
+
+func replayWideCodexCostExports(at time.Time) []ingest.AcceptedExport {
+	usage := canonical.TokenUsage{Input: 10, Output: 2}
+	call := func(offset int, sessionID, usageID string) ingest.AcceptedExport {
+		return costExport(at.Add(time.Duration(offset)*time.Second), "codex", "codex.sse_event", "gen_ai.response.completed", sessionID, "gpt-6-astra", usage, map[string]any{
+			"gen_ai.usage.role": "authoritative_call", "gen_ai.usage.id": usageID,
+		})
+	}
+	ignoredRole := replayCodexCorroboratingExport(at.Add(15*time.Second), "mixed-session", "unique", 8, true)
+	ignoredRole.Projection.Spans[0].Attributes["gen_ai.usage.role"] = "diagnostic"
+	return []ingest.AcceptedExport{
+		call(0, "session-a", "shared"),
+		replayCodexCorroboratingExport(at.Add(time.Second), "session-a", "shared", 1, true),
+		replayCodexCorroboratingExport(at.Add(2*time.Second), "session-a", "shared", 2, false),
+		call(3, "session-b", "shared"),
+		replayCodexCorroboratingExport(at.Add(4*time.Second), "session-b", "shared", 3, true),
+		call(5, "mixed-session", "unique"),
+		replayCodexCorroboratingExport(at.Add(6*time.Second), "mixed-session", "unique", 4, true),
+		call(7, "mixed-session", "ambiguous"),
+		call(8, "mixed-session", "ambiguous"),
+		replayCodexCorroboratingExport(at.Add(9*time.Second), "mixed-session", "ambiguous", 5, true),
+		replayCodexCorroboratingExport(at.Add(10*time.Second), "unmatched-session", "missing", 6, true),
+		costExport(at.Add(11*time.Second), "claude", "api_request", "gen_ai.model.request", "claude-session", "claude-model", canonical.TokenUsage{}, map[string]any{
+			"gen_ai.usage.role": "authoritative_call", "gen_ai.client.request.id": "claude-request", "gen_ai.usage.id": "claude-request", "cost_usd_micros": int64(10),
+		}),
+		claudeCorroboratingSpanWithAlias(at.Add(12*time.Second), "claude-session", "gen_ai.client.request.id", "claude-request"),
+		call(13, "empty-usage-session", ""),
+		replayCodexCorroboratingExport(at.Add(14*time.Second), "empty-usage-session", "", 7, true),
+		ignoredRole,
+	}
+}
+
+func replayCodexCorroboratingExport(at time.Time, sessionID, usageID string, index int, withTrace bool) ingest.AcceptedExport {
+	traceID := ""
+	if withTrace {
+		traceID = fmt.Sprintf("%032x", index+20_000)
+	}
+	spanID := fmt.Sprintf("%016x", index+20_000)
+	return ingest.AcceptedExport{
+		Envelope: ingest.NewEnvelope(canonical.SignalTrace, ingest.TransportGRPC, at, []byte{0x0a, 0x04}),
+		Journal:  ingest.JournalMetadata{Source: "codex", NormalizerVersion: 1, NormalizationStatus: "projected"},
+		Projection: canonical.Batch{Spans: []canonical.Span{{
+			Source: "codex", TraceID: traceID, SpanID: spanID, Kind: canonical.ActivityResponse,
+			StartedAt: at, EndedAt: at, Attributes: map[string]any{
+				"gen_ai.usage.role": "corroborating", "gen_ai.usage.id": usageID,
+			}, Agent: canonical.AgentContext{RunID: sessionID},
 		}}},
 	}
 }
@@ -485,6 +732,45 @@ func logicalDatabaseSnapshotForTables(t *testing.T, database *sql.DB, included m
 			fmt.Fprintf(&snapshot, "%#v\n", values)
 		}
 		if err := tableRows.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return snapshot.String()
+}
+
+func projectionFeedSnapshot(t *testing.T, database *sql.DB) string {
+	t.Helper()
+	var snapshot strings.Builder
+	for _, table := range []string{"projection_feed_state", "projection_changes", "activity_changes"} {
+		order := tablePrimaryKeyOrder(t, database, table)
+		rows, err := database.Query(`SELECT * FROM "` + table + `" ORDER BY ` + order)
+		if err != nil {
+			t.Fatal(err)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		fmt.Fprintf(&snapshot, "TABLE %s %v\n", table, columns)
+		for rows.Next() {
+			values := make([]any, len(columns))
+			destinations := make([]any, len(columns))
+			for index := range values {
+				destinations[index] = &values[index]
+			}
+			if err := rows.Scan(destinations...); err != nil {
+				_ = rows.Close()
+				t.Fatal(err)
+			}
+			for index, value := range values {
+				if bytes, ok := value.([]byte); ok {
+					values[index] = hex.EncodeToString(bytes)
+				}
+			}
+			fmt.Fprintf(&snapshot, "%#v\n", values)
+		}
+		if err := rows.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}
