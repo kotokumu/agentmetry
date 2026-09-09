@@ -6,5 +6,5 @@ const (
 	ID          = "agentmetry"
 	Name        = "Agentmetry"
 	Description = "Local observability and evidence-based analysis for AI coding agents."
-	Version     = "1.17.3" // x-release-please-version
+	Version     = "1.18.0" // x-release-please-version
 )
