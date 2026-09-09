@@ -630,7 +630,7 @@ func TestCommitExportAttributesClaudeAndCodexCalls(t *testing.T) {
 	}
 }
 
-func TestRawOTLPNormalizationProducesProviderAndUnpricedCallCosts(t *testing.T) {
+func TestSyntheticOTLPNormalizationProducesProviderAndUnpricedCallCosts(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"), builtin.Registry())
 	if err != nil {
 		t.Fatal(err)
@@ -638,11 +638,11 @@ func TestRawOTLPNormalizationProducesProviderAndUnpricedCallCosts(t *testing.T) 
 	t.Cleanup(func() { _ = store.Close() })
 	ctx := context.Background()
 	at := time.Date(2026, 9, 9, 1, 0, 0, 0, time.UTC)
-	claude := rawLogExport(t, at, "claude-code", "api_request", map[string]any{
+	claude := syntheticLogExport(t, at, "claude-code", "api_request", map[string]any{
 		"gen_ai.conversation.id": "raw-claude", "model": "claude-model",
 		"client_request_id": "request-1", "cost_usd_micros": int64(125),
 	})
-	codex := rawLogExport(t, at, "codex", "codex.sse_event", map[string]any{
+	codex := syntheticLogExport(t, at, "codex", "codex.sse_event", map[string]any{
 		"event.kind": "response.completed", "conversation.id": "raw-codex", "model": "gpt-6-astra",
 	})
 	if err := store.CommitExport(ctx, claude); err != nil {
@@ -719,7 +719,7 @@ func codexCorroboratingSpanExport(at time.Time, session, usageID string) ingest.
 	}
 }
 
-func rawLogExport(t *testing.T, at time.Time, service, eventName string, attributes map[string]any) ingest.AcceptedExport {
+func syntheticLogExport(t *testing.T, at time.Time, service, eventName string, attributes map[string]any) ingest.AcceptedExport {
 	t.Helper()
 	logs := plog.NewLogs()
 	resource := logs.ResourceLogs().AppendEmpty()

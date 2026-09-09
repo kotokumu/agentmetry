@@ -1,0 +1,195 @@
+{
+  "resourceLogs": [
+    {
+      "resource": {
+        "attributes": [
+          {
+            "key": "telemetry.sdk.version",
+            "value": {
+              "stringValue": "fixture-codex-telemetry-sdk-version"
+            }
+          },
+          {
+            "key": "telemetry.sdk.language",
+            "value": {
+              "stringValue": "fixture-codex-telemetry-sdk-language"
+            }
+          },
+          {
+            "key": "service.version",
+            "value": {
+              "stringValue": "0.153.2"
+            }
+          },
+          {
+            "key": "host.name",
+            "value": {
+              "stringValue": "fixture-codex-host-name"
+            }
+          },
+          {
+            "key": "service.name",
+            "value": {
+              "stringValue": "Codex Desktop"
+            }
+          },
+          {
+            "key": "telemetry.sdk.name",
+            "value": {
+              "stringValue": "fixture-codex-telemetry-sdk-name"
+            }
+          },
+          {
+            "key": "env",
+            "value": {
+              "stringValue": "fixture-capture"
+            }
+          }
+        ]
+      },
+      "scopeLogs": [
+        {
+          "scope": {
+            "name": "codex_otel.log_only"
+          },
+          "logRecords": [
+            {
+              "timeUnixNano": "1788915600000000000",
+              "observedTimeUnixNano": "1788915601000000000",
+              "severityNumber": 9,
+              "severityText": "INFO",
+              "body": {
+                "stringValue": "[REDACTED]"
+              },
+              "attributes": [
+                {
+                  "key": "event.name",
+                  "value": {
+                    "stringValue": "codex.sse_event"
+                  }
+                },
+                {
+                  "key": "event.kind",
+                  "value": {
+                    "stringValue": "response.completed"
+                  }
+                },
+                {
+                  "key": "input_token_count",
+                  "value": {
+                    "stringValue": "15002"
+                  }
+                },
+                {
+                  "key": "output_token_count",
+                  "value": {
+                    "stringValue": "167"
+                  }
+                },
+                {
+                  "key": "cached_token_count",
+                  "value": {
+                    "intValue": "8960"
+                  }
+                },
+                {
+                  "key": "cache_write_token_count",
+                  "value": {
+                    "intValue": "0"
+                  }
+                },
+                {
+                  "key": "reasoning_token_count",
+                  "value": {
+                    "intValue": "49"
+                  }
+                },
+                {
+                  "key": "tool_token_count",
+                  "value": {
+                    "stringValue": "15169"
+                  }
+                },
+                {
+                  "key": "ttft_ms",
+                  "value": {
+                    "intValue": "1162"
+                  }
+                },
+                {
+                  "key": "model_reasoning_effort",
+                  "value": {
+                    "stringValue": "medium"
+                  }
+                },
+                {
+                  "key": "event.timestamp",
+                  "value": {
+                    "stringValue": "2026-09-09T01:00:00Z"
+                  }
+                },
+                {
+                  "key": "conversation.id",
+                  "value": {
+                    "stringValue": "00000000-0000-4000-8000-000000000001"
+                  }
+                },
+                {
+                  "key": "app.version",
+                  "value": {
+                    "stringValue": "0.153.2"
+                  }
+                },
+                {
+                  "key": "auth_mode",
+                  "value": {
+                    "stringValue": "fixture-auth"
+                  }
+                },
+                {
+                  "key": "originator",
+                  "value": {
+                    "stringValue": "Codex_Desktop"
+                  }
+                },
+                {
+                  "key": "user.account_id",
+                  "value": {
+                    "stringValue": "fixture-user-0001"
+                  }
+                },
+                {
+                  "key": "user.email",
+                  "value": {
+                    "stringValue": "fixture-user@example.invalid"
+                  }
+                },
+                {
+                  "key": "terminal.type",
+                  "value": {
+                    "stringValue": "fixture-terminal"
+                  }
+                },
+                {
+                  "key": "model",
+                  "value": {
+                    "stringValue": "gpt-5.6-luna"
+                  }
+                },
+                {
+                  "key": "slug",
+                  "value": {
+                    "stringValue": "fixture-session"
+                  }
+                }
+              ],
+              "traceId": "00000000000000000000000000000001",
+              "spanId": "0000000000000001",
+              "eventName": "event otel/src/events/session_telemetry.rs:1012"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

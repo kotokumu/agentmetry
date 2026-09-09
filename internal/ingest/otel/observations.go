@@ -11,7 +11,7 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace"
 )
 
-const normalizerVersion = 3
+const normalizerVersion = 4
 
 func BuildTraceObservations(traces ptrace.Traces, projection canonical.Batch) ([]observation.Observation, error) {
 	observations := make([]observation.Observation, 0, len(projection.Spans))
@@ -64,10 +64,8 @@ func BuildLogObservations(logs plog.Logs, projection canonical.Batch) ([]observa
 				}
 				record := scope.LogRecords().At(recordIndex)
 				sourceEventName := record.EventName()
-				if sourceEventName == "" {
-					if value, ok := record.Attributes().AsRaw()["event.name"].(string); ok {
-						sourceEventName = value
-					}
+				if value, ok := record.Attributes().AsRaw()["event.name"].(string); ok && value != "" {
+					sourceEventName = value
 				}
 				projected := projection.Logs[ordinal]
 				observedAt := record.ObservedTimestamp().AsTime()
