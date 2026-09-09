@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.2](https://github.com/kotokumu/agentmetry/compare/v1.18.1...v1.18.2) (2026-09-09)
+
+
+### Performance Improvements
+
+* **ingest:** batch live OTLP export commits ([#82](https://github.com/kotokumu/agentmetry/issues/82)) ([840385f](https://github.com/kotokumu/agentmetry/commit/840385f2fcf29ab3cfd164370858db76d17a1a42))
+
 ## [1.18.1](https://github.com/kotokumu/agentmetry/compare/v1.18.0...v1.18.1) (2026-09-09)
 
 
