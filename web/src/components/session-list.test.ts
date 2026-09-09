@@ -3,7 +3,7 @@ import "./session-list";
 import type { SessionList } from "./session-list";
 import type { SessionListEntry } from "../model/session-catalog";
 
-afterEach(() => document.body.replaceChildren());
+afterEach(() => { document.body.replaceChildren(); vi.unstubAllGlobals(); });
 
 const tokens = (total: number | null = null) => ({ input: null, output: null, cacheRead: null, cacheWrite: null, reasoning: null, total });
 const session = (id: string, sourceId = "codex"): SessionListEntry => ({
@@ -13,6 +13,50 @@ const session = (id: string, sourceId = "codex"): SessionListEntry => ({
 });
 
 describe("session list presentation", () => {
+  it("requests pages at the end, pauses on failure and disconnects", async () => {
+    let intersect!: IntersectionObserverCallback;
+    const disconnect = vi.fn();
+    vi.stubGlobal("IntersectionObserver", class {
+      constructor(callback: IntersectionObserverCallback) { intersect = callback; }
+      observe() {}
+      disconnect = disconnect;
+    });
+    const list = document.createElement("am-session-list") as SessionList;
+    list.sessions = [session("one")];
+    list.hasMore = true;
+    const more = vi.fn();
+    list.addEventListener("sessions-more-requested", more);
+    document.body.append(list);
+    await list.updateComplete;
+    const enter = () => intersect([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    enter(); enter();
+    expect(more).toHaveBeenCalledTimes(1);
+    list.loadingMore = true;
+    await list.updateComplete;
+    enter();
+    expect(more).toHaveBeenCalledTimes(1);
+    list.loadingMore = false;
+    list.pageFailed = true;
+    await list.updateComplete;
+    enter();
+    expect(more).toHaveBeenCalledTimes(1);
+    const retry = vi.fn();
+    list.addEventListener("sessions-retry-requested", retry);
+    list.shadowRoot!.querySelector<HTMLButtonElement>("button:not(.copy-button)")!.click();
+    expect(retry).toHaveBeenCalledOnce();
+    list.pageFailed = false;
+    list.sessions = [...list.sessions, session("two")];
+    await list.updateComplete;
+    enter();
+    expect(more).toHaveBeenCalledTimes(2);
+    list.hasMore = false;
+    await list.updateComplete;
+    enter();
+    expect(more).toHaveBeenCalledTimes(2);
+    list.remove();
+    expect(disconnect).toHaveBeenCalled();
+  });
+
   it("renders a loaded paged collection as a comparative table", async () => {
     const list = document.createElement("am-session-list") as SessionList;
     list.sessions = [session("codex-session")];
@@ -26,7 +70,7 @@ describe("session list presentation", () => {
     expect(root.textContent).toContain("Showing 1 loaded sessions");
     expect(root.textContent).toContain("codex-session");
     expect(root.textContent).toContain("120");
-    expect(root.querySelector("button[data-more]")).not.toBeNull();
+    expect(root.querySelector("button[data-more]")).toBeNull();
   });
 
   it("keeps full identity and missing values visible with generated titles", async () => {

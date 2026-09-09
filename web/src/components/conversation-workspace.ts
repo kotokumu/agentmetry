@@ -5,7 +5,7 @@ import "./activity-table";
 import { activityIdentity, type ActivityTable } from "./activity-table";
 import type { ReworkSummary } from "./rework-summary";
 import type { NavigationViewState } from "../app/navigation";
-import type { SessionListEntry, SessionListView } from "../model/session-catalog";
+import type { SessionListView } from "../model/session-catalog";
 import type { ReworkComparisonViewState } from "../model/rework-comparison";
 import "./agent-tree";
 import "./kpi-card";
@@ -63,6 +63,7 @@ export class ConversationWorkspace extends LocalizedElement {
   @state() private activityContentLoadingId = "";
   @state() private copySessionIdStatus: "idle" | "copied" | "failed" = "idle";
   @state() private showComparison = false;
+  @state() private listCollapsed = false;
   @property({ attribute: false }) requestedEvidenceFocus?: NavigationViewState["evidenceFocus"];
   private restoredEvidenceFocus = "";
   @property({ type: Boolean }) active = true;
@@ -114,10 +115,21 @@ export class ConversationWorkspace extends LocalizedElement {
     .purpose-nav button { font: inherit; padding: 9px 15px; border: 1px solid var(--am-border); border-radius: 6px; background: var(--am-surface); color: var(--am-text); cursor: pointer; }
     .purpose-nav button[aria-pressed="true"] { border-color: var(--am-accent); background: var(--am-accent-soft); font-weight: 600; }
     .purpose-nav button:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 3px; }
-    .workspace { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: start; }
-    .workspace.list-only { grid-template-columns: minmax(0, 1fr); }
+    .workspace { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; align-items: start; }
+    .workspace.list-only, .workspace.list-collapsed { grid-template-columns: minmax(0, 1fr); }
     .list-surface { display: flex; flex-direction: column; min-width: 0; }
-    .list-heading { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+    .list-heading { margin: 0; font-size: 16px; }
+    .list-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
+    .list-toggle { display: inline-grid; width: 32px; height: 32px; place-items: center; border: 1px solid var(--am-border); border-radius: 6px; padding: 0; background: var(--am-surface-raised); color: var(--am-muted); cursor: pointer; }
+    .list-toggle:hover { border-color: var(--am-border-strong); background: var(--am-surface-strong); color: var(--am-text); }
+    .list-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .list-toggle:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 2px; }
+    .list-collapsed .list-surface { display: none; }
+    .workspace[data-view="detail"] .list-surface { position: sticky; top: 12px; max-height: calc(100dvh - 24px); }
+    .list-conditions { flex: 0 0 auto; margin-bottom: 12px; max-height: 40dvh; overflow: auto; }
+    .list-conditions > summary { cursor: pointer; color: var(--am-muted); font-size: 13px; padding: 6px 0; }
+    .restore-list { display: none; justify-self: start; grid-column: 1 / -1; }
+    .list-collapsed .restore-list { display: inline-grid; }
     .list-surface > h2, .list-surface > am-session-filter, .list-surface > am-investigation-filter { flex: 0 0 auto; }
     .list-surface > am-session-list {
       flex: 1 1 auto;
@@ -132,16 +144,14 @@ export class ConversationWorkspace extends LocalizedElement {
     .session-head-panel { padding-top: 12px; padding-bottom: 12px; }
     .context-return, .list-return { display: inline-flex; margin-bottom: 11px; color: var(--am-accent); font: 700 .75rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-decoration: none; }
     .context-return:hover, .context-return:focus-visible, .list-return:hover, .list-return:focus-visible { color: var(--am-text); outline: 2px solid var(--am-accent-soft); outline-offset: 4px; }
-    .list-return { display: inline-flex; }
+    .list-return { display: none; }
     .session-head { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; }
     .session-head > div { min-width: 0; }
     .copy-session-id { flex: 0 0 auto; }
     .session-id { margin: 2px 0 0; font: .78rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
     .session-title { margin: 2px 0 0; font-size: 1.05rem; }
-    .session-switcher { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; margin-top: 10px; }
-    .session-switcher select, .session-switcher button, .copy-session-id { border: 1px solid var(--am-border); border-radius: 6px; padding: 6px 8px; background: var(--am-surface-raised); color: var(--am-text); font: inherit; }
-    .session-switcher button, .copy-session-id { cursor: pointer; }
-    .session-switcher select { min-width: 0; max-width: 100%; width: min(360px, 100%); }
+    .copy-session-id { border: 1px solid var(--am-border); border-radius: 6px; padding: 6px 8px; background: var(--am-surface-raised); color: var(--am-text); font: inherit; }
+    .copy-session-id { cursor: pointer; }
     .session-partial { color: var(--am-muted); font-size: .78rem; }
     .session-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
     .session-overview, .execution-context { margin-top: 10px; border-top: 1px solid var(--am-border); padding-top: 8px; }
@@ -150,11 +160,7 @@ export class ConversationWorkspace extends LocalizedElement {
     .context-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px; margin-top: 10px; }
     .operations-panel { margin: 0; }
     .coverage-note { margin: 6px 0 0; color: var(--am-muted); font-size: .85rem; line-height: 1.4; overflow-wrap: anywhere; }
-    .related-traces { margin-top: 6px; border-top: 1px solid var(--am-border); padding-top: 5px; }
-    .related-traces h3 { margin: 0 0 6px; font-size: .8rem; }
-    .related-traces ul { display: flex; flex-wrap: wrap; gap: 6px 12px; margin: 0; padding-left: 18px; }
-    .related-traces a { font: .75rem/1.4 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
-    .empty-settings { color: var(--am-muted); font-size: .85rem; line-height: 1.5; }
+    .empty-settings { grid-column: 1 / -1; color: var(--am-muted); font-size: .85rem; line-height: 1.5; }
     .operations-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
     .operations-heading h2 { margin: 0; }
     .operation-actions { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; }
@@ -165,6 +171,11 @@ export class ConversationWorkspace extends LocalizedElement {
     .retry { margin-top: 10px; padding: 7px 11px; }
     .agent-filter button:hover, .agent-filter button:focus-visible, .retry:hover, .retry:focus-visible { border-color: var(--am-accent); color: var(--am-accent); outline: 2px solid var(--am-accent-soft); }
     @media (max-width: 950px) {
+      .workspace { grid-template-columns: minmax(0, 1fr); }
+      .workspace[data-view="detail"] .list-surface { display: none; }
+      .workspace[data-view="list"] .detail { display: none; }
+      .list-return { display: inline-flex; }
+      .list-toggle, .list-collapsed .restore-list { display: none; }
       .context-return + .list-return { display: none; }
     }
     @media (max-width: 640px) { .session-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail { gap: 12px; } .context-grid { grid-template-columns: 1fr; } }
@@ -207,6 +218,7 @@ export class ConversationWorkspace extends LocalizedElement {
   render() {
     const sessions = this.conversations.sessions;
     const selected = this.conversations.selected;
+    const detailRequested = Boolean(this.requestedConversation);
     const selectedAgentId = selected?.agents.some(({ agentId }) => agentId === this.conversations.selectedAgentId) ? this.conversations.selectedAgentId : "";
     const visibleActivities = selected
       ? selectedAgentId
@@ -214,33 +226,36 @@ export class ConversationWorkspace extends LocalizedElement {
           ? this.conversations.agentActivityPage.activities : []
         : selected.activities
       : [];
-    const listPanel = html`<div class="panel list-surface"><h2 class="list-heading" tabindex="-1">${localization.t("app.conversations")}</h2><am-session-filter
+    const listPanel = html`<aside id="session-list-panel" class="panel list-surface" aria-label=${localization.t("app.sessions")}><div class="list-toolbar"><h2 class="list-heading" tabindex="-1">${localization.t("app.conversations")}</h2><button class="list-toggle" type="button" data-collapse-list ?hidden=${!detailRequested} aria-label=${localization.t("workspace.hideList")} title=${localization.t("workspace.hideList")} aria-expanded="true" aria-controls="session-list-panel" @click=${this.toggleList}>${sessionListToggleIcon(true)}</button></div><am-session-filter ?compact=${detailRequested}
         .sources=${this.sources.length ? this.sources : this.conversations.sources}
         .selectedSource=${this.sourceId}
         .search=${this.search}
-      ></am-session-filter><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? localization.t("workspace.queryUnavailable")) : "")}></am-investigation-filter><am-session-list
+      ></am-session-filter><details class="list-conditions"><summary>${localization.t("investigation.editConditions")}</summary><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? localization.t("workspace.queryUnavailable")) : "")}></am-investigation-filter></details><am-session-list ?compact=${detailRequested}
         .sessions=${sessions}
         .view=${this.sessionView}
         .hasMore=${this.conversations.list.hasMore}
         .loadingMore=${this.conversations.list.loadingMore}
         .pageFailed=${this.conversations.list.failed}
         @sessions-more-requested=${() => void this.conversations.list.loadMore()}
-        @sessions-retry-requested=${() => this.conversations.refreshList()}
+        @sessions-retry-requested=${() => this.conversations.list.sessions.length && this.conversations.list.hasMore ? void this.conversations.list.loadMore() : this.conversations.refreshList()}
         .loading=${this.conversations.loadingList}
         .unavailable=${this.conversations.listFailed}
         .filterActive=${Boolean(this.sourceId || this.search || hasSessionConditions(this.conditions))}
         .selected=${this.conversations.listSelection?.conversationId ?? ""}
         .selectedSource=${this.conversations.listSelection?.sourceId ?? ""}
         .locationForSession=${this.locationForSession}
-      ></am-session-list>${this.renderInitialEmptyState()}${this.renderConversationStatus()}</div>`;
-    if (!selected) return html`<section class="workspace list-only" data-view="list">${listPanel}</section>`;
-    return html`<section class="workspace" data-view="detail">
-      <div class="detail">${this.renderSelected(selected, selectedAgentId, visibleActivities)}</div>
+      ></am-session-list>${this.renderInitialEmptyState()}</aside>`;
+    return html`<section class="workspace ${!detailRequested ? "list-only" : this.listCollapsed ? "list-collapsed" : ""}" data-view=${detailRequested ? "detail" : "list"}>
+      ${listPanel}
+      <div class="detail" ?hidden=${!this.requestedConversation}>
+        <button class="list-toggle restore-list" type="button" data-show-list aria-label=${localization.t("workspace.showList")} title=${localization.t("workspace.showList")} aria-expanded="false" aria-controls="session-list-panel" @click=${this.toggleList}>${sessionListToggleIcon(false)}</button>
+        ${!selected && detailRequested ? html`<a class="list-return" href=${this.listHref} @click=${this.returnToList}>← ${localization.t("app.conversations")}</a>` : null}
+        ${selected ? this.renderSelected(selected, selectedAgentId, visibleActivities) : this.renderConversationStatus()}
+      </div>
     </section>`;
   }
 
 	protected updated() {
-    this.syncSessionSwitcher();
     if (!this.active) this.restoredEvidenceFocus = "";
     else void this.restoreEvidenceFocus();
 	  this.reportCanonicalConversation();
@@ -259,15 +274,11 @@ export class ConversationWorkspace extends LocalizedElement {
     this.dispatchEvent(new CustomEvent<ConversationSummaryDetail>("conversation-summary-changed", { detail, bubbles: true, composed: true }));
 	}
 
-  private syncSessionSwitcher() {
-    const selected = this.conversations.selected;
-    if (!selected) return;
-    const qualifiedId = `${selected.sourceId}:${selected.id}`;
-    const switcher = this.shadowRoot?.querySelector<HTMLSelectElement>("select[data-session-switcher]");
-    if (switcher && switcher.value !== qualifiedId && Array.from(switcher.options).some((option) => option.value === qualifiedId)) {
-      switcher.value = qualifiedId;
-    }
-	}
+  private readonly toggleList = async () => {
+    this.listCollapsed = !this.listCollapsed;
+    await this.updateComplete;
+    this.shadowRoot?.querySelector<HTMLButtonElement>(this.listCollapsed ? "[data-show-list]" : "[data-collapse-list]")?.focus();
+  };
 
 	private reportCanonicalConversation() {
 	  if (this.sessionView === "all") return;
@@ -284,11 +295,8 @@ export class ConversationWorkspace extends LocalizedElement {
   private renderSelected(selected: Session, selectedAgentId: string, activities: Session["activities"]) {
     const title = this.selectedCatalogEntry(selected)?.catalog?.name?.text;
     const qualifiedId = `${selected.sourceId}:${selected.id}`;
-    const loadedSessions: readonly SessionListEntry[] = this.conversations.sessions.some(({ sourceId, id }) => sourceId === selected.sourceId && id === selected.id)
-      ? this.conversations.sessions : [selected, ...this.conversations.sessions];
     return html`
       <section class="panel session-head-panel">${this.returnHref ? html`<a class="context-return" href=${this.returnHref} @click=${this.returnToOrigin}>← ${this.returnLabel}</a>` : null}<a class="list-return" href=${this.listHref} @click=${this.returnToList}>← ${localization.t("app.conversations")}</a><div class="session-head"><div><p class="eyebrow">${localization.t("workspace.selected")}</p>${title ? html`<h2 class="session-title" tabindex="-1">${title}</h2>` : null}<p class="session-id" tabindex="-1">${qualifiedId}</p></div><button class="copy-session-id" type="button" data-copy-session @click=${this.copySessionId}>${copyLabel(this.copySessionIdStatus)}</button></div>
-      <div class="session-switcher"><label for="session-switcher">${completionMsg("Switch session")}</label><select id="session-switcher" data-session-switcher .value=${qualifiedId} @change=${this.sessionChanged}>${loadedSessions.map((candidate) => html`<option value=${`${candidate.sourceId}:${candidate.id}`} ?selected=${`${candidate.sourceId}:${candidate.id}` === qualifiedId}>${candidate.catalog?.name?.text ?? candidate.id} · ${candidate.sourceId}</option>`)}</select>${this.conversations.list.hasMore ? html`<button type="button" data-session-more ?disabled=${this.conversations.list.loading || this.conversations.list.loadingMore} @click=${() => void this.conversations.list.loadMore()}>${completionMsg(this.conversations.list.loadingMore ? "Loading more" : "Load more")}</button><span class="session-partial">${completionMsg("More sessions available")}</span>` : null}${this.conversations.list.failed ? html`<button type="button" data-session-retry @click=${() => this.conversations.refreshList()}>${completionMsg("Retry list")}</button>` : null}${this.conversations.list.loadingMore ? html`<span class="session-partial" role="status">${completionMsg("Loading more")}</span>` : null}</div>
       <div class="session-metrics" aria-label=${localization.t("workspace.usageAria")}>
         <am-kpi-card compact .label=${localization.t("workspace.totalTokens")} .value=${formatOptionalNumber(selected.tokens.total)} .hint=${localization.t("workspace.inputOutput")}></am-kpi-card>
         <am-kpi-card compact .label=${completionMsg("Elapsed time")} .value=${formatDuration(selected.startedAt, selected.endedAt)} .hint=${completionMsg("Reported session interval")}></am-kpi-card>
@@ -298,7 +306,7 @@ export class ConversationWorkspace extends LocalizedElement {
         <am-kpi-card .label=${localization.t("workspace.inputTokens")} .value=${formatOptionalNumber(selected.tokens.input)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("workspace.outputTokens")} .value=${formatOptionalNumber(selected.tokens.output)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("workspace.estimatedCost")} .value=${formatCostSummary(selected.costSummary)} .hint=${costCoverageHint(selected.costSummary)}></am-kpi-card>
-      </div></details>${this.renderRelatedTraces(selected)}<p class="coverage-note">${localization.t("workspace.coverage", { state: localization.t(this.conversations.rework?.coverage.activityCoverage === "observed_projection_complete" ? "workspace.coverageComplete" : this.conversations.rework ? "workspace.coveragePartial" : "workspace.coverageUnavailable") })}</p></section>
+      </div></details><p class="coverage-note">${localization.t("workspace.coverage", { state: localization.t(this.conversations.rework?.coverage.activityCoverage === "observed_projection_complete" ? "workspace.coverageComplete" : this.conversations.rework ? "workspace.coveragePartial" : "workspace.coverageUnavailable") })}</p></section>
       <nav class="purpose-nav" aria-label=${localization.t("workspace.investigationAria")}>${([ ["execution", "workspace.execution"], ["files", "workspace.fileReads"], ["rework", "workspace.rework"] ] as const).map(([purpose, label]) => html`<button type="button" data-purpose=${purpose} aria-pressed=${String(this.purpose === purpose)} @click=${() => this.selectPurpose(purpose)}>${localization.t(label)}</button>`)}</nav>
       <am-session-file-reads
         ?hidden=${this.purpose !== "files"}
@@ -350,23 +358,6 @@ export class ConversationWorkspace extends LocalizedElement {
   private selectedCatalogEntry(selected: Session) {
     return this.conversations.list.sessions.find((candidate) => candidate.sourceId === selected.sourceId && candidate.id === selected.id);
   }
-
-  private renderRelatedTraces(selected: Session) {
-    if (!selected.traceIds.length) return null;
-    return html`<section class="related-traces" aria-label=${completionMsg("Related traces")}><h3>${completionMsg("Related traces")}</h3><ul>${selected.traceIds.map((traceId) => html`<li><a href=${this.locationForTrace(traceId)} @click=${(event: MouseEvent) => this.traceLinkSelected(event, selected, traceId)}>${traceId}</a></li>`)}</ul></section>`;
-  }
-
-  private sessionChanged = (event: Event) => {
-    const [sourceId, ...id] = (event.target as HTMLSelectElement).value.split(":");
-    if (!sourceId || !id.length) return;
-    this.dispatchEvent(new CustomEvent("session-selected", { detail: { sourceId, sessionId: id.join(":") }, bubbles: true, composed: true }));
-  };
-
-  private traceLinkSelected = (event: MouseEvent, selected: Session, traceId: string) => {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-    event.preventDefault();
-    this.dispatchEvent(new CustomEvent("trace-selected", { detail: { sourceId: selected.sourceId, conversationId: selected.id, traceId }, bubbles: true, composed: true }));
-  };
 
   private copySessionId = async () => {
     try {
@@ -551,21 +542,19 @@ export class ConversationWorkspace extends LocalizedElement {
 }
 
 const formatOptionalNumber = (value?: number | null) => value === undefined || value === null ? notReported() : localization.number(value);
+const sessionListToggleIcon = (expanded: boolean) => html`<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+  <rect x="3" y="3" width="18" height="18" rx="2"></rect>
+  <path d="M9 3v18"></path>
+  <path d=${expanded ? "m16 15-3-3 3-3" : "m14 9 3 3-3 3"}></path>
+</svg>`;
 const completionMsg = (text: string) => {
   switch (text) {
-    case "Switch session": return msg("Switch session", { id: "workspaceCompletion.switchSession" });
-    case "Load more": return msg("Load more", { id: "workspaceCompletion.loadMore" });
-    case "Loading more": return msg("Loading more", { id: "workspaceCompletion.loadingMore" });
-    case "Retry list": return msg("Retry list", { id: "workspaceCompletion.retryList" });
-    case "Loaded sessions are partial": return msg("Loaded sessions are partial", { id: "workspaceCompletion.loadedSessionsPartial" });
-    case "More sessions available": return msg("More sessions available", { id: "workspaceCompletion.moreSessionsAvailable" });
     case "Elapsed time": return msg("Elapsed time", { id: "workspaceCompletion.elapsedTime" });
     case "Reported session interval": return msg("Reported session interval", { id: "workspaceCompletion.reportedSessionInterval" });
     case "Activities": return msg("Activities", { id: "workspaceCompletion.activities" });
     case "Reported activity count": return msg("Reported activity count", { id: "workspaceCompletion.reportedActivityCount" });
     case "Agents": return msg("Agents", { id: "workspaceCompletion.agents" });
     case "Reported agent count": return msg("Reported agent count", { id: "workspaceCompletion.reportedAgentCount" });
-    case "Related traces": return msg("Related traces", { id: "workspaceCompletion.relatedTraces" });
     case "No matching sessions": return msg("No matching sessions", { id: "workspaceCompletion.noMatchingSessions" });
     case "No sessions yet": return msg("No sessions yet", { id: "workspaceCompletion.noSessionsYet" });
     case "Open Connections settings": return msg("Open Connections settings", { id: "workspaceCompletion.openConnections" });

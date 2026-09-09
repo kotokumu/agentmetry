@@ -4,7 +4,9 @@ export type MessageParameters = Readonly<Record<string, string | number>>;
 type SourceMessage = (parameters?: MessageParameters) => string;
 
 export const sourceMessages = {
-  "sessions.showAll": (_parameters: MessageParameters = {}) => msg("Show all, including child sessions", { id: "sessions.showAll" }),
+  "sessions.showAll": (_parameters: MessageParameters = {}) => msg("Show child sessions", { id: "sessions.showAll" }),
+  "workspace.hideList": () => msg("Collapse session list", { id: "workspace.hideList" }),
+  "workspace.showList": () => msg("Expand session list", { id: "workspace.showList" }),
   "sessions.telemetryScope": (_parameters: MessageParameters = {}) => msg("About session grouping and names", { id: "sessions.telemetryScope" }),
   "sessions.relationshipLimit": (_parameters: MessageParameters = {}) => msg("By default, sessions are grouped under observed roots. A root may have an unreported parent; it does not prove human creation. Claude agents sharing a session ID stay in one session.", { id: "sessions.relationshipLimit" }),
   "sessions.nameLimit": (_parameters: MessageParameters = {}) => msg("Received telemetry may contain Claude Code generated names or Codex names observed in app session-list results. Only supported, unambiguous names are shown; otherwise native session IDs are shown. Not all Codex names are available. Names are not guaranteed to match the current app display, including after manual renaming.", { id: "sessions.nameLimit" }),
@@ -23,7 +25,7 @@ export const sourceMessages = {
   "app.sessions": (_parameters: MessageParameters = {}) => msg("Sessions", { id: "app.sessions" }),
   "app.traces": (_parameters: MessageParameters = {}) => msg("Traces", { id: "app.traces" }),
   "app.usage": (_parameters: MessageParameters = {}) => msg("Usage", { id: "app.usage" }),
-  "app.connections": (_parameters: MessageParameters = {}) => msg("Connections & settings", { id: "app.connections" }),
+  "app.connections": (_parameters: MessageParameters = {}) => msg("Settings", { id: "app.connections" }),
   "app.mainNavigation": (_parameters: MessageParameters = {}) => msg("Main navigation", { id: "app.mainNavigation" }),
   "app.connectionsIntro": (_parameters: MessageParameters = {}) => msg("Review the local OTLP endpoint and optional MCP connection from this workspace.", { id: "app.connectionsIntro" }),
   "app.tracesUnavailable": (_parameters: MessageParameters = {}) => msg("Traces unavailable", { id: "app.tracesUnavailable" }),

@@ -15,6 +15,7 @@ export class SessionFilter extends LocalizedElement {
   static styles = css`
     :host { display: block; margin-bottom: 14px; }
     .filters { display: grid; grid-template-columns: minmax(180px, .72fr) minmax(260px, 1.28fr); gap: 12px; align-items: end; }
+    :host([compact]) .filters { grid-template-columns: minmax(0, 1fr); gap: 9px; }
     label { display: grid; gap: 6px; color: var(--am-muted); font: 700 12px/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .1em; }
     select, input { min-width: 0; width: 100%; border: 1px solid var(--am-border); border-radius: 7px; background: var(--am-surface-raised); color: var(--am-text); padding: 9px 10px; font: 14px/1.35 inherit; transition: border-color .18s ease, box-shadow .18s ease; }
     select:hover, input:hover { border-color: color-mix(in srgb, var(--am-border) 55%, var(--am-accent)); }

@@ -17,6 +17,27 @@ const setup = (initiallyActive = true) => {
 };
 
 describe("session list request ownership", () => {
+  it("refreshes the resident range atomically without discarding pages being read", async () => {
+    const test = setup();
+    test.requests[0].resolve({ sessions: [row("one")], nextPageToken: "p2" });
+    await vi.waitFor(() => expect(test.controller.hasMore).toBe(true));
+    const more = test.controller.loadMore();
+    test.requests[1].resolve({ sessions: [row("two")], nextPageToken: "p3" });
+    await more;
+    const refresh = test.controller.refresh();
+    test.requests[2].resolve({ sessions: [row("one")], nextPageToken: "fresh-p2" });
+    await vi.waitFor(() => expect(test.read).toHaveBeenCalledTimes(4));
+    expect(test.controller.sessions.map((s) => s.id)).toEqual(["one", "two"]);
+    expect(test.read.mock.calls[3][0].pageToken).toBe("fresh-p2");
+    test.requests[3].resolve({ sessions: [row("two")], nextPageToken: "fresh-p3" });
+    await refresh;
+    expect(test.controller.sessions.map((s) => s.id)).toEqual(["one", "two"]);
+    const next = test.controller.loadMore();
+    expect(test.read.mock.calls[4][0].pageToken).toBe("fresh-p3");
+    test.requests[4].resolve({ sessions: [row("three")], nextPageToken: "" });
+    await next;
+    expect(test.controller.sessions.map((s) => s.id)).toEqual(["one", "two", "three"]);
+  });
   it("only reads while active and ignores replies from a previous activation", async () => {
     const test = setup(false);
     await test.controller.refresh();
