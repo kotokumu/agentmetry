@@ -2494,6 +2494,14 @@
   <source><x id="0" equiv-text="${coverage}"/> · <x id="1" equiv-text="${summary.pricedCalls}"/>/<x id="2" equiv-text="${summary.eligibleCalls}"/> calls · <x id="3" equiv-text="${basis}"/></source>
   <target><x id="0" equiv-text="${coverage}"/> · <x id="1" equiv-text="${summary.pricedCalls}"/>/<x id="2" equiv-text="${summary.eligibleCalls}"/> 呼び出し · <x id="3" equiv-text="${basis}"/></target>
 </trans-unit>
+<trans-unit id="cost.rateEntry">
+  <source>Rate entry</source>
+  <target>料金表エントリ</target>
+</trans-unit>
+<trans-unit id="cost.unavailableReason">
+  <source>Unavailable reason</source>
+  <target>算定不可の理由</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

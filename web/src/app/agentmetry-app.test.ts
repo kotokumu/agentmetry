@@ -1005,7 +1005,7 @@ describe("Agentmetry app composition", () => {
     expect(children.findIndex((child) => child.classList.contains("split"))).toBeLessThan(children.findIndex((child) => child.classList.contains("operations-panel")));
   });
 
-  it("shows token totals and observed cost in the selected conversation details", async () => {
+  it("shows token totals and observed cost in the selected conversation and operation details", async () => {
     const overview = {
       ...emptyOverview,
       sessions: [{
@@ -1019,7 +1019,14 @@ describe("Agentmetry app composition", () => {
         costUsd: 0.0125,
         costSummary: { amountMicroUsd: "12500", basis: "COST_SUMMARY_BASIS_PROVIDER_REPORTED", coverage: "COST_COVERAGE_COMPLETE", eligibleCalls: "1", pricedCalls: "1" },
         agents: [],
-        activities: [],
+        activities: [{
+          id: "activity-cost", source: "claude", signal: "log", name: "api_request", kind: "response",
+          agentId: "main", runId: "session-usage", model: "claude-example", observedAt: "2026-08-11T00:00:30Z",
+          contributesToTotal: true, tokens: { input: "120", output: "30", total: "150" },
+          modelCallCost: {
+            callId: "call-cost", identityBasis: "usage_id", basis: "CALL_COST_BASIS_PROVIDER_REPORTED", amountMicroUsd: "12500",
+          },
+        }],
       }],
     } as TestOverview;
     vi.stubGlobal("fetch", overviewFetch(overview));
@@ -1040,6 +1047,14 @@ describe("Agentmetry app composition", () => {
     expect(metrics).toContain("30");
     expect(metrics).toContain("Estimated cost");
     expect(metrics).toContain("$0.0125");
+
+    const table = workspaceRootOf(app)?.querySelector<ActivityTable>("am-activity-table");
+    await vi.waitFor(() => expect(table?.activities).toHaveLength(1));
+    await table?.updateComplete;
+    expect(table?.shadowRoot?.querySelector("tbody tr td:nth-child(4)")?.textContent).toContain("$0.0125");
+    table?.shadowRoot?.querySelector<HTMLButtonElement>('tr[data-activity-id="activity-cost"] button.select-activity')?.click();
+    await table?.updateComplete;
+    expect(table?.shadowRoot?.querySelector("#activity-detail")?.textContent).toContain("$0.0125");
   });
 
   it("preserves conversation view state and page scroll across session changes", async () => {

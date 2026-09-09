@@ -1,9 +1,11 @@
 import { css, html, type PropertyValues } from "lit";
+import { msg } from "@lit/localize";
 import { customElement, property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { Activity, ActivityDirection } from "../model/telemetry";
 import { agentDisplayLabel } from "../model/agent-label";
 import { NOT_APPLICABLE, notReported } from "../presentation/missing-data";
+import { formatMicroUSD } from "../presentation/cost";
 import { LocalizedElement } from "../localization/localized-element";
 import { localization } from "../localization/localization";
 import { activityContentPreview, activityContentStyles, renderActivityContent } from "./activity-content";
@@ -44,7 +46,7 @@ export class ActivityTable extends LocalizedElement {
     .table-scroll { max-width: 100%; overflow-x: auto; scrollbar-color: var(--am-border-strong) var(--am-track); }
     .reading-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr); gap: 20px; align-items: start; }
     .activity-list, .activity-detail { min-width: 0; }
-    table { width: 100%; border-collapse: collapse; min-width: 530px; }
+    table { width: 100%; border-collapse: collapse; min-width: 640px; }
     thead { position: sticky; top: 0; z-index: 1; background: color-mix(in srgb, var(--am-surface-raised) 96%, transparent); backdrop-filter: blur(12px); }
     th { color: var(--am-muted); font: 0.75rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; text-transform: uppercase; letter-spacing: .08em; text-align: left; }
     th, td { padding: 9px 8px; border-bottom: 1px solid var(--am-border); vertical-align: top; }
@@ -54,7 +56,8 @@ export class ActivityTable extends LocalizedElement {
     th:nth-child(1) { width: 90px; }
     th:nth-child(2) { min-width: 180px; }
     th:nth-child(3) { width: 130px; }
-    th:nth-child(4) { width: 100px; }
+    th:nth-child(4) { width: 110px; }
+    th:nth-child(5) { width: 100px; }
     td { color: var(--am-text); font-size: 14px; }
     code { color: var(--am-accent); font: .7rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; }
     .preview { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; color: var(--am-muted); overflow-wrap: anywhere; margin-top: 4px; }
@@ -166,7 +169,7 @@ export class ActivityTable extends LocalizedElement {
       : selected && this.agentFilterId && selected.agentId !== this.agentFilterId ? "outside_agent_filter"
         : this.selectedVisibility;
     return html`<div class="reading-layout"><div class="activity-list">${this.continuation("newer")}<div class="table-scroll"><table>
-      <thead><tr><th>${localization.t("activity.time")}</th><th>${localization.t("activity.activity")}</th><th>${localization.t("activity.agent")}</th><th>${localization.t("activity.trace")}</th></tr></thead>
+      <thead><tr><th>${localization.t("activity.time")}</th><th>${localization.t("activity.activity")}</th><th>${localization.t("activity.agent")}</th><th>${msg("Estimated cost", { id: "cost.amount" })}</th><th>${localization.t("activity.trace")}</th></tr></thead>
 	  <tbody>${repeat(visibleActivities, activityIdentity, (activity, index) => {
         const highlighted = Boolean(this.highlightedTraceId && this.highlightedSpanId)
           && activity.signal === "trace"
@@ -178,6 +181,7 @@ export class ActivityTable extends LocalizedElement {
         <td>${formatTime(activity.observedAt)}</td>
         <td><button type="button" class="select-activity" aria-controls="activity-detail" aria-pressed=${String(isSelected)} @click=${() => this.selectActivity(activity)}><strong>${operationLabel(activity)}</strong><span class="preview">${content ? `${content.slice(0, 120)}${content.length > 120 ? "…" : ""}` : contentAvailabilityLabel(activity.contentEvidence, activity.content)}</span>${isSelected ? html`<span class="selected-label">${localization.t("activity.selected")}</span>` : null}</button><br><span class="kind">${activity.kind}</span>${activity.status ? html`<span class="status">${activityStatusLabel(activity.status)}</span>` : null}${correlationView(activity)}</td>
         <td><strong>${agentDisplayLabel(activity)}</strong><span class="agent-model">${activity.agentId && agentDisplayLabel(activity) !== activity.agentId ? `${activity.agentId} ` : ""}(${activity.model || notReported()})</span></td>
+        <td>${activityCost(activity)}</td>
         <td>${this.traceView(activity)}</td>
       </tr>`;})}</tbody>
     </table></div>${this.continuation("older")}</div>${this.detailView(selected, selectedVisibility)}</div>`;
@@ -240,6 +244,12 @@ export class ActivityTable extends LocalizedElement {
           <dt>${localization.t("activity.trace")}</dt><dd>${activity.traceId || activity.relatedTraceId || NOT_APPLICABLE}</dd>
           <dt>${localization.t("activity.span")}</dt><dd>${activity.spanId || activity.relatedSpanId || NOT_APPLICABLE}</dd>
           <dt>${localization.t("activity.tokens")}</dt><dd>${tokenView(activity)}</dd>
+          <dt>${msg("Model call ID", { id: "cost.callId" })}</dt><dd>${activity.modelCallCost?.callId || activity.modelCallRef?.callId || NOT_APPLICABLE}</dd>
+          <dt>${msg("Call identity", { id: "cost.identity" })}</dt><dd>${activity.modelCallCost?.identityBasis || activity.modelCallRef?.identityBasis || NOT_APPLICABLE}</dd>
+          <dt>${msg("Cost basis", { id: "cost.basis" })}</dt><dd>${activity.modelCallCost?.basis || (activity.modelCallRef ? activity.modelCallRef.evidenceRole : NOT_APPLICABLE)}</dd>
+          <dt>${msg("Estimated cost", { id: "cost.amount" })}</dt><dd>${activityCost(activity)}</dd>
+          ${activity.modelCallCost?.rateEntryId ? html`<dt>${msg("Rate entry", { id: "cost.rateEntry" })}</dt><dd>${activity.modelCallCost.rateEntryId}</dd>` : null}
+          ${activity.modelCallCost?.primaryReason ? html`<dt>${msg("Unavailable reason", { id: "cost.unavailableReason" })}</dt><dd>${activity.modelCallCost.primaryReason}</dd>` : null}
           ${activity.targetAgentId || activity.targetAgentType ? html`<dt>${localization.t("activity.targetAgent")}</dt><dd>${activity.targetAgentId || notReported()} · ${activity.targetAgentType || notReported()}</dd>` : null}
           ${activity.promptId ? html`<dt>${localization.t("activity.prompt")}</dt><dd>${activity.promptId}</dd>` : null}
           ${activity.usageId ? html`<dt>${localization.t("activity.usage")}</dt><dd>${activity.usageId}</dd>` : null}
@@ -401,6 +411,11 @@ export const operationLabel = (activity: Activity) => {
     case "reasoning": return localization.t("common.reasoning");
     default: return localization.t("activity.telemetryEvent");
   }
+};
+
+const activityCost = (activity: Activity) => {
+  const amount = activity.modelCallCost?.amountMicroUsd;
+  return amount === null || amount === undefined ? "—" : formatMicroUSD(amount);
 };
 const tokenView = (activity: Activity) => {
   return html`<am-token-breakdown .usage=${activity.tokens} .compact=${true}></am-token-breakdown>
