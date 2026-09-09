@@ -81,7 +81,7 @@ func TestMigrateRebuildsTrueLegacySchemaAndPreservesJournalMetadata(t *testing.T
 	if result.CompactBytes >= result.SourceBytes*3/10 {
 		t.Fatalf("compact database %d bytes is not below 30%% of legacy %d bytes", result.CompactBytes, result.SourceBytes)
 	}
-	wantStages := []ProgressStage{ProgressReplay, ProgressReplay, ProgressValidation, ProgressReplacement}
+	wantStages := []ProgressStage{ProgressReplay, ProgressReplay, ProgressProjection, ProgressValidation, ProgressReplacement}
 	if len(progress) != len(wantStages) {
 		t.Fatalf("migration progress = %#v", progress)
 	}

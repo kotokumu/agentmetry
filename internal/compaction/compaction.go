@@ -31,6 +31,7 @@ type ProgressStage string
 
 const (
 	ProgressReplay      ProgressStage = "replay"
+	ProgressProjection  ProgressStage = "projection"
 	ProgressValidation  ProgressStage = "validation"
 	ProgressReplacement ProgressStage = "replacement"
 )
@@ -180,7 +181,7 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		_ = closeSource()
 		return fail(fmt.Errorf("create Atlas-schema candidate: %w", err))
 	}
-	expected := validationExpectation{journals: make([]journalIdentity, 0, reader.Total())}
+	expected := validationExpectation{}
 	expected.rates = int64(len(rateHistory))
 	if report != nil {
 		report(Progress{Stage: ProgressReplay, Total: reader.Total()})
@@ -206,7 +207,9 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("write compact export batch ending at %d: %w", items[len(items)-1].record.Ordinal, err))
 		}
 		for _, item := range items {
-			expected.add(item.record, item.accepted)
+			if err := expected.add(item.record, item.accepted); err != nil {
+				return failBuild(destination, reader, closeSource, candidatePath, err)
+			}
 		}
 		if report != nil {
 			report(Progress{Stage: ProgressReplay, Completed: items[len(items)-1].record.Ordinal, Total: reader.Total()})
@@ -216,6 +219,12 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		_ = destination.Close()
 		_ = closeSource()
 		return fail(err)
+	}
+	if report != nil {
+		report(Progress{Stage: ProgressProjection, Completed: reader.Total(), Total: reader.Total()})
+	}
+	if err := destination.FinalizeReplay(ctx); err != nil {
+		return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("rebuild compact projections: %w", err))
 	}
 	if err := destination.Close(); err != nil {
 		_ = closeSource()
@@ -242,15 +251,32 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 	if err := validateCandidate(ctx, candidatePath, expected); err != nil {
 		return fail(err)
 	}
+	semanticSpans, err := candidateSpanCount(ctx, candidatePath)
+	if err != nil {
+		return fail(err)
+	}
 	compactInfo, err := os.Stat(candidatePath)
 	if err != nil {
 		return fail(err)
 	}
 	return Result{
-		CandidatePath: candidatePath, Exports: int64(len(expected.journals)),
-		SemanticSpans: int64(len(expected.spanKeys)), SourceBytes: sourceBytes,
+		CandidatePath: candidatePath, Exports: expected.journalCount,
+		SemanticSpans: semanticSpans, SourceBytes: sourceBytes,
 		CompactBytes: compactInfo.Size(),
 	}, nil
+}
+
+func candidateSpanCount(ctx context.Context, path string) (int64, error) {
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		return 0, fmt.Errorf("open candidate to count spans: %w", err)
+	}
+	defer database.Close()
+	var count int64
+	if err := database.QueryRowContext(ctx, `SELECT COUNT(*) FROM spans`).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count candidate spans: %w", err)
+	}
+	return count, nil
 }
 
 type replayItem struct {

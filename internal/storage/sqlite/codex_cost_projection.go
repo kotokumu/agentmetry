@@ -22,26 +22,29 @@ WHERE support_kind = 'corroborating' AND call_id IN (
 )`, sessionID); err != nil {
 		return fmt.Errorf("clear Codex corroborating trace supports: %w", err)
 	}
-	const candidates = `WITH base AS (
-  SELECT DISTINCT s.activity_id, s.trace_id, links.call_id
-  FROM spans s
-  JOIN logs l ON l.source = 'codex' AND l.source = s.source AND l.run_id = s.run_id
-    AND l.usage_id <> '' AND l.usage_id = s.usage_id
+	const candidates = `WITH identities AS (
+  SELECT l.run_id, l.usage_id, MIN(links.call_id) AS call_id
+  FROM logs l
   JOIN model_call_activity_links links ON links.activity_id = l.activity_id
-  WHERE s.source = 'codex'
-    AND s.run_id = ?
-    AND COALESCE(json_extract(s.attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
+  WHERE l.source = 'codex' AND l.run_id = ? AND l.usage_id <> ''
+  GROUP BY l.run_id, l.usage_id HAVING COUNT(DISTINCT links.call_id) = 1
 ), unique_candidates AS (
-  SELECT activity_id, MIN(trace_id) AS trace_id, MIN(call_id) AS call_id
-  FROM base GROUP BY activity_id HAVING COUNT(DISTINCT call_id) = 1
+  SELECT s.activity_id, MIN(s.trace_id) AS trace_id, MIN(identities.call_id) AS call_id
+  FROM spans s JOIN identities USING (run_id, usage_id)
+  WHERE s.source = 'codex'
+    AND COALESCE(json_extract(s.attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
+  GROUP BY s.activity_id
 )
 `
 	if _, err := transaction.ExecContext(ctx, candidates+`INSERT INTO model_call_activity_links (activity_id, call_id, evidence_role)
 SELECT activity_id, call_id, 'corroborating' FROM unique_candidates`, sessionID); err != nil {
 		return fmt.Errorf("project Codex corroborating links: %w", err)
 	}
-	if _, err := transaction.ExecContext(ctx, candidates+`INSERT INTO model_call_trace_supports (call_id, trace_id, activity_id, support_kind)
-SELECT call_id, trace_id, activity_id, 'corroborating' FROM unique_candidates WHERE trace_id <> ''`, sessionID); err != nil {
+	if _, err := transaction.ExecContext(ctx, `INSERT INTO model_call_trace_supports (call_id, trace_id, activity_id, support_kind)
+SELECT links.call_id, spans.trace_id, spans.activity_id, 'corroborating'
+FROM spans JOIN model_call_activity_links links USING (activity_id)
+WHERE spans.source = 'codex' AND spans.run_id = ? AND spans.trace_id <> ''
+  AND links.evidence_role = 'corroborating'`, sessionID); err != nil {
 		return fmt.Errorf("project Codex corroborating trace supports: %w", err)
 	}
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM model_call_trace_memberships

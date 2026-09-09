@@ -155,26 +155,7 @@ func newSessionGraph(nodes map[sessionRef]struct{}, candidates map[sessionRef]ma
 		}
 	}
 
-	for node := range nodes {
-		positions := make(map[sessionRef]int)
-		path := make([]sessionRef, 0, 4)
-		current := node
-		for {
-			if cycleStart, exists := positions[current]; exists {
-				for _, cyclic := range path[cycleStart:] {
-					delete(parents, cyclic)
-				}
-				break
-			}
-			positions[current] = len(path)
-			path = append(path, current)
-			parent, exists := parents[current]
-			if !exists {
-				break
-			}
-			current = parent
-		}
-	}
+	removeCyclicSessionParents(nodes, parents)
 
 	graph := sessionGraph{
 		parentBySession: parents,
@@ -182,15 +163,9 @@ func newSessionGraph(nodes map[sessionRef]struct{}, candidates map[sessionRef]ma
 		membersByRoot:   make(map[sessionRef][]sessionRef),
 	}
 	for node := range nodes {
-		root := node
-		for {
-			parent, exists := parents[root]
-			if !exists {
-				break
-			}
-			root = parent
-		}
-		graph.rootBySession[node] = root
+		resolveSessionRoot(node, parents, graph.rootBySession)
+	}
+	for node, root := range graph.rootBySession {
 		graph.membersByRoot[root] = append(graph.membersByRoot[root], node)
 	}
 	for root := range graph.membersByRoot {
@@ -199,6 +174,70 @@ func newSessionGraph(nodes map[sessionRef]struct{}, candidates map[sessionRef]ma
 		})
 	}
 	return graph
+}
+
+// removeCyclicSessionParents visits each single-parent edge at most once. All
+// nodes in a cycle become roots, matching the prior ambiguity-safe policy.
+func removeCyclicSessionParents(nodes map[sessionRef]struct{}, parents map[sessionRef]sessionRef) {
+	const (
+		visiting = 1
+		visited  = 2
+	)
+	state := make(map[sessionRef]uint8, len(nodes))
+	for node := range nodes {
+		if state[node] != 0 {
+			continue
+		}
+		positions := make(map[sessionRef]int)
+		path := make([]sessionRef, 0, 4)
+		current := node
+		for state[current] == 0 {
+			state[current] = visiting
+			positions[current] = len(path)
+			path = append(path, current)
+			parent, exists := parents[current]
+			if !exists {
+				break
+			}
+			current = parent
+		}
+		if state[current] == visiting {
+			if cycleStart, exists := positions[current]; exists {
+				for _, cyclic := range path[cycleStart:] {
+					delete(parents, cyclic)
+				}
+			}
+		}
+		for _, ref := range path {
+			state[ref] = visited
+		}
+	}
+}
+
+// resolveSessionRoot uses path compression so a long delegation chain is
+// resolved in linear total time instead of being rescanned for every member.
+func resolveSessionRoot(node sessionRef, parents, roots map[sessionRef]sessionRef) sessionRef {
+	if root, exists := roots[node]; exists {
+		return root
+	}
+	path := make([]sessionRef, 0, 4)
+	current := node
+	for {
+		if root, exists := roots[current]; exists {
+			current = root
+			break
+		}
+		path = append(path, current)
+		parent, exists := parents[current]
+		if !exists {
+			break
+		}
+		current = parent
+	}
+	for _, ref := range path {
+		roots[ref] = current
+	}
+	return current
 }
 
 func (graph sessionGraph) root(ref sessionRef) sessionRef {

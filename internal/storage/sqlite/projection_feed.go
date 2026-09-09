@@ -92,61 +92,9 @@ type projectionPlan struct {
 }
 
 func buildProjectionPlan(ctx context.Context, transaction *sql.Tx, batch canonical.Batch) (projectionPlan, error) {
-	keys := make([]map[string]string, 0, len(batch.Spans))
-	for _, span := range batch.Spans {
-		if canonical.IsSemanticSpan(span) {
-			keys = append(keys, map[string]string{"trace": span.TraceID, "span": span.SpanID})
-		}
-	}
-	previousSpans := make(map[storedSpanKey]storedSpanScope)
-	if len(keys) > 0 {
-		payload, err := json.Marshal(keys)
-		if err != nil {
-			return projectionPlan{}, fmt.Errorf("encode projected span keys: %w", err)
-		}
-		rows, err := transaction.QueryContext(ctx, `WITH requested AS (
-  SELECT json_extract(value, '$.trace') AS trace_id, json_extract(value, '$.span') AS span_id
-  FROM json_each(?)
-)
-SELECT spans.trace_id, spans.span_id, spans.source, spans.run_id, spans.agent_id, spans.activity_kind,
-  spans.usage_id, COALESCE(json_extract(spans.attributes_json, '$."gen_ai.usage.role"'), ''),
-  spans.parent_span_id, spans.status, spans.started_at, spans.ended_at,
-  spans.input_tokens, spans.output_tokens, spans.cache_read_tokens,
-  spans.cache_write_tokens, spans.reasoning_tokens, spans.input_tokens_reported,
-  spans.output_tokens_reported, spans.cache_read_tokens_reported,
-  spans.cache_write_tokens_reported, spans.reasoning_tokens_reported, spans.cost_usd,
-  CASE WHEN spans.parent_span_id <> '' AND NOT EXISTS (
-    SELECT 1 FROM spans AS parent WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
-  ) THEN 1 ELSE 0 END
-FROM spans JOIN requested USING (trace_id, span_id)`, string(payload))
-		if err != nil {
-			return projectionPlan{}, fmt.Errorf("read previous span scopes: %w", err)
-		}
-		for rows.Next() {
-			var key storedSpanKey
-			var scope storedSpanScope
-			if err := rows.Scan(
-				&key.traceID, &key.spanID, &scope.source, &scope.session, &scope.agentID, &scope.activityKind,
-				&scope.usageID, &scope.usageRole,
-				&scope.parentSpanID, &scope.status, &scope.startedAt, &scope.endedAt,
-				&scope.input, &scope.output, &scope.cacheRead, &scope.cacheWrite, &scope.reasoning,
-				&scope.inputReported, &scope.outputReported, &scope.cacheReadReported,
-				&scope.cacheWriteReported, &scope.reasoningReported, &scope.cost, &scope.missingParent,
-			); err != nil {
-				_ = rows.Close()
-				return projectionPlan{}, fmt.Errorf("scan previous span scope: %w", err)
-			}
-			scope.trace = key.traceID
-			scope.present = true
-			previousSpans[key] = scope
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return projectionPlan{}, fmt.Errorf("iterate previous span scopes: %w", err)
-		}
-		if err := rows.Close(); err != nil {
-			return projectionPlan{}, fmt.Errorf("close previous span scopes: %w", err)
-		}
+	previousSpans, err := loadPreviousSpanScopes(ctx, transaction, batch)
+	if err != nil {
+		return projectionPlan{}, err
 	}
 
 	targetSet := query.NewChangeTargetSet(projectionTargetLimit)
@@ -185,6 +133,66 @@ FROM spans JOIN requested USING (trace_id, span_id)`, string(payload))
 		previousSessions: previousSessions,
 		incremental:      rollupCanApplyIncrementally(batch, previousSpans),
 	}, nil
+}
+
+func loadPreviousSpanScopes(ctx context.Context, transaction *sql.Tx, batch canonical.Batch) (map[storedSpanKey]storedSpanScope, error) {
+	keys := make([]map[string]string, 0, len(batch.Spans))
+	for _, span := range batch.Spans {
+		if canonical.IsSemanticSpan(span) {
+			keys = append(keys, map[string]string{"trace": span.TraceID, "span": span.SpanID})
+		}
+	}
+	previousSpans := make(map[storedSpanKey]storedSpanScope)
+	if len(keys) > 0 {
+		payload, err := json.Marshal(keys)
+		if err != nil {
+			return nil, fmt.Errorf("encode projected span keys: %w", err)
+		}
+		rows, err := transaction.QueryContext(ctx, `WITH requested AS (
+  SELECT json_extract(value, '$.trace') AS trace_id, json_extract(value, '$.span') AS span_id
+  FROM json_each(?)
+)
+SELECT spans.trace_id, spans.span_id, spans.source, spans.run_id, spans.agent_id, spans.activity_kind,
+  spans.usage_id, COALESCE(json_extract(spans.attributes_json, '$."gen_ai.usage.role"'), ''),
+  spans.parent_span_id, spans.status, spans.started_at, spans.ended_at,
+  spans.input_tokens, spans.output_tokens, spans.cache_read_tokens,
+  spans.cache_write_tokens, spans.reasoning_tokens, spans.input_tokens_reported,
+  spans.output_tokens_reported, spans.cache_read_tokens_reported,
+  spans.cache_write_tokens_reported, spans.reasoning_tokens_reported, spans.cost_usd,
+  CASE WHEN spans.parent_span_id <> '' AND NOT EXISTS (
+    SELECT 1 FROM spans AS parent WHERE parent.trace_id = spans.trace_id AND parent.span_id = spans.parent_span_id
+  ) THEN 1 ELSE 0 END
+FROM spans JOIN requested USING (trace_id, span_id)`, string(payload))
+		if err != nil {
+			return nil, fmt.Errorf("read previous span scopes: %w", err)
+		}
+		for rows.Next() {
+			var key storedSpanKey
+			var scope storedSpanScope
+			if err := rows.Scan(
+				&key.traceID, &key.spanID, &scope.source, &scope.session, &scope.agentID, &scope.activityKind,
+				&scope.usageID, &scope.usageRole,
+				&scope.parentSpanID, &scope.status, &scope.startedAt, &scope.endedAt,
+				&scope.input, &scope.output, &scope.cacheRead, &scope.cacheWrite, &scope.reasoning,
+				&scope.inputReported, &scope.outputReported, &scope.cacheReadReported,
+				&scope.cacheWriteReported, &scope.reasoningReported, &scope.cost, &scope.missingParent,
+			); err != nil {
+				_ = rows.Close()
+				return nil, fmt.Errorf("scan previous span scope: %w", err)
+			}
+			scope.trace = key.traceID
+			scope.present = true
+			previousSpans[key] = scope
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			return nil, fmt.Errorf("iterate previous span scopes: %w", err)
+		}
+		if err := rows.Close(); err != nil {
+			return nil, fmt.Errorf("close previous span scopes: %w", err)
+		}
+	}
+	return previousSpans, nil
 }
 
 func addPublishedSessionTargets(ctx context.Context, transaction *sql.Tx, targets *query.ChangeTargetSet, sessions map[sessionKey]struct{}) error {
