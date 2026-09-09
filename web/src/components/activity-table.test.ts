@@ -21,6 +21,53 @@ afterEach(() => {
 });
 
 describe("activity reading", () => {
+  it("shows each operation cost in the row and the selected operation detail", async () => {
+    const table = new ActivityTable();
+    table.activities = [
+      activity({
+        modelCallCost: {
+          callId: "call-a", identityBasis: "usage_id", basis: "rate_card_estimate", amountMicroUsd: 3_345n,
+          rateEntryId: "codex:gpt-example:2026-09-01",
+        },
+      }),
+      activity({
+        id: "activity-b", spanId: "span-b",
+        modelCallCost: {
+          callId: "call-b", identityBasis: "journal_evidence_fallback", basis: "unavailable", amountMicroUsd: null,
+          primaryReason: "rate_not_found",
+        },
+      }),
+      activity({ id: "activity-c", spanId: "span-c", modelCallCost: undefined }),
+    ];
+    document.body.append(table);
+    await table.updateComplete;
+
+    const headers = Array.from(table.shadowRoot?.querySelectorAll("thead th") ?? [], (cell) => cell.textContent?.trim());
+    const costs = Array.from(table.shadowRoot?.querySelectorAll("tbody tr td:nth-child(4)") ?? [], (cell) => cell.textContent?.trim());
+    expect(headers).toContain("Estimated cost");
+    expect(costs).toEqual(["$0.003345", "—", "—"]);
+
+    table.shadowRoot?.querySelector<HTMLButtonElement>('tr[data-activity-id="activity-a"] button.select-activity')?.click();
+    await table.updateComplete;
+    const detail = table.shadowRoot?.querySelector("#activity-detail")?.textContent ?? "";
+    expect(detail).toContain("Model call ID");
+    expect(detail).toContain("call-a");
+    expect(detail).toContain("Call identity");
+    expect(detail).toContain("usage_id");
+    expect(detail).toContain("Cost basis");
+    expect(detail).toContain("rate_card_estimate");
+    expect(detail).toContain("Estimated cost");
+    expect(detail).toContain("$0.003345");
+    expect(detail).toContain("Rate entry");
+    expect(detail).toContain("codex:gpt-example:2026-09-01");
+
+    table.shadowRoot?.querySelector<HTMLButtonElement>('tr[data-activity-id="activity-b"] button.select-activity')?.click();
+    await table.updateComplete;
+    const unavailableDetail = table.shadowRoot?.querySelector("#activity-detail")?.textContent ?? "";
+    expect(unavailableDetail).toContain("Unavailable reason");
+    expect(unavailableDetail).toContain("rate_not_found");
+  });
+
   it("shows the model reported by each activity next to its agent", async () => {
     const table = new ActivityTable();
     table.activities = [activity({ agentId: "agent-01", agentDefinition: "Reviewer", model: "GPT-6 Astra" }), activity({ id: "activity-b", agentId: "agent-02", model: "" })];
