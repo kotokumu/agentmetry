@@ -159,7 +159,9 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		_ = tx.Rollback()
 		return sourceDB.Close()
 	}
-	reader, err := newLegacyReader(ctx, tx)
+	pipeline := newReplayPipeline(ctx)
+	defer pipeline.Close()
+	reader, err := newLegacyReader(pipeline.ctx, tx)
 	if err != nil {
 		_ = closeSource()
 		return fail(err)
@@ -186,34 +188,22 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 	if report != nil {
 		report(Progress{Stage: ProgressReplay, Total: reader.Total()})
 	}
-	chunkSource := replayChunkSource{reader: reader}
-	for {
-		records, err := chunkSource.Next()
-		if err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, err)
-		}
-		if len(records) == 0 {
-			break
-		}
-		items, err := prepareReplayChunk(ctx, records, profiles)
-		if err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, err)
-		}
-		exports := make([]ingest.AcceptedExport, len(items))
-		for index := range items {
-			exports[index] = items[index].accepted
-		}
-		if err := destination.CommitReplayBatch(ctx, exports); err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("write compact export batch ending at %d: %w", items[len(items)-1].record.Ordinal, err))
-		}
-		for _, item := range items {
+	preparedSource := &preparingReplaySource{
+		chunks: replayChunkSource{reader: reader}, profiles: profiles,
+	}
+	err = pipeline.commitPreparedBatches(preparedSource, destination, func(batch replayBatch) error {
+		for _, item := range batch.items {
 			if err := expected.add(item.record, item.accepted); err != nil {
-				return failBuild(destination, reader, closeSource, candidatePath, err)
+				return err
 			}
 		}
 		if report != nil {
-			report(Progress{Stage: ProgressReplay, Completed: items[len(items)-1].record.Ordinal, Total: reader.Total()})
+			report(Progress{Stage: ProgressReplay, Completed: batch.lastOrdinal(), Total: reader.Total()})
 		}
+		return nil
+	})
+	if err != nil {
+		return failBuild(destination, reader, closeSource, candidatePath, err)
 	}
 	if err := reader.Close(); err != nil {
 		_ = destination.Close()
@@ -289,10 +279,13 @@ type replayChunkSource struct {
 	pending *storedExport
 }
 
-func (source *replayChunkSource) Next() ([]storedExport, error) {
+func (source *replayChunkSource) Next(ctx context.Context) ([]storedExport, error) {
 	records := make([]storedExport, 0, maxReplayBatchRecords)
 	restoredBytes := 0
 	for len(records) < maxReplayBatchRecords {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		var record storedExport
 		if source.pending != nil {
 			record = *source.pending
