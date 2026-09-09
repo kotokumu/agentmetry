@@ -244,6 +244,19 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
     await selectSessionFromList(app, current.id);
+    const reworkButton = await vi.waitFor(() => {
+      const button = workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='rework']");
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    reworkButton.click();
+    await vi.waitFor(() => expect(workspaceOf(app)?.purpose).toBe("rework"));
+    const reworkSummary = await vi.waitFor(() => {
+      const summary = workspaceRootOf(app)?.querySelector("am-rework-summary");
+      expect(summary).toBeTruthy();
+      return summary!;
+    });
+    reworkSummary.dispatchEvent(new CustomEvent("comparison-requested", { bubbles: true, composed: true }));
     const comparisonPanel = () => workspaceRootOf(app)?.querySelector<ReworkComparison>("am-rework-comparison");
     await vi.waitFor(() => expect(comparisonPanel()?.state.status).toBe("loading"));
     releaseRoots();
@@ -586,6 +599,13 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
     await selectSessionFromList(app, "session-rework");
+    const reworkButton = await vi.waitFor(() => {
+      const button = workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='rework']");
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    reworkButton.click();
+    await vi.waitFor(() => expect(workspaceOf(app)?.purpose).toBe("rework"));
 
     const panel = await vi.waitFor(() => {
       const result = workspaceRootOf(app)?.querySelector("am-rework-summary");
@@ -619,6 +639,13 @@ describe("Agentmetry app composition", () => {
     const app = document.createElement("am-app") as AgentmetryApp;
     document.body.append(app);
     await selectSessionFromList(app, current.id);
+    const reworkButton = await vi.waitFor(() => {
+      const button = workspaceRootOf(app)?.querySelector<HTMLButtonElement>("[data-purpose='rework']");
+      expect(button).toBeTruthy();
+      return button!;
+    });
+    reworkButton.click();
+    await vi.waitFor(() => expect(workspaceOf(app)?.purpose).toBe("rework"));
 
     await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector("am-rework-summary")).not.toBeNull());
     workspaceRootOf(app)?.querySelector("am-rework-summary")?.shadowRoot?.querySelector<HTMLButtonElement>(".compare-action")?.click();
@@ -765,7 +792,8 @@ describe("Agentmetry app composition", () => {
     expect(app.shadowRoot?.querySelector("am-mcp-connection")).toBeNull();
     expect(app.shadowRoot?.querySelector("am-language-selector")).toBeNull();
     expect(app.shadowRoot?.querySelector(".kpis")).toBeNull();
-    expect(workspaceRootOf(app)?.querySelector(".workspace.list-only")).not.toBeNull();
+    expect(workspaceRootOf(app)?.querySelector(".workspace.list-only")).toBeNull();
+    expect(workspaceRootOf(app)?.querySelector(".detail")?.textContent).toContain("Select a session");
   });
 
   it("shows the current-origin MCP connection details", async () => {
@@ -1289,7 +1317,7 @@ describe("Agentmetry app composition", () => {
   });
 
   it("returns from the fourth episode to its source, agent, filters and focused link", async () => {
-    history.replaceState({ view: { selectedAgentId: "reviewer" } }, "", "/conversations/codex/origin?range=7d&source=codex&q=failed");
+    history.replaceState({ view: { selectedAgentId: "reviewer", purpose: "rework" } }, "", "/conversations/codex/origin?range=7d&source=codex&q=failed");
     const conversation: TestSession = {
       id: "origin", sourceId: "codex", sources: [], startedAt: "2026-08-11T00:00:00Z", endedAt: "2026-08-11T00:01:00Z",
       activityCount: 1, tokens: emptyOverview.tokens,

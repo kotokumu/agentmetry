@@ -271,6 +271,96 @@ func TestSessionCostSummaryReportsPartialCoverageWithoutLegacyTotal(t *testing.T
 	}
 }
 
+func TestSessionListCostSummariesLoadsOnePageInOneQuery(t *testing.T) {
+	store, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	ctx := context.Background()
+	at := time.Date(2026, 9, 9, 1, 0, 0, 0, time.UTC)
+	usage := canonical.TokenUsage{Input: 100, Output: 50, CacheRead: 20, CacheWrite: 10, Presence: canonical.TokenPresence{Input: true, Output: true, CacheRead: true, CacheWrite: true}}
+	for _, sessionID := range []string{"root", "child", "other"} {
+		if err := store.CommitExport(ctx, costExport(at, "codex", "codex.sse_event", "gen_ai.response.completed", sessionID, "gpt-6-astra", usage, map[string]any{"gen_ai.usage.role": "authoritative_call"})); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := store.CommitExport(ctx, costExport(at, "codex", "codex.sse_event", "gen_ai.response.completed", "other", "unknown-model", usage, map[string]any{"gen_ai.usage.role": "authoritative_call"})); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitExport(ctx, costExport(at, "claude", "api_request", "gen_ai.model.request", "root", "claude-model", canonical.TokenUsage{}, map[string]any{
+		"gen_ai.usage.role": "authoritative_call", "gen_ai.client.request.id": "claude-root", "cost_usd_micros": int64(25),
+	})); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.CommitBatch(ctx, canonical.Batch{SessionLinks: []canonical.SessionLink{{Source: "codex", ParentSessionID: "root", ChildSessionID: "child", ObservedAt: at}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	reader := &countingSQLReader{sqlReader: store.readDB}
+	summaries, err := sessionListCostSummaries(ctx, reader, []query.SessionListEntry{
+		{Session: query.Session{SourceID: "codex", ID: "root"}},
+		{Session: query.Session{SourceID: "codex", ID: "other"}},
+		{Session: query.Session{SourceID: "claude", ID: "root"}},
+		{Session: query.Session{SourceID: "codex", ID: "empty"}},
+	}, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.queryCount != 1 {
+		t.Fatalf("cost page queries = %d, want 1", reader.queryCount)
+	}
+	root := summaries[sessionRef{sourceID: "codex", sessionID: "root"}]
+	other := summaries[sessionRef{sourceID: "codex", sessionID: "other"}]
+	claude := summaries[sessionRef{sourceID: "claude", sessionID: "root"}]
+	if root.EligibleCalls != 2 || root.PricedCalls != 2 || root.AmountMicroUSD == nil || *root.AmountMicroUSD != 6_690 || root.Basis != "rate_card_estimate" || root.Coverage != "complete" {
+		t.Fatalf("root cost summary = %#v", root)
+	}
+	if other.EligibleCalls != 2 || other.PricedCalls != 1 || other.AmountMicroUSD == nil || *other.AmountMicroUSD != 3_345 || other.Coverage != "partial" || len(other.UnpricedReasons) != 1 || other.UnpricedReasons[0].Reason != "rate_not_found" {
+		t.Fatalf("other cost summary = %#v", other)
+	}
+	if claude.EligibleCalls != 1 || claude.PricedCalls != 1 || claude.AmountMicroUSD == nil || *claude.AmountMicroUSD != 25 {
+		t.Fatalf("Claude cost summary = %#v", claude)
+	}
+	empty := summaries[sessionRef{sourceID: "codex", sessionID: "empty"}]
+	if empty.EligibleCalls != 0 || empty.PricedCalls != 0 || empty.AmountMicroUSD != nil || empty.Coverage != "unavailable" {
+		t.Fatalf("empty cost summary = %#v", empty)
+	}
+
+	reader.queryCount = 0
+	all, err := sessionListCostSummaries(ctx, reader, []query.SessionListEntry{
+		{Session: query.Session{SourceID: "codex", ID: "root"}},
+		{Session: query.Session{SourceID: "codex", ID: "child"}},
+	}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reader.queryCount != 1 {
+		t.Fatalf("all-view cost page queries = %d, want 1", reader.queryCount)
+	}
+	if all[sessionRef{sourceID: "codex", sessionID: "root"}].EligibleCalls != 1 || all[sessionRef{sourceID: "codex", sessionID: "child"}].EligibleCalls != 1 {
+		t.Fatalf("all-view cost summaries = %#v", all)
+	}
+
+	queryPage, err := query.NewPage(0, 100)
+	if err != nil {
+		t.Fatal(err)
+	}
+	page, err := store.ListSessions(ctx, query.SessionListFilter{Since: at.Add(-time.Hour), View: query.SessionListRoots, Page: queryPage})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range page.Sessions {
+		if entry.SourceID == "codex" && entry.ID == "other" {
+			if entry.CostSummary.Coverage != "partial" || entry.CostUSD != nil {
+				t.Fatalf("public list cost summary = %#v legacy=%v", entry.CostSummary, entry.CostUSD)
+			}
+			return
+		}
+	}
+	t.Fatal("public list omitted codex:other")
+}
+
 func TestDashboardCostSelectsWholeActiveRootGroup(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

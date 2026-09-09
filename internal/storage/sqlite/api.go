@@ -244,11 +244,12 @@ LIMIT ? OFFSET ?`, unitID, unitID), filter.SourceID, filter.SourceID, formatTime
 		return query.SessionPage{}, fmt.Errorf("close session rollups: %w", err)
 	}
 	page := query.SessionPage{Sessions: sessions[:min(len(sessions), pageSize)], AppliedView: filter.View}
+	costSummaries, err := sessionListCostSummaries(ctx, reader, page.Sessions, filter.View == query.SessionListRoots)
+	if err != nil {
+		return query.SessionPage{}, err
+	}
 	for index := range page.Sessions {
-		page.Sessions[index].CostSummary, err = sessionListCostSummary(ctx, reader, page.Sessions[index].SourceID, page.Sessions[index].ID, filter.View == query.SessionListRoots)
-		if err != nil {
-			return query.SessionPage{}, err
-		}
+		page.Sessions[index].CostSummary = costSummaries[sessionRef{sourceID: page.Sessions[index].SourceID, sessionID: page.Sessions[index].ID}]
 		page.Sessions[index].CostUSD = completeLegacyCost(page.Sessions[index].CostSummary)
 	}
 	if len(sessions) > pageSize {

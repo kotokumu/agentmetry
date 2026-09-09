@@ -19,6 +19,7 @@ type ExplicitSelection = Readonly<{ currentKey: string; baselineId: string }>;
 export class SessionComparisonController {
   private readonly dependencies: Required<SessionComparisonDependencies>;
   private readonly comparisonTask: Task<readonly [boolean, string, string, string, string], ComparisonResult>;
+  private cache?: ComparisonResult;
   private explicitSelection?: ExplicitSelection;
   private observedCurrentKey = "";
   private wasDisconnected = false;
@@ -34,7 +35,8 @@ export class SessionComparisonController {
       },
       task: async ([active, currentSourceId, currentSessionId, baselineSourceId, baselineSessionId], { signal }) => {
         const key = comparisonKey(currentSourceId, currentSessionId, baselineSourceId, baselineSessionId);
-        if (!active || !currentSourceId || !currentSessionId || !baselineSourceId || !baselineSessionId) return { key };
+        const cached = this.cache?.key === key ? this.cache : undefined;
+        if (!active || !currentSourceId || !currentSessionId || !baselineSourceId || !baselineSessionId || cached) return cached ?? { key };
         const report = await this.dependencies.reader.compareRework({
           baseline: { sourceId: baselineSourceId, sessionId: baselineSessionId },
           current: { sourceId: currentSourceId, sessionId: currentSessionId },
@@ -43,7 +45,9 @@ export class SessionComparisonController {
           || report.current.sourceId !== currentSourceId || report.current.sessionId !== currentSessionId) {
           throw new Error("Comparison identities do not match the requested conversations.");
         }
-        return { key, report };
+        const result = { key, report };
+        this.cache = result;
+        return result;
       },
     });
   }
@@ -120,14 +124,20 @@ export class SessionComparisonController {
     this.host.requestUpdate();
   }
 
-  refresh(): Promise<void> { return this.comparisonTask.run().then(() => undefined); }
+  refresh(): Promise<void> { this.cache = undefined; return this.comparisonTask.run().then(() => undefined); }
 
   applyLiveUpdate(window: LiveUpdateWindow): Promise<void> {
     const baseline = this.baselineTarget;
     const current = this.dependencies.current();
-    if (!baseline || !current || (!window.resyncRequired
-      && !affectsSession(window.targets, baseline.sourceId, baseline.id)
-      && !affectsSession(window.targets, current.sourceId, current.id))) return Promise.resolve();
+    const baselineSourceId = baseline?.sourceId ?? this.cache?.report?.baseline.sourceId ?? "";
+    const baselineSessionId = baseline?.id ?? this.cache?.report?.baseline.sessionId ?? "";
+    const currentSourceId = current?.sourceId ?? this.cache?.report?.current.sourceId ?? "";
+    const currentSessionId = current?.id ?? this.cache?.report?.current.sessionId ?? "";
+    if (!baselineSessionId || !currentSessionId || (!window.resyncRequired
+      && !affectsSession(window.targets, baselineSourceId, baselineSessionId)
+      && !affectsSession(window.targets, currentSourceId, currentSessionId))) return Promise.resolve();
+    this.cache = undefined;
+    if (!this.dependencies.isActive()) return Promise.resolve();
     return this.refresh();
   }
 }

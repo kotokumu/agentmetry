@@ -156,4 +156,23 @@ describe("SessionComparisonController", () => {
       expect(host.comparison.viewState()).toMatchObject({ status: "ready", selectedBaselineId: "older", rows: [{ delta }] });
     }
   });
+
+  it("invalidates a hidden comparison and refreshes it once active again", async () => {
+    setupPair();
+    const compareRework = vi.fn().mockImplementation(async (pair: ReworkComparisonPair) => pairResult(pair));
+    comparisonClient = { compareRework };
+    const host = mount();
+    await vi.waitFor(() => expect(host.comparison.viewState().status).toBe("ready"));
+    expect(compareRework).toHaveBeenCalledTimes(1);
+
+    active = false;
+    host.requestUpdate();
+    await host.updateComplete;
+    await host.comparison.applyLiveUpdate({ targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: "codex", sessionId: "current", traceId: "" }], resyncRequired: false, throughCursor: "hidden" });
+    expect(compareRework).toHaveBeenCalledTimes(1);
+
+    active = true;
+    host.requestUpdate();
+    await vi.waitFor(() => expect(compareRework).toHaveBeenCalledTimes(2));
+  });
 });

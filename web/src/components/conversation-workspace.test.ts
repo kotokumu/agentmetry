@@ -1,13 +1,15 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "./conversation-workspace";
 import { agentmetryClient } from "../api/agentmetry-client";
+import { ProjectionTargetKind } from "../gen/agentmetry/v1/agentmetry_pb";
 import type { Session } from "../model/telemetry";
+import { LIVE_UPDATE_EVENT } from "../controllers/live-update-controller";
 
 const tokens = { input: 10, output: 5, cacheRead: null, cacheWrite: null, reasoning: null, total: 15 };
 const session = (id: string, sourceId = "codex", title?: string): Session & { catalog?: { role: "root"; rootSessionId: string; parentSessionId: string; name?: { text: string; origin: "claude_code.generate_session_title" } } } => ({
   id, sourceId, sources: [{ id: sourceId, label: sourceId }], traceIds: ["trace/exact"],
   startedAt: "2026-09-08T00:00:00Z", endedAt: "2026-09-08T00:01:30Z", activityCount: 3, agentCount: 2,
-  tokens, costUsd: 0.12, agents: [
+  tokens, costUsd: 0.12, costSummary: { amountMicroUsd: 120_000n, basis: "rate_card_estimate", coverage: "complete", eligibleCalls: 1n, pricedCalls: 1n, unpricedReasons: [] }, agents: [
     { agentId: "agent-1", activityCount: 2, tokens }, { agentId: "agent-2", activityCount: 1, tokens },
   ], activities: [], hasMore: false,
   ...(title ? { catalog: { role: "root", rootSessionId: id, parentSessionId: "", name: { text: title, origin: "claude_code.generate_session_title" } } } : {}),
@@ -32,6 +34,21 @@ afterEach(() => {
 });
 
 describe("conversation workspace completion", () => {
+  it("starts with a compact session sidebar and an unselected detail pane", async () => {
+    const listSessionsPage = vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [session("one")], nextPageToken: "" });
+    const workspace = document.createElement("am-conversation-workspace");
+    document.body.append(workspace);
+    await workspace.updateComplete;
+    await vi.waitFor(() => expect(listSessionsPage).toHaveBeenCalled());
+    await workspace.updateComplete;
+
+    expect(workspace.shadowRoot!.querySelector(".workspace")!.classList.contains("list-only")).toBe(false);
+    expect(workspace.shadowRoot!.querySelector("am-session-list")!.hasAttribute("compact")).toBe(true);
+    expect(workspace.shadowRoot!.querySelector<HTMLElement>(".detail")!.hidden).toBe(false);
+    expect(workspace.shadowRoot!.querySelector(".detail")!.textContent).toContain("Select a session");
+    expect(listSessionsPage.mock.calls[0]![0].pageSize).toBe(20);
+  });
+
   it("keeps the two-pane layout and a list return while detail is loading or unavailable", async () => {
     vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [session("one")], nextPageToken: "" });
     vi.spyOn(agentmetryClient, "getSessionRework").mockRejectedValue(new Error("unused"));
@@ -62,6 +79,88 @@ describe("conversation workspace completion", () => {
     expect((selected.mock.calls[0]![0] as CustomEvent).detail).toEqual({ sourceId: "claude", sessionId: "two" });
     expect(workspace.shadowRoot!.querySelector("select[data-session-switcher]")).toBeNull();
     expect(workspace.shadowRoot!.querySelector("button[data-session-more]")).toBeNull();
+  });
+
+  it("defers rework analysis until the rework view is opened", async () => {
+    const selected = session("one");
+    vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [selected], nextPageToken: "" });
+    vi.spyOn(agentmetryClient, "getSession").mockResolvedValue(selected);
+    const getSessionRework = vi.spyOn(agentmetryClient, "getSessionRework").mockResolvedValue(undefined as never);
+    const workspace = document.createElement("am-conversation-workspace") as import("./conversation-workspace").ConversationWorkspace;
+    workspace.requestedConversation = { sourceId: selected.sourceId, conversationId: selected.id };
+    document.body.append(workspace);
+    await vi.waitFor(() => expect(workspace.shadowRoot!.querySelector(".session-head-panel")).toBeTruthy());
+    expect(getSessionRework).not.toHaveBeenCalled();
+
+    workspace.purpose = "rework";
+    await workspace.updateComplete;
+    await vi.waitFor(() => expect(getSessionRework).toHaveBeenCalledTimes(1));
+
+    workspace.purpose = "execution";
+    await workspace.updateComplete;
+    workspace.purpose = "rework";
+    await workspace.updateComplete;
+    await Promise.resolve();
+    expect(getSessionRework).toHaveBeenCalledTimes(1);
+
+    workspace.purpose = "execution";
+    await workspace.updateComplete;
+    let applied = Promise.resolve();
+    window.dispatchEvent(new CustomEvent(LIVE_UPDATE_EVENT, { detail: {
+      targets: [{ kind: ProjectionTargetKind.SESSION, sourceId: selected.sourceId, sessionId: selected.id, traceId: "" }],
+      resyncRequired: false,
+      throughCursor: "updated",
+      waitUntil: (promise: Promise<unknown>) => { applied = promise.then(() => undefined); },
+    } }));
+    await applied;
+    expect(getSessionRework).toHaveBeenCalledTimes(1);
+    workspace.purpose = "rework";
+    await workspace.updateComplete;
+    await vi.waitFor(() => expect(getSessionRework).toHaveBeenCalledTimes(2));
+  });
+
+  it("defers comparison work until the comparison panel is opened", async () => {
+    const selected = session("one");
+    vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [selected, { ...session("older"), startedAt: "2026-09-07T00:00:00Z", endedAt: "2026-09-07T00:01:30Z" }], nextPageToken: "" });
+    vi.spyOn(agentmetryClient, "getSession").mockResolvedValue(selected);
+    vi.spyOn(agentmetryClient, "getSessionRework").mockResolvedValue(undefined as never);
+    const compareRework = vi.spyOn(agentmetryClient, "compareRework").mockReturnValue(new Promise(() => undefined));
+    const workspace = document.createElement("am-conversation-workspace") as import("./conversation-workspace").ConversationWorkspace;
+    workspace.requestedConversation = { sourceId: selected.sourceId, conversationId: selected.id };
+    workspace.purpose = "rework";
+    document.body.append(workspace);
+    await vi.waitFor(() => expect(workspace.shadowRoot!.querySelector("am-rework-summary")).toBeTruthy());
+    expect(compareRework).not.toHaveBeenCalled();
+
+    workspace.shadowRoot!.querySelector("am-rework-summary")!.dispatchEvent(new CustomEvent("comparison-requested", { bubbles: true, composed: true }));
+    await workspace.updateComplete;
+    await vi.waitFor(() => expect(compareRework).toHaveBeenCalledTimes(1));
+  });
+
+  it("defers the root comparison list in the all-sessions view", async () => {
+    const selected = session("child");
+    const older = { ...session("older"), startedAt: "2026-09-07T00:00:00Z", endedAt: "2026-09-07T00:01:30Z" };
+    const listSessionsPage = vi.spyOn(agentmetryClient, "listSessionsPage").mockImplementation(async (query) => ({
+      sessions: query.view === "all" ? [selected] : [selected, older], nextPageToken: "",
+    }));
+    vi.spyOn(agentmetryClient, "getSession").mockResolvedValue(selected);
+    vi.spyOn(agentmetryClient, "getSessionRework").mockResolvedValue(undefined as never);
+    vi.spyOn(agentmetryClient, "compareRework").mockReturnValue(new Promise(() => undefined));
+    const workspace = document.createElement("am-conversation-workspace") as import("./conversation-workspace").ConversationWorkspace;
+    workspace.sessionView = "all";
+    workspace.purpose = "rework";
+    workspace.requestedConversation = { sourceId: selected.sourceId, conversationId: selected.id };
+    document.body.append(workspace);
+    await vi.waitFor(() => expect(listSessionsPage.mock.calls.some(([query]) => query.view === "all")).toBe(true));
+    expect(listSessionsPage.mock.calls.some(([query]) => query.view === "roots")).toBe(false);
+
+    const summary = await vi.waitFor(() => {
+      const value = workspace.shadowRoot!.querySelector("am-rework-summary");
+      expect(value).toBeTruthy();
+      return value!;
+    });
+    summary.dispatchEvent(new CustomEvent("comparison-requested", { bubbles: true, composed: true }));
+    await vi.waitFor(() => expect(listSessionsPage.mock.calls.some(([query]) => query.view === "roots")).toBe(true));
   });
 
   it("preserves the list element and its scroll position across session navigation", async () => {
@@ -116,6 +215,12 @@ describe("conversation workspace completion", () => {
     await workspace.updateComplete;
     expect(workspace.shadowRoot!.querySelector(".workspace")?.classList.contains("list-collapsed")).toBe(false);
     expect(workspace.shadowRoot!.querySelector("am-session-list")).toBe(list);
+
+    collapse.click();
+    await workspace.updateComplete;
+    workspace.requestedConversation = undefined;
+    await workspace.updateComplete;
+    expect(workspace.shadowRoot!.querySelector(".workspace")?.classList.contains("list-collapsed")).toBe(false);
   });
 
   it("prioritizes a reported title, keeps the full id, and copies the exact id", async () => {
@@ -136,9 +241,13 @@ describe("conversation workspace completion", () => {
     const header = workspace.shadowRoot!.querySelector(".session-head-panel")!;
     const primaryCards = Array.from(header.querySelectorAll(".session-metrics")[0]!.querySelectorAll<HTMLElement>("am-kpi-card"));
     await Promise.all(primaryCards.map((card) => (card as unknown as { updateComplete: Promise<unknown> }).updateComplete));
-    expect(primaryCards).toHaveLength(4);
+    expect(primaryCards).toHaveLength(5);
     expect(primaryCards.every((card) => card.hasAttribute("compact"))).toBe(true);
-    expect(primaryCards.map((card) => card.shadowRoot?.textContent).join(" ")).toContain("1 min 30 s");
+    const primaryText = primaryCards.map((card) => card.shadowRoot?.textContent).join(" ");
+    expect(primaryText).toContain("1 min 30 s");
+    expect(primaryText).toContain("Estimated cost");
+    expect(primaryText).toContain("$0.12");
+    expect(header.querySelector(".session-overview")!.textContent).not.toContain("Estimated cost");
     expect(header.textContent).not.toContain("trace/exact");
     expect(header.querySelector('a[href^="/traces/"]')).toBeNull();
     expect(header.textContent).not.toContain("participants");

@@ -90,12 +90,73 @@ func sessionCostSummary(ctx context.Context, reader sqlReader, sourceID string, 
 	return loadCostSummary(ctx, reader, `WHERE c.source = ? AND c.native_session_id IN (SELECT value FROM json_each(?))`, sourceID, string(payload))
 }
 
-func sessionListCostSummary(ctx context.Context, reader sqlReader, sourceID, sessionID string, roots bool) (query.CostSummary, error) {
-	if !roots {
-		return sessionCostSummary(ctx, reader, sourceID, []string{sessionID})
+// sessionListCostSummaries hydrates one resident list page without issuing a
+// separate model-call query for every row. The requested roots are expanded to
+// native member IDs before joining model_calls so SQLite can use the
+// (source, native_session_id, filter_at) index.
+func sessionListCostSummaries(ctx context.Context, reader sqlReader, sessions []query.SessionListEntry, roots bool) (map[sessionRef]query.CostSummary, error) {
+	type requestedSession struct {
+		SourceID  string `json:"source"`
+		SessionID string `json:"session"`
 	}
-	return loadCostSummary(ctx, reader, `LEFT JOIN session_memberships sm ON sm.source = c.source AND sm.session_id = c.native_session_id
-WHERE c.source = ? AND COALESCE(sm.root_session_id, c.native_session_id) = ?`, sourceID, sessionID)
+	requested := make([]requestedSession, 0, len(sessions))
+	calls := make(map[sessionRef]map[string]modelcall.Attribution, len(sessions))
+	for _, session := range sessions {
+		ref := sessionRef{sourceID: session.SourceID, sessionID: session.ID}
+		if _, exists := calls[ref]; exists {
+			continue
+		}
+		requested = append(requested, requestedSession{SourceID: ref.sourceID, SessionID: ref.sessionID})
+		calls[ref] = make(map[string]modelcall.Attribution)
+	}
+	if len(requested) == 0 {
+		return make(map[sessionRef]query.CostSummary), nil
+	}
+	payload, _ := json.Marshal(requested)
+	members := `SELECT source, unit_id, unit_id AS native_session_id FROM requested`
+	if roots {
+		members += ` UNION
+SELECT requested.source, requested.unit_id, membership.session_id
+FROM requested
+JOIN session_memberships membership
+  ON membership.source = requested.source AND membership.root_session_id = requested.unit_id`
+	}
+	rows, err := reader.QueryContext(ctx, `WITH requested AS (
+  SELECT json_extract(value, '$.source') AS source,
+    json_extract(value, '$.session') AS unit_id
+  FROM json_each(?)
+), members AS (`+members+`)
+SELECT members.source, members.unit_id, call.call_id, attribution.basis,
+  attribution.amount_micro_usd, attribution.primary_reason
+FROM members
+JOIN model_calls call INDEXED BY model_calls_session_filter_idx
+  ON call.source = members.source AND call.native_session_id = members.native_session_id
+JOIN model_call_attributions attribution ON attribution.call_id = call.call_id`, string(payload))
+	if err != nil {
+		return nil, fmt.Errorf("query session list model call costs: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sourceID, sessionID, callID, basis, reason string
+		var amount sql.NullInt64
+		if err := rows.Scan(&sourceID, &sessionID, &callID, &basis, &amount, &reason); err != nil {
+			return nil, fmt.Errorf("scan session list model call cost: %w", err)
+		}
+		attribution := modelcall.Attribution{Basis: parseCostBasis(basis), Reason: parseReason(reason)}
+		if amount.Valid {
+			value := amount.Int64
+			attribution.AmountMicroUSD = &value
+		}
+		calls[sessionRef{sourceID: sourceID, sessionID: sessionID}][callID] = attribution
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate session list model call costs: %w", err)
+	}
+	summaries := make(map[sessionRef]query.CostSummary, len(calls))
+	for ref, attributedCalls := range calls {
+		summaries[ref] = costSummaryView(modelcall.SummarizeCost(attributedCalls))
+	}
+	return summaries, nil
 }
 
 func traceCostSummary(ctx context.Context, reader sqlReader, traceID string) (query.CostSummary, error) {
