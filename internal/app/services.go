@@ -1,6 +1,7 @@
 package app
 
 import (
+	"context"
 	"io/fs"
 	"net/http"
 	"time"
@@ -16,7 +17,7 @@ import (
 )
 
 type Backend interface {
-	ingest.ExportCommitter
+	ingest.ExportBatchCommitter
 	query.OverviewReader
 	query.ConversationReader
 	query.DashboardReader
@@ -34,10 +35,12 @@ type Services struct {
 	OTLPReceiver    *otel.Receiver
 	OTLPHTTPHandler http.Handler
 	Dashboard       http.Handler
+	committer       *ingest.BatchingExportCommitter
 }
 
 func NewServices(backend Backend, assets fs.FS, now func() time.Time) Services {
-	receiver := otel.NewReceiver(backend, builtin.Registry())
+	committer := ingest.NewBatchingExportCommitter(backend)
+	receiver := otel.NewReceiver(committer, builtin.Registry())
 	planImporter := planusage.NewImporter(backend, builtin.PlanUsageParser)
 	mux := http.NewServeMux()
 	mux.Handle("/mcp", mcpserver.New(backend, now))
@@ -48,5 +51,10 @@ func NewServices(backend Backend, assets fs.FS, now func() time.Time) Services {
 		OTLPReceiver:    receiver,
 		OTLPHTTPHandler: receiver.HTTPHandler(),
 		Dashboard:       mux,
+		committer:       committer,
 	}
+}
+
+func (services Services) Close(ctx context.Context) error {
+	return services.committer.Close(ctx)
 }

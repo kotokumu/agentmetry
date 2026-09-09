@@ -22,8 +22,10 @@ func (store *Store) PutPlanUsage(ctx context.Context, snapshot planusage.Snapsho
 	if len(raw) == 0 {
 		raw = []byte("{}")
 	}
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for plan usage writer: %w", err)
+	}
+	defer store.unlockWrite()
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin plan usage commit: %w", err)
