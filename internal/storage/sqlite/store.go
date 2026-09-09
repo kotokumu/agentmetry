@@ -28,7 +28,7 @@ type Store struct {
 	readDB     *sql.DB
 	profiles   sourceplugin.Registry
 	owner      *ownership.Lock
-	writeMu    sync.Mutex
+	writeGate  chan struct{}
 	notifyMu   sync.Mutex
 	notify     chan struct{}
 	generation string
@@ -104,7 +104,8 @@ func open(path string, applyBuiltinRates bool, profiles ...sourceplugin.Registry
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(1)
 
-	store := &Store{db: database, owner: owner, notify: make(chan struct{})}
+	store := &Store{db: database, owner: owner, writeGate: make(chan struct{}, 1), notify: make(chan struct{})}
+	store.writeGate <- struct{}{}
 	if len(profiles) > 0 {
 		store.profiles = profiles[0]
 	}
@@ -227,8 +228,10 @@ func (store *Store) configure(ctx context.Context) error {
 }
 
 func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) error {
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for telemetry writer: %w", err)
+	}
+	defer store.unlockWrite()
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin telemetry commit: %w", err)
@@ -278,25 +281,45 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 }
 
 func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedExport) error {
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
-	prepared, err := prepareExport(accepted)
-	if err != nil {
-		return err
+	return store.CommitExportBatch(ctx, []ingest.AcceptedExport{accepted})
+}
+
+func (store *Store) CommitExportBatch(ctx context.Context, accepted []ingest.AcceptedExport) error {
+	if len(accepted) == 0 {
+		return fmt.Errorf("commit OTLP export batch: no exports")
 	}
+	prepared := make([]preparedExport, len(accepted))
+	for index := range accepted {
+		if err := ctx.Err(); err != nil {
+			return fmt.Errorf("prepare OTLP export %d: %w", index+1, err)
+		}
+		var err error
+		prepared[index], err = prepareExport(accepted[index])
+		if err != nil {
+			return fmt.Errorf("prepare OTLP export %d: %w", index+1, err)
+		}
+	}
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for OTLP export writer: %w", err)
+	}
+	defer store.unlockWrite()
 	transaction, err := store.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("begin OTLP export commit: %w", err)
+		return fmt.Errorf("begin OTLP export batch commit: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-	sequence, err := store.commitExportTx(ctx, transaction, accepted, prepared)
-	if err != nil {
-		return err
+	changed := false
+	for index := range accepted {
+		sequence, err := store.commitExportTx(ctx, transaction, accepted[index], prepared[index])
+		if err != nil {
+			return fmt.Errorf("commit OTLP export %d: %w", index+1, err)
+		}
+		changed = changed || sequence > 0
 	}
 	if err := transaction.Commit(); err != nil {
-		return fmt.Errorf("commit OTLP export: %w", err)
+		return fmt.Errorf("commit OTLP export batch: %w", err)
 	}
-	if sequence > 0 {
+	if changed {
 		store.signalProjectionChange()
 	}
 	return nil
@@ -311,8 +334,10 @@ func (candidate *ReplayCandidate) CommitReplayBatch(ctx context.Context, exports
 		return fmt.Errorf("commit replay batch: no exports")
 	}
 	store := candidate.store
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for replay writer: %w", err)
+	}
+	defer store.unlockWrite()
 	if candidate.finalized {
 		return fmt.Errorf("commit replay batch: candidate is finalized")
 	}
@@ -334,6 +359,19 @@ func (candidate *ReplayCandidate) CommitReplayBatch(ctx context.Context, exports
 		return fmt.Errorf("commit replay batch: %w", err)
 	}
 	return nil
+}
+
+func (store *Store) lockWrite(ctx context.Context) error {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-store.writeGate:
+		return nil
+	}
+}
+
+func (store *Store) unlockWrite() {
+	store.writeGate <- struct{}{}
 }
 
 func (store *Store) commitExportTx(ctx context.Context, transaction *sql.Tx, accepted ingest.AcceptedExport, prepared preparedExport) (int64, error) {

@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"context"
+	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 type recordingHTTPClient struct {
@@ -87,5 +92,113 @@ func TestPlanUsageImportParsesPostsAndRendersAStatusLine(t *testing.T) {
 	}
 	if got := output.String(); !strings.Contains(got, "5h 25.0% used") || !strings.Contains(got, "168h 60.0% used") {
 		t.Fatalf("unexpected status line: %q", got)
+	}
+}
+
+type fakeGRPCServerLifecycle struct {
+	blockGraceful bool
+	graceful      atomic.Bool
+	stopped       atomic.Bool
+	release       chan struct{}
+	stopOnce      sync.Once
+}
+
+func newFakeGRPCServerLifecycle(blockGraceful bool) *fakeGRPCServerLifecycle {
+	return &fakeGRPCServerLifecycle{blockGraceful: blockGraceful, release: make(chan struct{})}
+}
+
+func (server *fakeGRPCServerLifecycle) GracefulStop() {
+	server.graceful.Store(true)
+	if server.blockGraceful {
+		<-server.release
+	}
+}
+
+func (server *fakeGRPCServerLifecycle) Stop() {
+	server.stopped.Store(true)
+	server.stopOnce.Do(func() { close(server.release) })
+}
+
+type fakeHTTPServerLifecycle struct {
+	shutdownError error
+	blockShutdown bool
+	shutdown      atomic.Bool
+	closed        atomic.Bool
+	release       chan struct{}
+	closeOnce     sync.Once
+}
+
+func newFakeHTTPServerLifecycle(blockShutdown bool, shutdownError error) *fakeHTTPServerLifecycle {
+	return &fakeHTTPServerLifecycle{
+		shutdownError: shutdownError,
+		blockShutdown: blockShutdown,
+		release:       make(chan struct{}),
+	}
+}
+
+func (server *fakeHTTPServerLifecycle) Shutdown(ctx context.Context) error {
+	server.shutdown.Store(true)
+	if server.blockShutdown {
+		select {
+		case <-server.release:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return server.shutdownError
+}
+
+func (server *fakeHTTPServerLifecycle) Close() error {
+	server.closed.Store(true)
+	server.closeOnce.Do(func() { close(server.release) })
+	return nil
+}
+
+type fakeServiceLifecycle struct {
+	closed         atomic.Bool
+	waitForContext bool
+}
+
+func (services *fakeServiceLifecycle) Close(ctx context.Context) error {
+	services.closed.Store(true)
+	if services.waitForContext {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	return nil
+}
+
+func TestShutdownServingStopsEveryOwnerAfterOneShutdownError(t *testing.T) {
+	wantErr := errors.New("OTLP shutdown failed")
+	grpcServer := newFakeGRPCServerLifecycle(false)
+	otlpServer := newFakeHTTPServerLifecycle(false, wantErr)
+	dashboardServer := newFakeHTTPServerLifecycle(false, nil)
+	services := &fakeServiceLifecycle{}
+
+	err := shutdownServing(context.Background(), grpcServer, otlpServer, dashboardServer, services)
+
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("shutdownServing error = %v, want %v", err, wantErr)
+	}
+	if !grpcServer.graceful.Load() || !otlpServer.shutdown.Load() || !dashboardServer.shutdown.Load() || !services.closed.Load() {
+		t.Fatal("shutdownServing did not stop every runtime owner")
+	}
+}
+
+func TestShutdownServingForcesTransportsAndCancelsServicesAtDeadline(t *testing.T) {
+	grpcServer := newFakeGRPCServerLifecycle(true)
+	otlpServer := newFakeHTTPServerLifecycle(true, nil)
+	dashboardServer := newFakeHTTPServerLifecycle(true, nil)
+	services := &fakeServiceLifecycle{waitForContext: true}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+
+	err := shutdownServing(ctx, grpcServer, otlpServer, dashboardServer, services)
+
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("shutdownServing error = %v, want deadline exceeded", err)
+	}
+	if !grpcServer.stopped.Load() || !otlpServer.closed.Load() || !dashboardServer.closed.Load() || !services.closed.Load() {
+		t.Fatal("shutdownServing did not force every runtime owner to stop")
 	}
 }

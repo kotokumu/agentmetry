@@ -118,6 +118,61 @@ func TestReplayCandidateDeferredProjectionMatchesSequentialCommit(t *testing.T) 
 	}
 }
 
+func TestLiveExportBatchMatchesSequentialCommit(t *testing.T) {
+	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	exports := replayEquivalenceExports(at)
+	originalRandRead := randRead
+	t.Cleanup(func() { randRead = originalRandRead })
+
+	randRead = deterministicRandRead()
+	rates := billing.BuiltinOpenAIRates()
+	reference, err := open(filepath.Join(t.TempDir(), "reference.db"), false, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = reference.Close() })
+	if err := reference.ReplaceRateHistoryForReplay(context.Background(), rates); err != nil {
+		t.Fatal(err)
+	}
+	for _, exported := range exports {
+		if err := reference.CommitExport(context.Background(), exported); err != nil {
+			t.Fatal(err)
+		}
+	}
+	referenceSnapshot := logicalDatabaseSnapshot(t, reference.db)
+	referencePublic := publicReplaySnapshot(t, reference, at)
+
+	randRead = deterministicRandRead()
+	batched, err := open(filepath.Join(t.TempDir(), "batched.db"), false, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = batched.Close() })
+	if err := batched.ReplaceRateHistoryForReplay(context.Background(), rates); err != nil {
+		t.Fatal(err)
+	}
+	if err := batched.CommitExportBatch(context.Background(), exports); err != nil {
+		t.Fatal(err)
+	}
+
+	if got := logicalDatabaseSnapshot(t, batched.db); got != referenceSnapshot {
+		t.Fatalf("live batch differs from sequential commit\n%s", firstSnapshotDifference(referenceSnapshot, got))
+	}
+	if got := publicReplaySnapshot(t, batched, at); got != referencePublic {
+		t.Fatalf("live batch public queries differ from sequential commit\nwant: %s\n got: %s", referencePublic, got)
+	}
+	var referenceChanges, batchedChanges int
+	if err := reference.db.QueryRow(`SELECT COUNT(*) FROM projection_changes`).Scan(&referenceChanges); err != nil {
+		t.Fatal(err)
+	}
+	if err := batched.db.QueryRow(`SELECT COUNT(*) FROM projection_changes`).Scan(&batchedChanges); err != nil {
+		t.Fatal(err)
+	}
+	if referenceChanges != batchedChanges {
+		t.Fatalf("projection changes = %d, want %d", batchedChanges, referenceChanges)
+	}
+}
+
 func TestReplayCandidateRollsBackWholeBatchAtFirstInvalidExport(t *testing.T) {
 	candidate, err := OpenReplayCandidate(context.Background(), filepath.Join(t.TempDir(), "candidate.db"), ReplayCandidateConfig{})
 	if err != nil {
@@ -251,20 +306,7 @@ func benchmarkReplayStrategies(b *testing.B, exports []ingest.AcceptedExport) {
 			}
 			for start := 0; start < len(exports); start += 256 {
 				end := min(start+256, len(exports))
-				transaction, err := database.db.BeginTx(context.Background(), nil)
-				if err != nil {
-					b.Fatal(err)
-				}
-				for _, exported := range exports[start:end] {
-					prepared, err := prepareExport(exported)
-					if err != nil {
-						b.Fatal(err)
-					}
-					if _, err := database.commitExportTx(context.Background(), transaction, exported, prepared); err != nil {
-						b.Fatal(err)
-					}
-				}
-				if err := transaction.Commit(); err != nil {
+				if err := database.CommitExportBatch(context.Background(), exports[start:end]); err != nil {
 					b.Fatal(err)
 				}
 			}

@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -228,6 +229,12 @@ func run() error {
 	defer database.Close()
 
 	services := app.NewServices(database, webassets.FS(), time.Now)
+	servicesClosed := false
+	defer func() {
+		if !servicesClosed {
+			_ = services.Close(context.Background())
+		}
+	}()
 	maintenance.Ready(services.Dashboard)
 	grpcServer := grpc.NewServer()
 	services.OTLPReceiver.RegisterGRPC(grpcServer)
@@ -253,24 +260,120 @@ func run() error {
 	}()
 	slog.Info("dashboard, API, and MCP ready", "address", config.dashboardAddress)
 
+	var serveError error
 	select {
 	case <-ctx.Done():
-		shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-		grpcServer.GracefulStop()
-		if err := otlpHTTPServer.Shutdown(shutdownContext); err != nil {
-			return fmt.Errorf("shutdown OTLP HTTP server: %w", err)
-		}
-		if err := dashboardServer.Shutdown(shutdownContext); err != nil {
-			return fmt.Errorf("shutdown dashboard server: %w", err)
-		}
-		return nil
 	case err := <-errorsChannel:
-		if errors.Is(err, http.ErrServerClosed) || errors.Is(err, grpc.ErrServerStopped) {
-			return nil
+		if !errors.Is(err, http.ErrServerClosed) && !errors.Is(err, grpc.ErrServerStopped) {
+			serveError = err
 		}
-		return err
 	}
+	shutdownContext, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	shutdownError := shutdownServing(shutdownContext, grpcServer, otlpHTTPServer, dashboardServer, services)
+	servicesClosed = true
+	return errors.Join(serveError, shutdownError)
+}
+
+type grpcServerLifecycle interface {
+	GracefulStop()
+	Stop()
+}
+
+type httpServerLifecycle interface {
+	Shutdown(context.Context) error
+	Close() error
+}
+
+type serviceLifecycle interface {
+	Close(context.Context) error
+}
+
+func shutdownServing(
+	ctx context.Context,
+	grpcServer grpcServerLifecycle,
+	otlpHTTPServer httpServerLifecycle,
+	dashboardServer httpServerLifecycle,
+	services serviceLifecycle,
+) error {
+	grpcStopped := make(chan struct{})
+	otlpStopped := make(chan error, 1)
+	dashboardStopped := make(chan error, 1)
+	servicesStopped := make(chan error, 1)
+	allOwnersStopped := make(chan struct{})
+	var wait sync.WaitGroup
+	wait.Add(4)
+	go func() {
+		defer wait.Done()
+		grpcServer.GracefulStop()
+		close(grpcStopped)
+	}()
+	go func() {
+		defer wait.Done()
+		otlpStopped <- otlpHTTPServer.Shutdown(ctx)
+	}()
+	go func() {
+		defer wait.Done()
+		dashboardStopped <- dashboardServer.Shutdown(ctx)
+	}()
+	go func() {
+		defer wait.Done()
+		servicesStopped <- services.Close(ctx)
+	}()
+	go func() {
+		wait.Wait()
+		close(allOwnersStopped)
+	}()
+
+	var forcedResult <-chan []error
+	select {
+	case <-allOwnersStopped:
+	case <-ctx.Done():
+		result := make(chan []error, 1)
+		forcedResult = result
+		go func() {
+			var forcedErrors []error
+			grpcServer.Stop()
+			if err := otlpHTTPServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				forcedErrors = append(forcedErrors, fmt.Errorf("force close OTLP HTTP server: %w", err))
+			}
+			if err := dashboardServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				forcedErrors = append(forcedErrors, fmt.Errorf("force close dashboard server: %w", err))
+			}
+			result <- forcedErrors
+		}()
+	}
+
+	var forcedErrors []error
+	if forcedResult != nil {
+		forcedErrors = <-forcedResult
+	}
+	<-allOwnersStopped
+	<-grpcStopped
+	otlpError := <-otlpStopped
+	dashboardError := <-dashboardStopped
+	serviceError := <-servicesStopped
+	return errors.Join(
+		contextError(ctx),
+		wrapShutdownError("shutdown OTLP HTTP server", otlpError),
+		wrapShutdownError("shutdown dashboard server", dashboardError),
+		wrapShutdownError("drain live OTLP exports", serviceError),
+		errors.Join(forcedErrors...),
+	)
+}
+
+func contextError(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("shutdown deadline: %w", err)
+	}
+	return nil
+}
+
+func wrapShutdownError(operation string, err error) error {
+	if err == nil || errors.Is(err, http.ErrServerClosed) {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func parseFlags() configuration {

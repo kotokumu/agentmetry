@@ -102,3 +102,10 @@ func consensusSource(sources []string) string {
 type ExportCommitter interface {
 	CommitExport(context.Context, AcceptedExport) error
 }
+
+// ExportBatchCommitter atomically persists accepted exports in slice order.
+// Implementations must stop promptly when the context is canceled and must not
+// retain the exports after CommitExportBatch returns.
+type ExportBatchCommitter interface {
+	CommitExportBatch(context.Context, []AcceptedExport) error
+}

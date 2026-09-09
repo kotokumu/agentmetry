@@ -168,8 +168,10 @@ func rebuildTraceAgentsTx(ctx context.Context, transaction *sql.Tx, traceID stri
 // must never resume through a replay-only candidate.
 func (candidate *ReplayCandidate) FinalizeReplay(ctx context.Context) error {
 	store := candidate.store
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for replay finalization writer: %w", err)
+	}
+	defer store.unlockWrite()
 	if candidate.finalized {
 		return fmt.Errorf("finalize replay: candidate is already finalized")
 	}

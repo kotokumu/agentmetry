@@ -46,6 +46,7 @@ func TestOTLPToSQLiteDashboardAndMCPEndToEnd(t *testing.T) {
 
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	services := app.NewServices(database, webassets.FS(), func() time.Time { return now })
+	t.Cleanup(func() { _ = services.Close(context.Background()) })
 	otlpServer := httptest.NewServer(services.OTLPHTTPHandler)
 	t.Cleanup(otlpServer.Close)
 	dashboardServer := httptest.NewServer(services.Dashboard)
@@ -90,6 +91,7 @@ func TestMCPAgentSelfAnalysisFlow(t *testing.T) {
 
 	now := time.Date(2026, 8, 11, 12, 0, 0, 0, time.UTC)
 	services := app.NewServices(database, webassets.FS(), func() time.Time { return now })
+	t.Cleanup(func() { _ = services.Close(context.Background()) })
 	otlpServer := httptest.NewServer(services.OTLPHTTPHandler)
 	t.Cleanup(otlpServer.Close)
 	mcpServer := httptest.NewServer(services.Dashboard)

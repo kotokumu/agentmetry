@@ -151,8 +151,10 @@ FROM model_rates`)
 // reprices all retained Codex calls. Existing historical rows are immutable;
 // corrections require a storage-generation replay.
 func (store *Store) ApplyRateManifest(ctx context.Context, manifest []billing.Rate, evaluatedAt time.Time) error {
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for rate manifest writer: %w", err)
+	}
+	defer store.unlockWrite()
 	if evaluatedAt.IsZero() {
 		return fmt.Errorf("rate manifest evaluated_at is required")
 	}
@@ -214,8 +216,10 @@ func (store *Store) ApplyRateManifest(ctx context.Context, manifest []billing.Ra
 // ReplaceRateHistoryForReplay installs the durable pricing authority before a
 // journal replay. It is intended only for a newly-created compaction candidate.
 func (store *Store) ReplaceRateHistoryForReplay(ctx context.Context, rates []billing.Rate) error {
-	store.writeMu.Lock()
-	defer store.writeMu.Unlock()
+	if err := store.lockWrite(ctx); err != nil {
+		return fmt.Errorf("wait for replay rate writer: %w", err)
+	}
+	defer store.unlockWrite()
 	ordered := append([]billing.Rate(nil), rates...)
 	sort.Slice(ordered, func(i, j int) bool {
 		left, right := ordered[i], ordered[j]

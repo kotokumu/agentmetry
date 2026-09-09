@@ -3,11 +3,13 @@ package sqlite
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/kotokumu/agentmetry/internal/canonical"
 	"github.com/kotokumu/agentmetry/internal/harness"
 	"github.com/kotokumu/agentmetry/internal/ingest"
@@ -50,6 +52,123 @@ func TestCommitExportRejectsInvalidHarnessValuesWithoutPersistingThem(t *testing
 	}
 	if exports != 0 {
 		t.Fatalf("exports = %d, want 0", exports)
+	}
+}
+
+func TestCommitExportBatchStoresEveryExportInOneOrderedTransaction(t *testing.T) {
+	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	exports := []ingest.AcceptedExport{
+		{
+			Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, []byte{0x0a, 0x00}),
+			Projection: canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{
+				ObservedAt: at,
+				Name:       "first",
+			}}},
+		},
+		{
+			Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at.Add(time.Second), []byte{0x0a, 0x01}),
+			Projection: canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{
+				ObservedAt: at.Add(time.Second),
+				Name:       "second",
+			}}},
+		},
+	}
+
+	if err := database.CommitExportBatch(context.Background(), exports); err != nil {
+		t.Fatal(err)
+	}
+
+	rows, err := database.db.Query(`SELECT name FROM logs ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, name)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
+	}
+	if diff := cmp.Diff([]string{"first", "second"}, names); diff != "" {
+		t.Fatalf("stored names mismatch (-want +got):\n%s", diff)
+	}
+	var exportCount, changeCount int
+	if err := database.db.QueryRow(`SELECT COUNT(*) FROM otlp_exports`).Scan(&exportCount); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.db.QueryRow(`SELECT COUNT(*) FROM projection_changes`).Scan(&changeCount); err != nil {
+		t.Fatal(err)
+	}
+	if exportCount != 2 || changeCount != 2 {
+		t.Fatalf("counts = exports:%d changes:%d, want 2 and 2", exportCount, changeCount)
+	}
+}
+
+func TestCommitExportBatchRollsBackEveryExportWhenOneIsInvalid(t *testing.T) {
+	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	at := time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC)
+	exports := []ingest.AcceptedExport{
+		{
+			Envelope:   ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, []byte{0x0a, 0x00}),
+			Projection: canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{ObservedAt: at, Name: "first"}}},
+		},
+		{
+			Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at.Add(time.Second), []byte{0x0a, 0x01}),
+			Journal: ingest.JournalMetadata{Harness: harness.ReceiptEvidence{
+				State: harness.ReceiptInvalid,
+				Scope: "must-not-persist",
+			}},
+		},
+	}
+
+	if err := database.CommitExportBatch(context.Background(), exports); err == nil {
+		t.Fatal("CommitExportBatch succeeded with an invalid export")
+	}
+	for _, table := range []string{"otlp_exports", "logs", "projection_changes"} {
+		var count int
+		if err := database.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count); err != nil {
+			t.Fatal(err)
+		}
+		if count != 0 {
+			t.Fatalf("%s rows = %d, want 0", table, count)
+		}
+	}
+}
+
+func TestCommitExportBatchStopsWaitingForBusyWriterWhenContextEnds(t *testing.T) {
+	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.lockWrite(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer database.unlockWrite()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	defer cancel()
+	err = database.CommitExportBatch(ctx, []ingest.AcceptedExport{{
+		Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, time.Now(), []byte{0x0a, 0x00}),
+	}})
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("CommitExportBatch error = %v, want deadline exceeded", err)
 	}
 }
 
