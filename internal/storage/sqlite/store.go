@@ -43,11 +43,36 @@ func Open(path string, profiles ...sourceplugin.Registry) (*Store, error) {
 	return open(path, true, profiles...)
 }
 
-// OpenReplayCandidate creates a store without applying the current built-in
-// pricing manifest. Compaction must install the source generation's durable
-// rate history before replaying its telemetry journal.
-func OpenReplayCandidate(path string, profiles ...sourceplugin.Registry) (*Store, error) {
-	return open(path, false, profiles...)
+// ReplayCandidateConfig supplies every immutable input required before journal
+// replay can begin. An empty RateHistory is an initialized empty authority.
+type ReplayCandidateConfig struct {
+	Profiles    sourceplugin.Registry
+	RateHistory []billing.Rate
+}
+
+// ReplayCandidate exposes only the mutation capability needed by compaction.
+// It deliberately does not embed Store, so online ingestion cannot accidentally
+// acquire the larger replay transaction boundary.
+type ReplayCandidate struct {
+	store *Store
+}
+
+// OpenReplayCandidate creates a candidate and installs its complete pricing
+// authority before making replay commits available.
+func OpenReplayCandidate(ctx context.Context, path string, config ReplayCandidateConfig) (*ReplayCandidate, error) {
+	database, err := open(path, false, config.Profiles)
+	if err != nil {
+		return nil, err
+	}
+	if err := database.ReplaceRateHistoryForReplay(ctx, config.RateHistory); err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("initialize replay candidate rate history: %w", err)
+	}
+	return &ReplayCandidate{store: database}, nil
+}
+
+func (candidate *ReplayCandidate) Close() error {
+	return candidate.store.Close()
 }
 
 func open(path string, applyBuiltinRates bool, profiles ...sourceplugin.Registry) (*Store, error) {
@@ -262,65 +287,105 @@ func (store *Store) CommitExport(ctx context.Context, accepted ingest.AcceptedEx
 		return fmt.Errorf("begin OTLP export commit: %w", err)
 	}
 	defer func() { _ = transaction.Rollback() }()
-
-	exportID, err := insertExport(ctx, transaction, accepted, prepared)
+	sequence, err := store.commitExportTx(ctx, transaction, accepted, prepared)
 	if err != nil {
 		return err
 	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit OTLP export: %w", err)
+	}
+	if sequence > 0 {
+		store.signalProjectionChange()
+	}
+	return nil
+}
+
+// CommitReplayBatch applies a non-empty, source-ordered journal prefix in one
+// transaction. Any preparation or SQL failure rolls back the whole batch.
+func (candidate *ReplayCandidate) CommitReplayBatch(ctx context.Context, exports []ingest.AcceptedExport) error {
+	if len(exports) == 0 {
+		return fmt.Errorf("commit replay batch: no exports")
+	}
+	store := candidate.store
+	store.writeMu.Lock()
+	defer store.writeMu.Unlock()
+	transaction, err := store.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin replay batch: %w", err)
+	}
+	defer func() { _ = transaction.Rollback() }()
+	changed := false
+	for index, accepted := range exports {
+		prepared, err := prepareExport(accepted)
+		if err != nil {
+			return fmt.Errorf("prepare replay export %d: %w", index+1, err)
+		}
+		sequence, err := store.commitExportTx(ctx, transaction, accepted, prepared)
+		if err != nil {
+			return fmt.Errorf("commit replay export %d: %w", index+1, err)
+		}
+		changed = changed || sequence > 0
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit replay batch: %w", err)
+	}
+	if changed {
+		store.signalProjectionChange()
+	}
+	return nil
+}
+
+func (store *Store) commitExportTx(ctx context.Context, transaction *sql.Tx, accepted ingest.AcceptedExport, prepared preparedExport) (int64, error) {
+
+	exportID, err := insertExport(ctx, transaction, accepted, prepared)
+	if err != nil {
+		return 0, err
+	}
 	for _, item := range accepted.Observations {
 		if err := insertObservation(ctx, transaction, exportID, item); err != nil {
-			return err
+			return 0, err
 		}
 	}
 	if accepted.NormalizationError == "" {
 		plan, err := buildProjectionPlan(ctx, transaction, accepted.Projection)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		sequence, err := appendProjectionChange(ctx, transaction, plan.targets)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		var logActivityIDs []string
 		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequence, plan.previousSpans, &logActivityIDs); err != nil {
-			return err
+			return 0, err
 		}
 		if err := store.persistModelCalls(ctx, transaction, exportID, accepted, prepared, logActivityIDs, sequence, plan.previousSpans); err != nil {
-			return err
+			return 0, err
 		}
 		attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, accepted.Projection, plan.previousSpans, sequence)
 		if err != nil {
-			return err
+			return 0, err
 		}
 		if err := rebuildAffectedSessionMemberships(ctx, transaction, accepted.Projection); err != nil {
-			return err
+			return 0, err
 		}
 		if err := updateAffectedSessionRollups(ctx, transaction, accepted.Projection, plan.previousSessions, plan.previousSpans, sequence, plan.incremental && !attribution.rebuildSessions); err != nil {
-			return err
+			return 0, err
 		}
 		if err := updateAffectedTraceRollups(ctx, transaction, accepted.Projection, plan.previousSpans, sequence); err != nil {
-			return err
+			return 0, err
 		}
 		if err := rebuildClaudeAttributionTraces(ctx, transaction, attribution.traceIDs); err != nil {
-			return err
+			return 0, err
 		}
 		if sequence > 0 && sequence%512 == 0 {
 			if err := retainProjectionChanges(ctx, transaction); err != nil {
-				return err
+				return 0, err
 			}
 		}
-		if err := transaction.Commit(); err != nil {
-			return fmt.Errorf("commit OTLP export: %w", err)
-		}
-		if sequence > 0 {
-			store.signalProjectionChange()
-		}
-		return nil
+		return sequence, nil
 	}
-	if err := transaction.Commit(); err != nil {
-		return fmt.Errorf("commit OTLP export: %w", err)
-	}
-	return nil
+	return 0, nil
 }
 
 func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, sequence int64, previousSpans map[storedSpanKey]storedSpanScope, logActivityIDs *[]string) error {

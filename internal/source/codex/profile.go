@@ -16,6 +16,8 @@ func (Plugin) ID() string { return "codex" }
 
 func (Plugin) DisplayName() string { return "Codex" }
 
+func (Plugin) SupportsParallelProfiling() bool { return true }
+
 func IsAuthoritativeModelCall(sourceEvent, canonicalName, role string) bool {
 	return role == "authoritative_call" && sourceEvent == "codex.sse_event" && canonicalName == "gen_ai.response.completed"
 }

@@ -5,7 +5,8 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"time"
+	"runtime"
+	"sync"
 
 	"github.com/kotokumu/agentmetry/internal/billing"
 	"github.com/kotokumu/agentmetry/internal/ingest"
@@ -20,7 +21,22 @@ import (
 
 const CurrentStorageGeneration = storageversion.CurrentGeneration
 
+const (
+	maxReplayBatchRecords = 256
+	maxReplayBatchBytes   = journal.MaxPayloadBytes
+	maxReplayWorkers      = 8
+)
+
+type ProgressStage string
+
+const (
+	ProgressReplay      ProgressStage = "replay"
+	ProgressValidation  ProgressStage = "validation"
+	ProgressReplacement ProgressStage = "replacement"
+)
+
 type Progress struct {
+	Stage     ProgressStage
 	Completed int64
 	Total     int64
 }
@@ -75,6 +91,9 @@ func migrate(ctx context.Context, sourcePath string, profiles source.Registry, r
 	result, err := buildCandidate(ctx, sourcePath, info.Size(), profiles, report)
 	if err != nil {
 		return Result{}, err
+	}
+	if report != nil {
+		report(Progress{Stage: ProgressReplacement, Completed: result.Exports, Total: result.Exports})
 	}
 	if err := installValidated(result, sourcePath); err != nil {
 		return Result{}, err
@@ -150,61 +169,47 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		_ = closeSource()
 		return fail(err)
 	}
-	destination, err := store.OpenReplayCandidate(candidatePath, profiles)
+	if !hasRateHistory {
+		rateHistory = billing.BuiltinOpenAIRates()
+	}
+	destination, err := store.OpenReplayCandidate(ctx, candidatePath, store.ReplayCandidateConfig{
+		Profiles: profiles, RateHistory: rateHistory,
+	})
 	if err != nil {
 		_ = reader.Close()
 		_ = closeSource()
 		return fail(fmt.Errorf("create Atlas-schema candidate: %w", err))
 	}
-	if hasRateHistory {
-		if err := destination.ReplaceRateHistoryForReplay(ctx, rateHistory); err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("copy rate history: %w", err))
-		}
-	} else {
-		rates := billing.BuiltinOpenAIRates()
-		evaluatedAt := time.Now().UTC()
-		for _, rate := range rates {
-			if rate.RetrievedAt.After(evaluatedAt) {
-				evaluatedAt = rate.RetrievedAt
-			}
-		}
-		if err := destination.ApplyRateManifest(ctx, rates, evaluatedAt); err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("seed legacy rate history: %w", err))
-		}
-	}
 	expected := validationExpectation{journals: make([]journalIdentity, 0, reader.Total())}
-	if hasRateHistory {
-		expected.rates = int64(len(rateHistory))
-	} else {
-		expected.rates = int64(len(billing.BuiltinOpenAIRates()))
+	expected.rates = int64(len(rateHistory))
+	if report != nil {
+		report(Progress{Stage: ProgressReplay, Total: reader.Total()})
 	}
-	for reader.Next() {
-		record, err := reader.Export()
+	chunkSource := replayChunkSource{reader: reader}
+	for {
+		records, err := chunkSource.Next()
 		if err != nil {
 			return failBuild(destination, reader, closeSource, candidatePath, err)
 		}
-		raw, err := journal.Restore(record.Codec, record.Stored, record.Size, record.Hash)
+		if len(records) == 0 {
+			break
+		}
+		items, err := prepareReplayChunk(ctx, records, profiles)
 		if err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("restore legacy export %d: %w", record.Ordinal, err))
+			return failBuild(destination, reader, closeSource, candidatePath, err)
 		}
-		accepted := ingest.AcceptedExport{
-			Envelope:           ingest.NewEnvelope(record.Signal, record.Transport, record.ReceivedAt, raw),
-			Journal:            record.Metadata,
-			NormalizationError: record.NormalizationError,
+		exports := make([]ingest.AcceptedExport, len(items))
+		for index := range items {
+			exports[index] = items[index].accepted
 		}
-		if record.Metadata.NormalizationStatus != "failed" {
-			accepted, err = otel.ReplayExport(record.Signal, record.Transport, record.ReceivedAt, raw, profiles)
-			if err != nil {
-				return failBuild(destination, reader, closeSource, candidatePath, err)
-			}
-			accepted.Journal = record.Metadata
+		if err := destination.CommitReplayBatch(ctx, exports); err != nil {
+			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("write compact export batch ending at %d: %w", items[len(items)-1].record.Ordinal, err))
 		}
-		if err := destination.CommitExport(ctx, accepted); err != nil {
-			return failBuild(destination, reader, closeSource, candidatePath, fmt.Errorf("write compact export %d: %w", record.Ordinal, err))
+		for _, item := range items {
+			expected.add(item.record, item.accepted)
 		}
-		expected.add(record, accepted)
 		if report != nil {
-			report(Progress{Completed: record.Ordinal, Total: reader.Total()})
+			report(Progress{Stage: ProgressReplay, Completed: items[len(items)-1].record.Ordinal, Total: reader.Total()})
 		}
 	}
 	if err := reader.Close(); err != nil {
@@ -228,6 +233,9 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 	if err := requireCleanDatabaseFamily(sourcePath); err != nil {
 		return fail(err)
 	}
+	if report != nil {
+		report(Progress{Stage: ProgressValidation, Completed: reader.Total(), Total: reader.Total()})
+	}
 	if err := finalizeCandidate(ctx, candidatePath); err != nil {
 		return fail(err)
 	}
@@ -245,7 +253,109 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 	}, nil
 }
 
-func failBuild(destination *store.Store, reader *legacyReader, closeSource func() error, candidatePath string, cause error) (Result, error) {
+type replayItem struct {
+	record   storedExport
+	accepted ingest.AcceptedExport
+}
+
+type replayChunkSource struct {
+	reader  *legacyReader
+	pending *storedExport
+}
+
+func (source *replayChunkSource) Next() ([]storedExport, error) {
+	records := make([]storedExport, 0, maxReplayBatchRecords)
+	restoredBytes := 0
+	for len(records) < maxReplayBatchRecords {
+		var record storedExport
+		if source.pending != nil {
+			record = *source.pending
+			source.pending = nil
+		} else {
+			if !source.reader.Next() {
+				break
+			}
+			var err error
+			record, err = source.reader.Export()
+			if err != nil {
+				return nil, err
+			}
+		}
+		recordBytes := record.Size
+		if recordBytes < len(record.Stored) {
+			recordBytes = len(record.Stored)
+		}
+		if len(records) > 0 && recordBytes > maxReplayBatchBytes-restoredBytes {
+			source.pending = &record
+			break
+		}
+		records = append(records, record)
+		restoredBytes += recordBytes
+	}
+	return records, nil
+}
+
+func prepareReplayChunk(ctx context.Context, records []storedExport, profiles source.Registry) ([]replayItem, error) {
+	items := make([]replayItem, len(records))
+	errorsByIndex := make([]error, len(records))
+	prepare := func(index int) {
+		items[index], errorsByIndex[index] = prepareReplayItem(ctx, records[index], profiles)
+	}
+	workers := min(runtime.GOMAXPROCS(0), maxReplayWorkers, len(records))
+	if workers <= 1 || !profiles.SupportsParallelProfiling() {
+		for index := range records {
+			prepare(index)
+		}
+	} else {
+		indexes := make(chan int)
+		var group sync.WaitGroup
+		group.Add(workers)
+		for range workers {
+			go func() {
+				defer group.Done()
+				for index := range indexes {
+					prepare(index)
+				}
+			}()
+		}
+		for index := range records {
+			indexes <- index
+		}
+		close(indexes)
+		group.Wait()
+	}
+	for index, err := range errorsByIndex {
+		if err != nil {
+			return nil, fmt.Errorf("prepare legacy export %d: %w", records[index].Ordinal, err)
+		}
+	}
+	return items, nil
+}
+
+func prepareReplayItem(ctx context.Context, record storedExport, profiles source.Registry) (replayItem, error) {
+	if err := ctx.Err(); err != nil {
+		return replayItem{}, err
+	}
+	raw, err := journal.Restore(record.Codec, record.Stored, record.Size, record.Hash)
+	if err != nil {
+		return replayItem{}, fmt.Errorf("restore legacy export: %w", err)
+	}
+	accepted := ingest.AcceptedExport{
+		Envelope:           ingest.NewEnvelope(record.Signal, record.Transport, record.ReceivedAt, raw),
+		Journal:            record.Metadata,
+		NormalizationError: record.NormalizationError,
+	}
+	if record.Metadata.NormalizationStatus != "failed" {
+		accepted, err = otel.ReplayExport(record.Signal, record.Transport, record.ReceivedAt, raw, profiles)
+		if err != nil {
+			return replayItem{}, err
+		}
+		accepted.Journal = record.Metadata
+	}
+	return replayItem{record: record, accepted: accepted}, nil
+}
+
+func failBuild(destination *store.ReplayCandidate, reader *legacyReader, closeSource func() error, candidatePath string, cause error) (Result, error) {
 	_ = destination.Close()
 	_ = reader.Close()
 	_ = closeSource()

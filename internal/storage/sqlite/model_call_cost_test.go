@@ -36,13 +36,13 @@ func TestOpenSeedsTemporalOpenAIRates(t *testing.T) {
 }
 
 func TestOpenReplayCandidateDoesNotSeedCurrentRates(t *testing.T) {
-	store, err := OpenReplayCandidate(filepath.Join(t.TempDir(), "agentmetry.db"))
+	store, err := OpenReplayCandidate(context.Background(), filepath.Join(t.TempDir(), "agentmetry.db"), ReplayCandidateConfig{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	var count int
-	if err := store.db.QueryRow(`SELECT COUNT(*) FROM model_rates`).Scan(&count); err != nil {
+	if err := store.store.db.QueryRow(`SELECT COUNT(*) FROM model_rates`).Scan(&count); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 {

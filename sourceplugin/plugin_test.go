@@ -12,6 +12,10 @@ type testPlugin struct {
 	name    string
 }
 
+type parallelTestPlugin struct{ testPlugin }
+
+func (parallelTestPlugin) SupportsParallelProfiling() bool { return true }
+
 func (plugin testPlugin) DisplayName() string { return "Test Source" }
 
 func (plugin testPlugin) ID() string { return plugin.id }
@@ -63,5 +67,30 @@ func TestRegistryDescribesSourcesWithoutLeakingProductNamesToConsumers(t *testin
 
 	if descriptor.ID != "test" || descriptor.Label != "Test Source" {
 		t.Fatalf("unexpected source descriptor: %#v", descriptor)
+	}
+}
+
+func TestRegistrySupportsParallelProfilingOnlyWhenEveryPluginOptsIn(t *testing.T) {
+	tests := []struct {
+		name     string
+		registry sourceplugin.Registry
+		want     bool
+	}{
+		{name: "empty registry", registry: sourceplugin.NewRegistry(), want: true},
+		{name: "all plugins opt in", registry: sourceplugin.NewRegistry(
+			parallelTestPlugin{testPlugin{id: "first"}},
+			parallelTestPlugin{testPlugin{id: "second"}},
+		), want: true},
+		{name: "legacy plugin forces sequential profiling", registry: sourceplugin.NewRegistry(
+			parallelTestPlugin{testPlugin{id: "safe"}},
+			testPlugin{id: "legacy"},
+		), want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := test.registry.SupportsParallelProfiling(); got != test.want {
+				t.Fatalf("SupportsParallelProfiling() = %v, want %v", got, test.want)
+			}
+		})
 	}
 }
