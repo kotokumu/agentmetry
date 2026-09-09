@@ -205,9 +205,9 @@ func run() error {
 	}()
 
 	if _, err := compaction.MigrateIfNeeded(ctx, config.database, builtin.Registry(), func(progress compaction.Progress) {
-		maintenance.Progress(progress.Completed, progress.Total)
-		if progress.Completed%100 == 0 || progress.Completed == progress.Total {
-			slog.Info("migrating telemetry database", "completed", progress.Completed, "total", progress.Total)
+		maintenance.Progress(string(progress.Stage), progress.Completed, progress.Total)
+		if progress.Completed%100 == 0 || progress.Completed == progress.Total || progress.Stage != compaction.ProgressReplay {
+			slog.Info("migrating telemetry database", "stage", progress.Stage, "completed", progress.Completed, "total", progress.Total)
 		}
 	}); err != nil {
 		migrationError := fmt.Errorf("migrate telemetry database: %w", err)

@@ -10,6 +10,7 @@ import (
 
 type MaintenanceStatus struct {
 	Status    string `json:"status"`
+	Stage     string `json:"stage,omitempty"`
 	Completed int64  `json:"completed,omitempty"`
 	Total     int64  `json:"total,omitempty"`
 	Message   string `json:"message,omitempty"`
@@ -27,9 +28,9 @@ func NewMaintenanceHandler() *MaintenanceHandler {
 	return &MaintenanceHandler{status: MaintenanceStatus{Status: "migrating"}}
 }
 
-func (handler *MaintenanceHandler) Progress(completed, total int64) {
+func (handler *MaintenanceHandler) Progress(stage string, completed, total int64) {
 	handler.mu.Lock()
-	handler.status = MaintenanceStatus{Status: "migrating", Completed: completed, Total: total}
+	handler.status = MaintenanceStatus{Status: "migrating", Stage: stage, Completed: completed, Total: total}
 	handler.mu.Unlock()
 }
 
@@ -78,5 +79,5 @@ const maintenanceHTML = `<!doctype html>
 body{margin:0;min-height:100vh;display:grid;place-items:center}.card{width:min(520px,calc(100vw - 48px));padding:32px;border:1px solid #2a3240;border-radius:18px;background:#171c25;box-shadow:0 24px 80px #0007}
 h1{font-size:22px;margin:0 0 10px}p{color:#aeb8c8;line-height:1.5}.track{height:8px;background:#293140;border-radius:99px;overflow:hidden;margin:24px 0 12px}.bar{height:100%%;width:%d%%;background:#7c9cff;transition:width .25s}.error{color:#ff9c9c;overflow-wrap:anywhere}
 </style></head><body><main class="card"><h1>Updating Agentmetry data</h1><p>Your lossless telemetry journal is being verified. Conversations and usage views will be regenerated automatically.</p><div class="track"><div class="bar"></div></div><p id="status">Preparing migration…</p><p class="error">%s</p></main><script>
-async function poll(){try{const r=await fetch('/healthz',{cache:'no-store'});const s=await r.json();if(s.status==='ok'){location.reload();return}if(s.status==='failed'){document.querySelector('.error').textContent=s.message;document.querySelector('#status').textContent='Migration paused. Your original database is unchanged.';return}const pct=s.total?Math.floor(s.completed*100/s.total):0;document.querySelector('.bar').style.width=pct+'%%';document.querySelector('#status').textContent=s.total?pct+'%% · '+s.completed.toLocaleString()+' / '+s.total.toLocaleString()+' exports verified':'Preparing migration…'}catch(e){}setTimeout(poll,700)}poll();
+async function poll(){try{const r=await fetch('/healthz',{cache:'no-store'});const s=await r.json();if(s.status==='ok'){location.reload();return}if(s.status==='failed'){document.querySelector('.error').textContent=s.message;document.querySelector('#status').textContent='Migration paused. Your original database is unchanged.';return}const pct=s.total?Math.floor(s.completed*100/s.total):0;document.querySelector('.bar').style.width=pct+'%%';let text=s.total?pct+'%% · '+s.completed.toLocaleString()+' / '+s.total.toLocaleString()+' exports verified':'Preparing migration…';if(s.stage==='validation')text='Replay complete · Validating migrated data…';if(s.stage==='replacement')text='Validation complete · Installing migrated data…';document.querySelector('#status').textContent=text}catch(e){}setTimeout(poll,700)}poll();
 </script></body></html>`

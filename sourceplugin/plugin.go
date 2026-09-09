@@ -24,6 +24,18 @@ type Plugin interface {
 	Normalize(Event) Event
 }
 
+// ParallelProfiler is an optional capability for plugins whose complete
+// profiling path can be evaluated concurrently during journal replay.
+//
+// Returning true promises that calls to ID, Match, and Normalize on the same
+// plugin instance are concurrency-safe; depend only on their input and
+// immutable configuration; do not depend on call order; do not retain input;
+// and have no shared, global, or external side effects. Implementations that
+// cannot make every promise must omit this capability or return false.
+type ParallelProfiler interface {
+	SupportsParallelProfiling() bool
+}
+
 // AgentMetadata is the producer-neutral description assembled from stored
 // telemetry. Runtime identity, reusable definition, execution type, and model
 // remain separate because producers may report them on different records.
@@ -53,6 +65,18 @@ type Registry struct {
 
 func NewRegistry(plugins ...Plugin) Registry {
 	return Registry{plugins: append([]Plugin(nil), plugins...)}
+}
+
+// SupportsParallelProfiling reports whether every registered plugin explicitly
+// opts into deterministic, side-effect-free concurrent profiling.
+func (registry Registry) SupportsParallelProfiling() bool {
+	for _, plugin := range registry.plugins {
+		parallel, ok := plugin.(ParallelProfiler)
+		if !ok || !parallel.SupportsParallelProfiling() {
+			return false
+		}
+	}
+	return true
 }
 
 func (registry Registry) Profile(event Event) ProfiledEvent {

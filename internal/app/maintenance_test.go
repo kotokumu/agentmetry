@@ -10,11 +10,11 @@ import (
 
 func TestMaintenanceHandlerReportsProgressFailureAndReadyState(t *testing.T) {
 	handler := NewMaintenanceHandler()
-	handler.Progress(25, 100)
+	handler.Progress("replay", 25, 100)
 
 	health := httptest.NewRecorder()
 	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if got := health.Body.String(); !strings.Contains(got, `"status":"migrating"`) || !strings.Contains(got, `"completed":25`) {
+	if got := health.Body.String(); !strings.Contains(got, `"status":"migrating"`) || !strings.Contains(got, `"stage":"replay"`) || !strings.Contains(got, `"completed":25`) {
 		t.Fatalf("progress health = %s", got)
 	}
 

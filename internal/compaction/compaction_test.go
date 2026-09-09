@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -17,9 +18,13 @@ import (
 	"github.com/kotokumu/agentmetry/internal/harness"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/ingest/otel"
+	"github.com/kotokumu/agentmetry/internal/journal"
 	"github.com/kotokumu/agentmetry/internal/query"
 	"github.com/kotokumu/agentmetry/internal/source/builtin"
+	claudesource "github.com/kotokumu/agentmetry/internal/source/claude"
+	codexsource "github.com/kotokumu/agentmetry/internal/source/codex"
 	store "github.com/kotokumu/agentmetry/internal/storage/sqlite"
+	sourceplugin "github.com/kotokumu/agentmetry/sourceplugin"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/plog/plogotlp"
@@ -27,6 +32,33 @@ import (
 	"go.opentelemetry.io/collector/pdata/ptrace/ptraceotlp"
 	_ "modernc.org/sqlite"
 )
+
+type profilingProbePlugin struct {
+	parallel bool
+	active   atomic.Int64
+	maximum  atomic.Int64
+}
+
+type sequentialPlugin struct{ sourceplugin.Plugin }
+
+func (*profilingProbePlugin) ID() string { return "probe" }
+
+func (*profilingProbePlugin) Match(sourceplugin.Event) bool { return true }
+
+func (plugin *profilingProbePlugin) Normalize(event sourceplugin.Event) sourceplugin.Event {
+	active := plugin.active.Add(1)
+	for {
+		maximum := plugin.maximum.Load()
+		if active <= maximum || plugin.maximum.CompareAndSwap(maximum, active) {
+			break
+		}
+	}
+	time.Sleep(5 * time.Millisecond)
+	plugin.active.Add(-1)
+	return event
+}
+
+func (plugin *profilingProbePlugin) SupportsParallelProfiling() bool { return plugin.parallel }
 
 func TestMigrateRebuildsTrueLegacySchemaAndPreservesJournalMetadata(t *testing.T) {
 	sourcePath := filepath.Join(t.TempDir(), "legacy.db")
@@ -36,7 +68,10 @@ func TestMigrateRebuildsTrueLegacySchemaAndPreservesJournalMetadata(t *testing.T
 		{raw: []byte{0x0a, 0x00}, source: "legacy-source", version: 7, status: "failed", normalizationError: "unsupported source revision"},
 	})
 
-	result, err := MigrateIfNeeded(context.Background(), sourcePath, builtin.Registry(), nil)
+	var progress []Progress
+	result, err := MigrateIfNeeded(context.Background(), sourcePath, builtin.Registry(), func(update Progress) {
+		progress = append(progress, update)
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,6 +80,18 @@ func TestMigrateRebuildsTrueLegacySchemaAndPreservesJournalMetadata(t *testing.T
 	}
 	if result.CompactBytes >= result.SourceBytes*3/10 {
 		t.Fatalf("compact database %d bytes is not below 30%% of legacy %d bytes", result.CompactBytes, result.SourceBytes)
+	}
+	wantStages := []ProgressStage{ProgressReplay, ProgressReplay, ProgressValidation, ProgressReplacement}
+	if len(progress) != len(wantStages) {
+		t.Fatalf("migration progress = %#v", progress)
+	}
+	for index, want := range wantStages {
+		if progress[index].Stage != want {
+			t.Fatalf("progress %d stage = %q, want %q", index, progress[index].Stage, want)
+		}
+	}
+	if progress[1].Completed != 2 || progress[1].Total != 2 {
+		t.Fatalf("committed replay progress = %#v", progress[1])
 	}
 	if fileExists(sourcePath+".compacting") || fileExists(manifestPath(sourcePath)) {
 		t.Fatal("migration artifacts remain after install")
@@ -93,6 +140,97 @@ normalization_error, payload_codec FROM otlp_exports ORDER BY id`)
 	}
 	if spans != 1 || plans != 1 || version != CurrentStorageGeneration {
 		t.Fatalf("spans=%d plans=%d format=%d", spans, plans, version)
+	}
+}
+
+func TestPrepareReplayChunkUsesParallelProfilingOnlyWhenRegistryAllowsIt(t *testing.T) {
+	raw := semanticTracePayload(t, 0)
+	hash := sha256.Sum256(raw)
+	records := make([]storedExport, 8)
+	for index := range records {
+		records[index] = storedExport{
+			Ordinal: int64(index + 1), ReceivedAt: time.Date(2026, 9, 9, 12, 0, index, 0, time.UTC),
+			Signal: canonical.SignalTrace, Transport: ingest.TransportGRPC,
+			Stored: raw, Codec: journal.CodecIdentity, Size: len(raw), Hash: hash,
+			Metadata: ingest.JournalMetadata{Source: "probe", NormalizerVersion: 1, NormalizationStatus: "projected"},
+		}
+	}
+	for _, test := range []struct {
+		name            string
+		parallel        bool
+		wantConcurrency bool
+	}{
+		{name: "explicitly parallel-safe", parallel: true, wantConcurrency: true},
+		{name: "sequential fallback", parallel: false, wantConcurrency: false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			plugin := &profilingProbePlugin{parallel: test.parallel}
+			items, err := prepareReplayChunk(context.Background(), records, sourceplugin.NewRegistry(plugin))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(items) != len(records) {
+				t.Fatalf("prepared items = %d, want %d", len(items), len(records))
+			}
+			for index, item := range items {
+				if item.record.Ordinal != int64(index+1) {
+					t.Fatalf("item %d ordinal = %d", index, item.record.Ordinal)
+				}
+			}
+			gotConcurrency := plugin.maximum.Load() > 1
+			if gotConcurrency != test.wantConcurrency {
+				t.Fatalf("parallel profiling = %v (maximum=%d), want %v", gotConcurrency, plugin.maximum.Load(), test.wantConcurrency)
+			}
+		})
+	}
+}
+
+func TestPrepareReplayChunkPreservesFailedJournalWithoutProfilingIt(t *testing.T) {
+	raw := []byte{0x0a, 0x00}
+	plugin := &profilingProbePlugin{parallel: true}
+	items, err := prepareReplayChunk(context.Background(), []storedExport{{
+		Ordinal: 1, ReceivedAt: time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC),
+		Signal: canonical.SignalLog, Transport: ingest.TransportGRPC,
+		Stored: raw, Codec: journal.CodecIdentity, Size: len(raw), Hash: sha256.Sum256(raw),
+		Metadata:           ingest.JournalMetadata{Source: "legacy", NormalizerVersion: 1, NormalizationStatus: "failed"},
+		NormalizationError: "unsupported source revision",
+	}}, sourceplugin.NewRegistry(plugin))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if plugin.maximum.Load() != 0 {
+		t.Fatal("failed journal record was profiled")
+	}
+	if len(items) != 1 || items[0].accepted.NormalizationError != "unsupported source revision" || items[0].accepted.Journal.NormalizationStatus != "failed" {
+		t.Fatalf("failed replay item = %#v", items)
+	}
+}
+
+func BenchmarkPrepareReplayChunk(b *testing.B) {
+	raw := semanticTracePayload(b, 100)
+	hash := sha256.Sum256(raw)
+	records := make([]storedExport, 256)
+	for index := range records {
+		records[index] = storedExport{
+			Ordinal: int64(index + 1), ReceivedAt: time.Date(2026, 9, 9, 12, 0, 0, 0, time.UTC),
+			Signal: canonical.SignalTrace, Transport: ingest.TransportGRPC,
+			Stored: raw, Codec: journal.CodecIdentity, Size: len(raw), Hash: hash,
+			Metadata: ingest.JournalMetadata{Source: "codex", NormalizerVersion: 1, NormalizationStatus: "projected"},
+		}
+	}
+	parallel := sourceplugin.NewRegistry(codexsource.New(), claudesource.New())
+	sequential := sourceplugin.NewRegistry(sequentialPlugin{codexsource.New()}, sequentialPlugin{claudesource.New()})
+	for _, test := range []struct {
+		name     string
+		registry sourceplugin.Registry
+	}{{"sequential", sequential}, {"parallel", parallel}} {
+		b.Run(test.name, func(b *testing.B) {
+			for range b.N {
+				if _, err := prepareReplayChunk(context.Background(), records, test.registry); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
@@ -613,7 +751,7 @@ func TestCancelledMigrationKeepsLegacyJournalAuthoritative(t *testing.T) {
 	createLegacyDatabase(t, path, fixtures)
 	ctx, cancel := context.WithCancel(context.Background())
 	_, err := MigrateIfNeeded(ctx, path, builtin.Registry(), func(progress Progress) {
-		if progress.Completed == 1 {
+		if progress.Completed > 0 {
 			cancel()
 		}
 	})
@@ -820,7 +958,7 @@ resets_at, captured_at, authority, raw_json
 	}
 }
 
-func semanticTracePayload(t *testing.T, incidental int) []byte {
+func semanticTracePayload(t testing.TB, incidental int) []byte {
 	t.Helper()
 	traces := ptrace.NewTraces()
 	resource := traces.ResourceSpans().AppendEmpty()
