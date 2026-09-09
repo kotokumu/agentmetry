@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.0](https://github.com/kotokumu/agentmetry/compare/v1.18.3...v1.19.0) (2026-09-09)
+
+
+### Features
+
+* **web:** streamline the session workspace ([#87](https://github.com/kotokumu/agentmetry/issues/87)) ([4839d0b](https://github.com/kotokumu/agentmetry/commit/4839d0b99e4a61a3e8238b34201bbffcaca058a6))
+
 ## [1.18.3](https://github.com/kotokumu/agentmetry/compare/v1.18.2...v1.18.3) (2026-09-09)
 
 
