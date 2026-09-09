@@ -14,6 +14,7 @@ import { affectsSession, affectsSessionList, type LiveUpdateWindow } from "./liv
 type ConversationRef = Readonly<{ sourceId: string; conversationId: string }>;
 type ConversationResult = Readonly<{ key: string; session?: Session }>;
 type ReworkResult = Readonly<{ key: string; analysis?: ReworkAnalysis }>;
+const sessionListPageSize = 20;
 
 export type ActivityPageState = Readonly<{
   direction: ActivityDirection;
@@ -37,6 +38,7 @@ export class ConversationsController {
   readonly list: SessionListController;
   private readonly conversationTask: Task<readonly [boolean, string, string, string, string], ConversationResult>;
   private readonly reworkTask: Task<readonly [boolean, string, string], ReworkResult>;
+  private reworkCache?: ReworkResult;
   private requested?: ConversationTarget;
   private selectedRef?: ConversationRef;
   private detailOverride?: Session;
@@ -68,13 +70,13 @@ export class ConversationsController {
   selectedAgentId = "";
   agentActivityPage?: AgentActivityPage;
 
-  constructor(host: ReactiveControllerHost, client: AgentmetryClient, filters: () => TelemetryFilters, isActive: () => boolean = () => true, private readonly view: () => SessionListView = () => "roots") {
+  constructor(host: ReactiveControllerHost, client: AgentmetryClient, filters: () => TelemetryFilters, isActive: () => boolean = () => true, private readonly view: () => SessionListView = () => "roots", private readonly reworkActive: () => boolean = () => true) {
     this.host = host;
     this.client = client;
     this.filters = filters;
     this.isActive = isActive;
     host.addController(this);
-    this.list = new SessionListController(host, client, () => ({ ...filters(), conditions: sessionConditions(filters()), view: view() }));
+    this.list = new SessionListController(host, client, () => ({ ...filters(), conditions: sessionConditions(filters()), view: view(), pageSize: sessionListPageSize }));
     this.conversationTask = new Task(host, {
 	  args: () => {
 		const target = this.taskTarget;
@@ -90,14 +92,16 @@ export class ConversationsController {
     this.reworkTask = new Task(host, {
       args: () => {
         const target = this.target;
-        return [isActive(), target?.sourceId ?? "", target?.conversationId ?? ""] as const;
+        return [isActive() && reworkActive(), target?.sourceId ?? "", target?.conversationId ?? ""] as const;
       },
-      task: async ([active, sourceId, conversationId], { signal }) => ({
-        key: conversationKey(sourceId, conversationId, "", ""),
-        analysis: active && sourceId && conversationId
-          ? await client.getSessionRework(sourceId, conversationId, signal)
-          : undefined,
-      }),
+      task: async ([active, sourceId, conversationId], { signal }) => {
+        const key = conversationKey(sourceId, conversationId, "", "");
+        const cached = this.reworkCache?.key === key ? this.reworkCache : undefined;
+        if (!active || !sourceId || !conversationId || cached) return cached ?? { key };
+        const result = { key, analysis: await client.getSessionRework(sourceId, conversationId, signal) };
+        this.reworkCache = result;
+        return result;
+      },
     });
   }
 
@@ -204,9 +208,11 @@ export class ConversationsController {
     this.sessionOverride = undefined;
     void this.conversationTask.run();
   }
-  refreshRework() { void this.reworkTask.run(); }
+  refreshRework() { this.reworkCache = undefined; void this.reworkTask.run(); }
 
   async applyLiveUpdate(window: LiveUpdateWindow) {
+	const cachedTarget = this.target;
+	if (this.reworkCache && cachedTarget && (window.resyncRequired || affectsSession(window.targets, cachedTarget.sourceId, cachedTarget.conversationId))) this.reworkCache = undefined;
     const filter = this.filters();
     const refreshList = window.resyncRequired || affectsSessionList(window.targets, filter.sourceId)
       ? this.refreshListForLive()
@@ -309,7 +315,7 @@ export class ConversationsController {
         };
       }
       this.syncCursor = convergedCursor;
-      void this.reworkTask.run();
+      if (this.reworkActive()) this.refreshRework();
       this.host.requestUpdate();
     } catch (error) {
       if (request !== this.liveRequest || abort.signal.aborted) return;

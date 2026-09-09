@@ -2502,6 +2502,10 @@
   <source>Unavailable reason</source>
   <target>算定不可の理由</target>
 </trans-unit>
+<trans-unit id="workspaceCompletion.selectSession">
+  <source>Select a session to inspect its operations and cost.</source>
+  <target>セッションを選択すると、操作とコストを確認できます。</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

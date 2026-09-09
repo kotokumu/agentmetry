@@ -77,12 +77,13 @@ export class ConversationWorkspace extends LocalizedElement {
     () => this.investigationFilters,
     () => this.active,
     () => this.sessionView,
+    () => this.purpose === "rework",
   );
   private readonly comparisonRoots = new SessionListController(
     this,
     agentmetryClient,
     () => ({ ...this.investigationFilters, conditions: this.conditions, view: "roots" }),
-    () => this.active && this.sessionView === "all",
+    () => this.active && this.sessionView === "all" && this.purpose === "rework" && this.showComparison,
   );
   private readonly comparison = new SessionComparisonController(
     this,
@@ -90,7 +91,7 @@ export class ConversationWorkspace extends LocalizedElement {
       reader: agentmetryClient,
       current: () => this.conversations.selected,
       sessions: () => this.sessionView === "all" ? this.comparisonRoots.sessions : this.conversations.sessions,
-      isActive: () => this.active,
+      isActive: () => this.active && this.purpose === "rework" && this.showComparison,
     },
   );
   private lastSummaryKey = "";
@@ -116,7 +117,7 @@ export class ConversationWorkspace extends LocalizedElement {
     .purpose-nav button[aria-pressed="true"] { border-color: var(--am-accent); background: var(--am-accent-soft); font-weight: 600; }
     .purpose-nav button:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 3px; }
     .workspace { display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 12px; align-items: start; }
-    .workspace.list-only, .workspace.list-collapsed { grid-template-columns: minmax(0, 1fr); }
+    .workspace.list-collapsed { grid-template-columns: minmax(0, 1fr); }
     .list-surface { display: flex; flex-direction: column; min-width: 0; }
     .list-heading { margin: 0; font-size: 16px; }
     .list-toolbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; gap: 8px; }
@@ -125,7 +126,7 @@ export class ConversationWorkspace extends LocalizedElement {
     .list-toggle svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
     .list-toggle:focus-visible { outline: 2px solid var(--am-accent); outline-offset: 2px; }
     .list-collapsed .list-surface { display: none; }
-    .workspace[data-view="detail"] .list-surface { position: sticky; top: 12px; max-height: calc(100dvh - 24px); }
+    .list-surface { position: sticky; top: 12px; max-height: calc(100dvh - 24px); }
     .list-conditions { flex: 0 0 auto; margin-bottom: 12px; max-height: 40dvh; overflow: auto; }
     .list-conditions > summary { cursor: pointer; color: var(--am-muted); font-size: 13px; padding: 6px 0; }
     .restore-list { display: none; justify-self: start; grid-column: 1 / -1; }
@@ -153,10 +154,10 @@ export class ConversationWorkspace extends LocalizedElement {
     .copy-session-id { border: 1px solid var(--am-border); border-radius: 6px; padding: 6px 8px; background: var(--am-surface-raised); color: var(--am-text); font: inherit; }
     .copy-session-id { cursor: pointer; }
     .session-partial { color: var(--am-muted); font-size: .78rem; }
-    .session-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+    .session-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 10px; }
     .session-overview, .execution-context { margin-top: 10px; border-top: 1px solid var(--am-border); padding-top: 8px; }
     .session-overview summary, .execution-context summary { color: var(--am-muted); cursor: pointer; font-size: 12px; }
-    .session-overview .session-metrics { margin-top: 10px; }
+    .session-overview .session-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
     .context-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px; margin-top: 10px; }
     .operations-panel { margin: 0; }
     .coverage-note { margin: 6px 0 0; color: var(--am-muted); font-size: .85rem; line-height: 1.4; overflow-wrap: anywhere; }
@@ -193,7 +194,10 @@ export class ConversationWorkspace extends LocalizedElement {
 		this.lastReadyKey = "";
 		this.lastCanonicalKey = "";
       if (this.requestedConversation) this.conversations.select(this.requestedConversation);
-      else this.conversations.clearRoute();
+      else {
+        this.listCollapsed = false;
+        this.conversations.clearRoute();
+      }
       this.showComparison = false;
     }
   }
@@ -210,7 +214,7 @@ export class ConversationWorkspace extends LocalizedElement {
   };
 
   private async refreshComparisonRoots(delivery: LiveUpdateDelivery) {
-    if (!this.active || this.sessionView !== "all" || (!delivery.resyncRequired && !affectsSessionList(delivery.targets, this.sourceId))) return;
+    if (!this.active || this.purpose !== "rework" || !this.showComparison || this.sessionView !== "all" || (!delivery.resyncRequired && !affectsSessionList(delivery.targets, this.sourceId))) return;
     await this.comparisonRoots.refresh();
     if (this.comparisonRoots.failed) throw new Error("Session list unavailable");
   }
@@ -226,11 +230,11 @@ export class ConversationWorkspace extends LocalizedElement {
           ? this.conversations.agentActivityPage.activities : []
         : selected.activities
       : [];
-    const listPanel = html`<aside id="session-list-panel" class="panel list-surface" aria-label=${localization.t("app.sessions")}><div class="list-toolbar"><h2 class="list-heading" tabindex="-1">${localization.t("app.conversations")}</h2><button class="list-toggle" type="button" data-collapse-list ?hidden=${!detailRequested} aria-label=${localization.t("workspace.hideList")} title=${localization.t("workspace.hideList")} aria-expanded="true" aria-controls="session-list-panel" @click=${this.toggleList}>${sessionListToggleIcon(true)}</button></div><am-session-filter ?compact=${detailRequested}
+    const listPanel = html`<aside id="session-list-panel" class="panel list-surface" aria-label=${localization.t("app.sessions")}><div class="list-toolbar"><h2 class="list-heading" tabindex="-1">${localization.t("app.conversations")}</h2><button class="list-toggle" type="button" data-collapse-list ?hidden=${!detailRequested} aria-label=${localization.t("workspace.hideList")} title=${localization.t("workspace.hideList")} aria-expanded="true" aria-controls="session-list-panel" @click=${this.toggleList}>${sessionListToggleIcon(true)}</button></div><am-session-filter compact
         .sources=${this.sources.length ? this.sources : this.conversations.sources}
         .selectedSource=${this.sourceId}
         .search=${this.search}
-      ></am-session-filter><details class="list-conditions"><summary>${localization.t("investigation.editConditions")}</summary><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? localization.t("workspace.queryUnavailable")) : "")}></am-investigation-filter></details><am-session-list ?compact=${detailRequested}
+      ></am-session-filter><details class="list-conditions"><summary>${localization.t("investigation.editConditions")}</summary><am-investigation-filter .filters=${this.investigationFilters} .pending=${this.filterPending || this.conversations.loadingList} .confirmed=${!this.conversations.loadingList && !this.conversations.listFailed} .error=${this.filterError || (this.conversations.listFailed ? String(this.conversations.listError ?? localization.t("workspace.queryUnavailable")) : "")}></am-investigation-filter></details><am-session-list compact
         .sessions=${sessions}
         .view=${this.sessionView}
         .hasMore=${this.conversations.list.hasMore}
@@ -245,9 +249,9 @@ export class ConversationWorkspace extends LocalizedElement {
         .selectedSource=${this.conversations.listSelection?.sourceId ?? ""}
         .locationForSession=${this.locationForSession}
       ></am-session-list>${this.renderInitialEmptyState()}</aside>`;
-    return html`<section class="workspace ${!detailRequested ? "list-only" : this.listCollapsed ? "list-collapsed" : ""}" data-view=${detailRequested ? "detail" : "list"}>
+    return html`<section class="workspace ${this.listCollapsed ? "list-collapsed" : ""}" data-view=${detailRequested ? "detail" : "list"}>
       ${listPanel}
-      <div class="detail" ?hidden=${!this.requestedConversation}>
+      <div class="detail">
         <button class="list-toggle restore-list" type="button" data-show-list aria-label=${localization.t("workspace.showList")} title=${localization.t("workspace.showList")} aria-expanded="false" aria-controls="session-list-panel" @click=${this.toggleList}>${sessionListToggleIcon(false)}</button>
         ${!selected && detailRequested ? html`<a class="list-return" href=${this.listHref} @click=${this.returnToList}>← ${localization.t("app.conversations")}</a>` : null}
         ${selected ? this.renderSelected(selected, selectedAgentId, visibleActivities) : this.renderConversationStatus()}
@@ -302,11 +306,11 @@ export class ConversationWorkspace extends LocalizedElement {
         <am-kpi-card compact .label=${completionMsg("Elapsed time")} .value=${formatDuration(selected.startedAt, selected.endedAt)} .hint=${completionMsg("Reported session interval")}></am-kpi-card>
         <am-kpi-card compact .label=${completionMsg("Activities")} .value=${localization.number(selected.activityCount)} .hint=${completionMsg("Reported activity count")}></am-kpi-card>
         <am-kpi-card compact .label=${completionMsg("Agents")} .value=${localization.number(selected.agentCount ?? selected.agents.length)} .hint=${completionMsg("Reported agent count")}></am-kpi-card>
+        <am-kpi-card compact .label=${localization.t("workspace.estimatedCost")} .value=${formatCostSummary(selected.costSummary)} .hint=${costCoverageHint(selected.costSummary)}></am-kpi-card>
       </div><details class="session-overview"><summary>${localization.t("workspace.sessionOverview")}</summary><div class="session-metrics" aria-label=${localization.t("workspace.usageAria")}>
         <am-kpi-card .label=${localization.t("workspace.inputTokens")} .value=${formatOptionalNumber(selected.tokens.input)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
         <am-kpi-card .label=${localization.t("workspace.outputTokens")} .value=${formatOptionalNumber(selected.tokens.output)} .hint=${localization.t("workspace.reportedByModel")}></am-kpi-card>
-        <am-kpi-card .label=${localization.t("workspace.estimatedCost")} .value=${formatCostSummary(selected.costSummary)} .hint=${costCoverageHint(selected.costSummary)}></am-kpi-card>
-      </div></details><p class="coverage-note">${localization.t("workspace.coverage", { state: localization.t(this.conversations.rework?.coverage.activityCoverage === "observed_projection_complete" ? "workspace.coverageComplete" : this.conversations.rework ? "workspace.coveragePartial" : "workspace.coverageUnavailable") })}</p></section>
+      </div></details>${this.conversations.rework ? html`<p class="coverage-note">${localization.t("workspace.coverage", { state: localization.t(this.conversations.rework.coverage.activityCoverage === "observed_projection_complete" ? "workspace.coverageComplete" : "workspace.coveragePartial") })}</p>` : null}</section>
       <nav class="purpose-nav" aria-label=${localization.t("workspace.investigationAria")}>${([ ["execution", "workspace.execution"], ["files", "workspace.fileReads"], ["rework", "workspace.rework"] ] as const).map(([purpose, label]) => html`<button type="button" data-purpose=${purpose} aria-pressed=${String(this.purpose === purpose)} @click=${() => this.selectPurpose(purpose)}>${localization.t(label)}</button>`)}</nav>
       <am-session-file-reads
         ?hidden=${this.purpose !== "files"}
@@ -350,7 +354,8 @@ export class ConversationWorkspace extends LocalizedElement {
   }
 
   private renderConversationStatus() {
-    if (!this.requestedConversation || (!this.conversations.loadingConversation && !this.conversations.conversationFailed)) return null;
+    if (!this.requestedConversation) return html`<section class="panel empty" role="status">${completionMsg("Select a session")}</section>`;
+    if (!this.conversations.loadingConversation && !this.conversations.conversationFailed) return null;
     if (this.conversations.loadingConversation) return html`<p class="empty-settings" role="status">${localization.t("workspace.loadingConversationTitle")} — ${localization.t("workspace.loadingConversationBody")}</p>`;
     return html`<p class="empty-settings" role="alert">${localization.t("workspace.conversationUnavailable")} <button class="retry" type="button" @click=${this.retryConversation}>${localization.t("workspace.retry")}</button></p>`;
   }
@@ -558,6 +563,7 @@ const completionMsg = (text: string) => {
     case "No matching sessions": return msg("No matching sessions", { id: "workspaceCompletion.noMatchingSessions" });
     case "No sessions yet": return msg("No sessions yet", { id: "workspaceCompletion.noSessionsYet" });
     case "Open Connections settings": return msg("Open Connections settings", { id: "workspaceCompletion.openConnections" });
+    case "Select a session": return msg("Select a session to inspect its operations and cost.", { id: "workspaceCompletion.selectSession" });
     case "Copied": return msg("Copied", { id: "workspaceCompletion.copied" });
     case "Copy failed": return msg("Copy failed", { id: "workspaceCompletion.copyFailed" });
     default: return msg("Copy full id", { id: "workspaceCompletion.copyFullId" });
