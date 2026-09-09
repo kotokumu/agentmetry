@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.18.1](https://github.com/kotokumu/agentmetry/compare/v1.18.0...v1.18.1) (2026-09-09)
+
+
+### Performance Improvements
+
+* **storage:** rebuild migration projections in bulk ([#81](https://github.com/kotokumu/agentmetry/issues/81)) ([d3012c4](https://github.com/kotokumu/agentmetry/commit/d3012c41e665c6862151d87e749d41da12e85ffc))
+* **storage:** speed up journal replay migration ([#79](https://github.com/kotokumu/agentmetry/issues/79)) ([a2a34b0](https://github.com/kotokumu/agentmetry/commit/a2a34b02d648aca485e8b5432fedcb60b53fc9a7))
+
 ## [1.18.0](https://github.com/kotokumu/agentmetry/compare/v1.17.3...v1.18.0) (2026-09-09)
 
 
