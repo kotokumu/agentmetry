@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.18.0](https://github.com/kotokumu/agentmetry/compare/v1.17.3...v1.18.0) (2026-09-09)
+
+
+### Features
+
+* add model call cost accounting ([#74](https://github.com/kotokumu/agentmetry/issues/74)) ([02df178](https://github.com/kotokumu/agentmetry/commit/02df1781caa86d35e4342de2c0549b5567cc59c0))
+* **web:** improve session investigation navigation ([#77](https://github.com/kotokumu/agentmetry/issues/77)) ([51f4609](https://github.com/kotokumu/agentmetry/commit/51f46092022486659e9860a585e044b48bd0c484))
+* **web:** show costs for session operations ([#78](https://github.com/kotokumu/agentmetry/issues/78)) ([e40b509](https://github.com/kotokumu/agentmetry/commit/e40b5099c4ed9d7b3c94d8ce249275f57c3a8bc8))
+
+
+### Bug Fixes
+
+* normalize captured Codex cost events ([#76](https://github.com/kotokumu/agentmetry/issues/76)) ([b692f64](https://github.com/kotokumu/agentmetry/commit/b692f64753835486807c96d77cdf955408a3e48f))
+
 ## [1.17.3](https://github.com/kotokumu/agentmetry/compare/v1.17.2...v1.17.3) (2026-09-08)
 
 
