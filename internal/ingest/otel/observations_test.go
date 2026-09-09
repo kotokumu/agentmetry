@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kotokumu/agentmetry/internal/canonical"
 	"go.opentelemetry.io/collector/pdata/pcommon"
 	"go.opentelemetry.io/collector/pdata/plog"
 	"go.opentelemetry.io/collector/pdata/pmetric"
@@ -11,6 +12,22 @@ import (
 
 	source "github.com/kotokumu/agentmetry/sourceplugin"
 )
+
+func TestLogObservationPrefersSemanticEventNameOverNativeCallsite(t *testing.T) {
+	logs := plog.NewLogs()
+	record := logs.ResourceLogs().AppendEmpty().ScopeLogs().AppendEmpty().LogRecords().AppendEmpty()
+	record.SetEventName("event otel/src/events/session_telemetry.rs:1012")
+	record.Attributes().PutStr("event.name", "codex.sse_event")
+	projection := canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{Source: "codex"}}}
+
+	observations, err := BuildLogObservations(logs, projection)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(observations) != 1 || observations[0].SourceEventName != "codex.sse_event" {
+		t.Fatalf("source event = %q, want codex.sse_event", observations[0].SourceEventName)
+	}
+}
 
 func TestLogObservationPricingTimePrefersProducerThenOTLPTimestamp(t *testing.T) {
 	logs := plog.NewLogs()
