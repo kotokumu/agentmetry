@@ -41,6 +41,13 @@ type profilingProbePlugin struct {
 
 type sequentialPlugin struct{ sourceplugin.Plugin }
 
+type replayOverlapProbePlugin struct {
+	calls              atomic.Int64
+	firstStarted       chan struct{}
+	releaseFirst       chan struct{}
+	secondBatchStarted chan struct{}
+}
+
 func (*profilingProbePlugin) ID() string { return "probe" }
 
 func (*profilingProbePlugin) Match(sourceplugin.Event) bool { return true }
@@ -59,6 +66,24 @@ func (plugin *profilingProbePlugin) Normalize(event sourceplugin.Event) sourcepl
 }
 
 func (plugin *profilingProbePlugin) SupportsParallelProfiling() bool { return plugin.parallel }
+
+func (*replayOverlapProbePlugin) ID() string { return "replay-overlap-probe" }
+
+func (*replayOverlapProbePlugin) Match(sourceplugin.Event) bool { return true }
+
+func (plugin *replayOverlapProbePlugin) Normalize(event sourceplugin.Event) sourceplugin.Event {
+	call := plugin.calls.Add(1)
+	if call == 1 {
+		close(plugin.firstStarted)
+		<-plugin.releaseFirst
+	}
+	if call == maxReplayBatchRecords+1 {
+		close(plugin.secondBatchStarted)
+	}
+	return event
+}
+
+func (*replayOverlapProbePlugin) SupportsParallelProfiling() bool { return false }
 
 func TestMigrateRebuildsTrueLegacySchemaAndPreservesJournalMetadata(t *testing.T) {
 	sourcePath := filepath.Join(t.TempDir(), "legacy.db")
@@ -203,6 +228,124 @@ func TestPrepareReplayChunkPreservesFailedJournalWithoutProfilingIt(t *testing.T
 	}
 	if len(items) != 1 || items[0].accepted.NormalizationError != "unsupported source revision" || items[0].accepted.Journal.NormalizationStatus != "failed" {
 		t.Fatalf("failed replay item = %#v", items)
+	}
+}
+
+func TestMigratePreparesTheNextSourceBatchWhileTheCurrentBatchCommitIsBlocked(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "overlap.db")
+	raw := semanticTracePayload(t, 0)
+	fixtures := make([]legacyFixture, maxReplayBatchRecords+1)
+	for index := range fixtures {
+		fixtures[index] = legacyFixture{
+			raw: raw, source: fmt.Sprintf("source-%03d", index+1), version: 1, status: "projected",
+		}
+	}
+	createLegacyDatabaseWithPayloadJSON(t, path, fixtures, "")
+	plugin := &replayOverlapProbePlugin{
+		firstStarted:       make(chan struct{}),
+		releaseFirst:       make(chan struct{}),
+		secondBatchStarted: make(chan struct{}),
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := MigrateIfNeeded(context.Background(), path, sourceplugin.NewRegistry(plugin), nil)
+		done <- err
+	}()
+	waitForSignal(t, plugin.firstStarted, "first source batch normalization")
+
+	candidate, err := sql.Open("sqlite", path+".compacting")
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := candidate.Begin()
+	if err != nil {
+		candidate.Close()
+		t.Fatal(err)
+	}
+	if _, err := transaction.Exec("UPDATE otlp_exports SET source=source WHERE id=-1"); err != nil {
+		transaction.Rollback()
+		candidate.Close()
+		t.Fatal(err)
+	}
+	close(plugin.releaseFirst)
+	waitForSignal(t, plugin.secondBatchStarted, "next source batch normalization")
+	if err := transaction.Rollback(); err != nil {
+		candidate.Close()
+		t.Fatal(err)
+	}
+	if err := candidate.Close(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(30 * time.Second):
+		t.Fatal("migration did not finish after releasing the candidate writer")
+	}
+
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	rows, err := database.Query("SELECT source FROM otlp_exports ORDER BY id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for index := range fixtures {
+		if !rows.Next() {
+			t.Fatalf("missing migrated journal row %d", index+1)
+		}
+		var got string
+		if err := rows.Scan(&got); err != nil {
+			t.Fatal(err)
+		}
+		if got != fixtures[index].source {
+			t.Fatalf("migrated journal row %d source = %q, want %q", index+1, got, fixtures[index].source)
+		}
+	}
+	if rows.Next() {
+		t.Fatal("migration duplicated a source journal row")
+	}
+}
+
+func TestMigratePreparationFailureStopsThePipelineAndRemovesCandidate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "corrupt.db")
+	createLegacyDatabaseWithPayloadJSON(t, path, []legacyFixture{{
+		raw: semanticTracePayload(t, 0), source: "codex", version: 1, status: "projected",
+	}}, "")
+	database, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.Exec("UPDATE otlp_exports SET payload_sha256=?", strings.Repeat("0", sha256.Size*2)); err != nil {
+		database.Close()
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := MigrateIfNeeded(context.Background(), path, builtin.Registry(), nil); err == nil || !strings.Contains(err.Error(), "restore legacy export") {
+		t.Fatalf("migration error = %v, want restore failure", err)
+	}
+	if fileExists(path+".compacting") || fileExists(manifestPath(path)) {
+		t.Fatal("failed replay pipeline left migration artifacts")
+	}
+	verify, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer verify.Close()
+	var hash string
+	if err := verify.QueryRow("SELECT payload_sha256 FROM otlp_exports").Scan(&hash); err != nil {
+		t.Fatal(err)
+	}
+	if hash != strings.Repeat("0", sha256.Size*2) {
+		t.Fatalf("authoritative source journal changed after failure: hash=%q", hash)
 	}
 }
 
@@ -908,6 +1051,10 @@ type legacyFixture struct {
 }
 
 func createLegacyDatabase(t *testing.T, path string, fixtures []legacyFixture) {
+	createLegacyDatabaseWithPayloadJSON(t, path, fixtures, strings.Repeat("legacy-json", 500000))
+}
+
+func createLegacyDatabaseWithPayloadJSON(t *testing.T, path string, fixtures []legacyFixture, payloadJSON string) {
 	t.Helper()
 	database, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -943,7 +1090,7 @@ CREATE TABLE plan_usage_snapshots (
 received_at, signal, transport, payload_protobuf, payload_json, payload_sha256,
 payload_size, source, normalizer_version, normalization_status, normalization_error
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, now, canonical.SignalTrace, ingest.TransportGRPC,
-			fixture.raw, strings.Repeat("legacy-json", 500000), hex.EncodeToString(hash[:]),
+			fixture.raw, payloadJSON, hex.EncodeToString(hash[:]),
 			len(fixture.raw), fixture.source, fixture.version, fixture.status, fixture.normalizationError)
 		if err != nil {
 			t.Fatal(err)
