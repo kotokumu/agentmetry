@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.19.1](https://github.com/kotokumu/agentmetry/compare/v1.19.0...v1.19.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **storage:** skip rollups for empty projections ([#93](https://github.com/kotokumu/agentmetry/issues/93)) ([c59e312](https://github.com/kotokumu/agentmetry/commit/c59e312200001cc02cc04eea0a51347fdb4049bb))
+* **web:** keep session pagination reachable ([#91](https://github.com/kotokumu/agentmetry/issues/91)) ([7210ff8](https://github.com/kotokumu/agentmetry/commit/7210ff8a49a69cb107e4faee6678b7e88d0e16f2))
+* **web:** preserve lists across tab switches ([#92](https://github.com/kotokumu/agentmetry/issues/92)) ([0228ac2](https://github.com/kotokumu/agentmetry/commit/0228ac2cd26599e8d95066f19640e2e12af14c00))
+* **web:** restore visible agent structure ([#89](https://github.com/kotokumu/agentmetry/issues/89)) ([ed7b242](https://github.com/kotokumu/agentmetry/commit/ed7b242edfab970eb3b2d4226498fa194bf781ae))
+
 ## [1.19.0](https://github.com/kotokumu/agentmetry/compare/v1.18.3...v1.19.0) (2026-09-09)
 
 
