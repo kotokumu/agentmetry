@@ -6,7 +6,7 @@ import { localization } from "../localization/localization";
 afterEach(() => document.body.replaceChildren());
 
 describe("session catalog controls", () => {
-  it("exposes a labelled native child-session control and automatic paging", async () => {
+  it("exposes a labelled native child-session control and visible paging", async () => {
     await localization.select("en");
     const list = document.createElement("am-session-list") as SessionList;
     list.view = "all";
@@ -23,7 +23,7 @@ describe("session catalog controls", () => {
     expect(change.mock.calls[0][0].detail).toEqual({ view: "roots" });
     expect(list.shadowRoot!.textContent).toContain("Child session");
     expect(list.shadowRoot!.querySelector("strong")!.textContent).toBe("child");
-    expect(list.shadowRoot!.querySelector("button[data-more]")).toBeNull();
+    expect(list.shadowRoot!.querySelector("button[data-more]")?.textContent).toContain("Load more sessions");
   });
   it("explains telemetry limits in Japanese without claiming human creation", async () => {
     await localization.select("ja");

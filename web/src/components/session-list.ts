@@ -56,7 +56,10 @@ export class SessionList extends LocalizedElement {
     .value { display: block; overflow-wrap: anywhere; }
     time { white-space: nowrap; }
     .empty { color: var(--am-muted); padding: 18px 0; }
-    .page-end { min-height: 28px; color: var(--am-muted); font-size: 12px; text-align: center; padding: 10px 0; }
+    .page-end { display: flex; min-height: 42px; align-items: center; justify-content: center; color: var(--am-muted); font-size: 12px; text-align: center; padding: 10px 0; }
+    .more-button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-width: 11rem; margin: 0; }
+    .spinner { width: 12px; height: 12px; box-sizing: border-box; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
     :host([compact]) .table-header { display: none; }
     :host([compact]) .session-table { border: 0; }
     :host([compact]) .session-row { display: block; border-top: 0; border-bottom: 1px solid var(--am-border); border-radius: 5px; margin: 0 0 4px; }
@@ -78,7 +81,7 @@ export class SessionList extends LocalizedElement {
       .copy-button { margin: 0 14px 14px; }
       .cell-label { display: inline; margin: 0 6px 0 0; }
     }
-    @media (prefers-reduced-motion: reduce) { a { transition: none; transform: none; } }
+    @media (prefers-reduced-motion: reduce) { a { transition: none; transform: none; } .spinner { animation: none; } }
   `;
 
   render() {
@@ -91,7 +94,7 @@ export class SessionList extends LocalizedElement {
       ${this.renderRows()}
       ${this.pageFailed && !this.unavailable ? html`<p role="alert" class="empty">${localization.t("sessions.unavailable")}</p>` : null}
       ${this.pageFailed || this.unavailable ? html`<button type="button" @click=${() => this.dispatchEvent(new CustomEvent("sessions-retry-requested", { bubbles: true, composed: true }))}>${localization.t("sessions.retry")}</button>` : null}
-      <div class="page-end" role="status">${this.loadingMore ? localization.t("common.loading") : ""}</div>
+      ${this.renderPageEnd()}
     `;
   }
 
@@ -142,6 +145,15 @@ export class SessionList extends LocalizedElement {
     if (this.pageRequested || !this.isConnected || !this.hasMore || this.loading || this.loadingMore || this.pageFailed || this.unavailable) return;
     this.pageRequested = true;
     this.dispatchEvent(new CustomEvent("sessions-more-requested", { bubbles: true, composed: true }));
+  }
+
+  private renderPageEnd() {
+    const unavailable = this.pageFailed || this.unavailable;
+    return html`<div class="page-end" role="status" aria-live="polite" aria-busy=${String(this.loadingMore)}>
+      ${!unavailable && this.hasMore ? html`<button class="more-button" data-more type="button" ?disabled=${this.loadingMore} @click=${() => this.requestNextPage()}>
+        ${this.loadingMore ? html`<span class="spinner" aria-hidden="true"></span>${localization.t("sessions.loadingMore")}` : localization.t("sessions.loadMore")}
+      </button>` : !unavailable && this.sessions.length > 0 ? localization.t("sessions.allLoaded") : ""}
+    </div>`;
   }
 
   private renderRows() {
