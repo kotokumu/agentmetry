@@ -76,7 +76,7 @@ export class ConversationsController {
     this.filters = filters;
     this.isActive = isActive;
     host.addController(this);
-    this.list = new SessionListController(host, client, () => ({ ...filters(), conditions: sessionConditions(filters()), view: view(), pageSize: sessionListPageSize }));
+    this.list = new SessionListController(host, client, () => ({ ...filters(), conditions: sessionConditions(filters()), view: view(), pageSize: sessionListPageSize }), isActive);
     this.conversationTask = new Task(host, {
 	  args: () => {
 		const target = this.taskTarget;

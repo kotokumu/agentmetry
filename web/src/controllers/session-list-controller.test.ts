@@ -38,20 +38,64 @@ describe("session list request ownership", () => {
     await next;
     expect(test.controller.sessions.map((s) => s.id)).toEqual(["one", "two", "three"]);
   });
-  it("only reads while active and ignores replies from a previous activation", async () => {
+  it("starts reads only while active and lets compatible in-flight work finish while inactive", async () => {
     const test = setup(false);
     await test.controller.refresh();
     expect(test.read).not.toHaveBeenCalled();
     test.activate(true);
     expect(test.read).toHaveBeenCalledTimes(1);
     test.activate(false);
-    expect(test.controller.loading).toBe(false);
-    test.activate(true);
-    test.requests[0].resolve({ sessions: [row("stale")], nextPageToken: "old" });
-    await Promise.resolve();
     expect(test.controller.sessions).toEqual([]);
-    test.requests[1].resolve({ sessions: [row("current")], nextPageToken: "" });
-    await vi.waitFor(() => expect(test.controller.sessions.map((s) => s.id)).toEqual(["current"]));
+    test.requests[0].resolve({ sessions: [row("resident")], nextPageToken: "" });
+    await vi.waitFor(() => expect(test.controller.loading).toBe(false));
+    test.activate(true);
+    expect(test.read).toHaveBeenCalledTimes(1);
+    expect(test.controller.sessions.map((s) => s.id)).toEqual(["resident"]);
+  });
+  it("keeps a completed resident page while inactive and reuses it on reactivation", async () => {
+    const test = setup();
+    test.requests[0].resolve({ sessions: [row("resident")], nextPageToken: "next" });
+    await vi.waitFor(() => expect(test.controller.sessions.map((s) => s.id)).toEqual(["resident"]));
+
+    test.activate(false);
+    expect(test.controller.sessions).toEqual([]);
+    test.activate(true);
+
+    expect(test.read).toHaveBeenCalledTimes(1);
+    expect(test.controller.sessions.map((s) => s.id)).toEqual(["resident"]);
+    expect(test.controller.hasMore).toBe(true);
+  });
+  it("invalidates a resident page when its query changes while inactive", async () => {
+    const test = setup();
+    test.requests[0].resolve({ sessions: [row("old-query")], nextPageToken: "old-next" });
+    await vi.waitFor(() => expect(test.controller.sessions.map((s) => s.id)).toEqual(["old-query"]));
+
+    test.activate(false);
+    test.change({ search: "new-query" });
+    expect(test.read).toHaveBeenCalledTimes(1);
+    test.activate(true);
+
+    expect(test.controller.sessions).toEqual([]);
+    expect(test.read).toHaveBeenCalledTimes(2);
+    expect(test.read.mock.calls[1][0]).toMatchObject({ search: "new-query", pageToken: "" });
+    test.requests[1].resolve({ sessions: [row("new-query")], nextPageToken: "" });
+    await vi.waitFor(() => expect(test.controller.sessions.map((s) => s.id)).toEqual(["new-query"]));
+  });
+  it("coalesces an inactive refresh and refreshes atomically on reactivation", async () => {
+    const test = setup();
+    test.requests[0].resolve({ sessions: [row("resident")], nextPageToken: "" });
+    await vi.waitFor(() => expect(test.controller.sessions.map((s) => s.id)).toEqual(["resident"]));
+
+    test.activate(false);
+    await test.controller.refresh();
+    await test.controller.refresh();
+    expect(test.read).toHaveBeenCalledTimes(1);
+    test.activate(true);
+
+    expect(test.read).toHaveBeenCalledTimes(2);
+    expect(test.controller.sessions.map((s) => s.id)).toEqual(["resident"]);
+    test.requests[1].resolve({ sessions: [row("fresh")], nextPageToken: "" });
+    await vi.waitFor(() => expect(test.controller.sessions.map((s) => s.id)).toEqual(["fresh"]));
   });
   it("ignores an old success after a view change and resets the page", async () => {
     const test = setup();

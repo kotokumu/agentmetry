@@ -14,6 +14,7 @@ export class SessionListController implements ReactiveController {
   private generation = 0;
   private abort?: AbortController;
   private pageRequest?: Promise<void>;
+  private refreshPending = false;
   loading = false;
   loadingMore = false;
   failed = false;
@@ -28,8 +29,17 @@ export class SessionListController implements ReactiveController {
 
   hostConnected() { this.connected = true; void this.refresh(); }
   hostUpdate() {
-    if (!this.isActive()) { if (this.key) this.deactivate(); return; }
-    if (this.connected && this.key !== queryKey(this.query())) void this.refresh();
+    const nextKey = queryKey(this.query());
+    if (!this.isActive()) {
+      if (this.key && this.key !== nextKey) this.invalidate();
+      return;
+    }
+    if (!this.connected) return;
+    if (this.key !== nextKey) void this.refresh();
+    else if (this.refreshPending) {
+      this.refreshPending = false;
+      void this.refresh();
+    }
   }
   hostDisconnected() {
     this.connected = false;
@@ -42,7 +52,11 @@ export class SessionListController implements ReactiveController {
 
   refresh(): Promise<void> {
     if (!this.connected) return Promise.resolve();
-    if (!this.isActive()) { this.deactivate(); return Promise.resolve(); }
+    if (!this.isActive()) {
+      if (this.key) this.refreshPending = true;
+      return Promise.resolve();
+    }
+    this.refreshPending = false;
     const key = queryKey(this.query());
     if (this.key !== key) { this.rows = []; this.nextToken = ""; }
     this.key = key;
@@ -57,9 +71,10 @@ export class SessionListController implements ReactiveController {
     return this.pageRequest;
   }
 
-  private deactivate() {
+  private invalidate() {
     this.generation += 1;
     this.abort?.abort();
+    this.abort = undefined;
     this.key = "";
     this.rows = [];
     this.nextToken = "";
@@ -67,6 +82,7 @@ export class SessionListController implements ReactiveController {
     this.loading = false;
     this.loadingMore = false;
     this.failed = false;
+    this.refreshPending = false;
   }
 
   private async read(mode: "replace" | "append") {
@@ -81,7 +97,7 @@ export class SessionListController implements ReactiveController {
     this.loadingMore = mode === "append";
     this.failed = false;
     this.host.requestUpdate();
-    const current = () => this.connected && this.isActive() && generation === this.generation && key === queryKey(this.query());
+    const current = () => this.connected && generation === this.generation && key === queryKey(this.query());
     try {
       let page = await this.reader.listSessionsPage(query, abort.signal);
       const residentCount = this.rows.length;

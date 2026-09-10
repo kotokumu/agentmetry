@@ -61,6 +61,7 @@ export class AgentmetryApp extends LocalizedElement {
   @state() private traceReturn?: NavigationOrigin;
   @state() private conversationReturn?: NavigationOrigin;
   @state() private workspaceInitialized = false;
+  @state() private traceCatalogInitialized = false;
   @state() private requestedAgentId = "";
   @state() private requestedPurpose: NavigationViewState["purpose"] = "execution";
   @state() private requestedActivityId = "";
@@ -160,7 +161,7 @@ export class AgentmetryApp extends LocalizedElement {
     .settings-panel h2, .settings-panel p { margin: 0; }
     .settings-panel p { color: var(--am-muted); font-size: 14px; line-height: 1.5; }
     .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-    am-trace-explorer[hidden], am-conversation-workspace[hidden] { display: none; }
+    am-trace-explorer[hidden], am-trace-catalog[hidden], am-conversation-workspace[hidden] { display: none; }
     @media (max-width: 950px) { header { align-items: flex-start; flex-direction: column; } .header-controls { justify-items: start; } .utility-controls { justify-content: flex-start; } .status { justify-content: flex-start; text-align: left; } }
     @media (max-width: 640px) { main { padding: 12px; } h1 { font-size: 1.5rem; } .brand { margin-bottom: 14px; } }
     @media (max-width: 480px) { .status { align-items: flex-start; flex-direction: column; } .state-note::before { content: none; } }
@@ -188,7 +189,16 @@ export class AgentmetryApp extends LocalizedElement {
         @dashboard-state-changed=${this.dashboardStateChanged}
       ></am-dashboard-summary>`}
 
-      ${!traceActive && this.section === "traces" ? html`<am-trace-catalog .range=${this.range} .sourceId=${this.sourceId} .conditions=${this.traceConditions} .active=${true} .locationForTrace=${(traceId: string) => traceLocation(traceId, this.filters, undefined, "traces")} @trace-catalog-selected=${this.traceCatalogSelected} @trace-conditions-requested=${this.traceCatalogConditionsRequested}></am-trace-catalog>` : null}
+      ${this.traceCatalogInitialized ? html`<am-trace-catalog
+        .range=${this.range}
+        .sourceId=${this.sourceId}
+        .conditions=${this.traceConditions}
+        .active=${this.section === "traces" && !traceActive}
+        ?hidden=${this.section !== "traces" || traceActive}
+        .locationForTrace=${(traceId: string) => traceLocation(traceId, this.filters, undefined, "traces")}
+        @trace-catalog-selected=${this.traceCatalogSelected}
+        @trace-conditions-requested=${this.traceCatalogConditionsRequested}
+      ></am-trace-catalog>` : null}
       ${!traceActive && this.section === "connections" ? html`<am-connections-settings></am-connections-settings>` : null}
 
       ${traceActive ? html`<am-trace-explorer
@@ -206,7 +216,7 @@ export class AgentmetryApp extends LocalizedElement {
         @trace-view-ready=${this.traceViewReady}
         @trace-view-state-changed=${this.traceViewStateChanged}
       ></am-trace-explorer>` : null}
-      ${this.workspaceInitialized && this.section === "sessions" ? html`<am-conversation-workspace
+      ${this.workspaceInitialized ? html`<am-conversation-workspace
         .sessionView=${this.sessionView}
         .range=${this.range}
         .sourceId=${this.sourceId}
@@ -224,8 +234,8 @@ export class AgentmetryApp extends LocalizedElement {
         .requestedActivityId=${this.requestedActivityId}
         .requestedFileReadId=${this.requestedFileReadId}
         .requestedEvidenceFocus=${this.requestedEvidenceFocus}
-        .active=${!traceActive}
-        ?hidden=${traceActive}
+        .active=${this.section === "sessions" && !traceActive}
+        ?hidden=${this.section !== "sessions" || traceActive}
         .locationForSession=${(sourceId: string, sessionId: string) =>
           conversationLocation({ sourceId, conversationId: sessionId }, this.filters)}
         .locationForTrace=${(traceId: string, spanId?: string) => traceLocation(traceId, this.filters, spanId)}
@@ -483,7 +493,8 @@ export class AgentmetryApp extends LocalizedElement {
       this.pendingFocus = restoreContext ? "trace" : undefined;
       return;
     }
-    this.workspaceInitialized = this.section === "sessions";
+    if (this.section === "sessions") this.workspaceInitialized = true;
+    if (this.section === "traces") this.traceCatalogInitialized = true;
     this.requestedConversation = undefined;
     this.requestedAgentId = view?.selectedAgentId ?? "";
     this.traceReturn = undefined;
@@ -586,7 +597,7 @@ export class AgentmetryApp extends LocalizedElement {
   private saveCurrentEntryView(href = `${window.location.pathname}${window.location.search}`, force = false) {
     const origin = navigationOriginFromState(history.state);
     const workspace = this.shadowRoot?.querySelector<ConversationWorkspace>("am-conversation-workspace");
-    const workspaceVisible = !traceIdFromPath(window.location.pathname);
+    const workspaceVisible = this.section === "sessions" && !traceIdFromPath(window.location.pathname);
     const view = workspaceVisible
       ? workspace?.navigationViewState
       : this.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer")?.navigationViewState;
@@ -607,9 +618,11 @@ export class AgentmetryApp extends LocalizedElement {
       const trace = this.shadowRoot?.querySelector<TraceExplorer>("am-trace-explorer");
       trace?.focusRouteHeading();
       focusReady = Boolean(trace);
-    } else if (this.pendingFocus === "detail" || this.pendingFocus === "list") {
+    } else if ((this.pendingFocus === "detail" || this.pendingFocus === "list") && this.section === "sessions") {
       const workspace = this.shadowRoot?.querySelector<ConversationWorkspace>("am-conversation-workspace");
       focusReady = workspace?.focusRouteHeading(this.pendingFocus) ?? false;
+    } else if (this.pendingFocus === "list") {
+      focusReady = true;
     }
     if (!focusReady) return;
     this.pendingFocus = undefined;
