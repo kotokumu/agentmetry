@@ -31,9 +31,10 @@ export class SessionFilter extends LocalizedElement {
     .source-indicator[data-source=""]::before { width: 3px; height: 3px; background: var(--am-accent); box-shadow: 6px 0 var(--am-muted), 0 6px var(--am-muted), 6px 6px var(--am-accent); transform: translate(-3px, -3px); }
     .source-chevron { width: 15px; height: 15px; color: var(--am-muted); transition: transform .18s ease; }
     .source-trigger[aria-expanded="true"] .source-chevron { transform: rotate(180deg); }
-    .source-menu { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; display: grid; width: 100%; min-width: 180px; gap: 2px; box-sizing: border-box; margin: 0; padding: 6px; border: 1px solid var(--am-border-strong); border-radius: 10px; background: var(--am-surface-raised); box-shadow: 0 14px 32px rgba(0, 0, 0, .28), 0 2px 8px rgba(0, 0, 0, .16); }
+    .source-menu { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; display: grid; width: 100%; min-width: 180px; max-height: min(280px, calc(100dvh - 120px)); gap: 2px; box-sizing: border-box; margin: 0; padding: 6px; overflow-y: auto; overscroll-behavior: contain; border: 1px solid var(--am-border-strong); border-radius: 10px; background: var(--am-surface-raised); box-shadow: 0 14px 32px rgba(0, 0, 0, .20), 0 2px 8px rgba(0, 0, 0, .12); }
     .source-option { display: grid; width: 100%; min-width: 0; grid-template-columns: 20px minmax(0, 1fr) 18px; align-items: center; gap: 9px; margin: 0; padding: 8px 9px; border: 0; border-radius: 7px; color: var(--am-muted); background: transparent; cursor: pointer; font: 650 13px/1.35 inherit; text-align: left; transition: color .14s ease, background .14s ease; }
     .source-option:hover, .source-option:focus-visible { color: var(--am-text); background: var(--am-surface-strong); outline: none; }
+    .source-option:focus-visible { box-shadow: inset 0 0 0 1px var(--am-accent); }
     .source-option[aria-checked="true"] { color: var(--am-text); background: var(--am-accent-soft); }
     .source-check { width: 16px; height: 16px; color: var(--am-accent); opacity: 0; }
     .source-option[aria-checked="true"] .source-check { opacity: 1; }
