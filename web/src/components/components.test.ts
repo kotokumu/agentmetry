@@ -978,9 +978,11 @@ describe("dashboard components", () => {
     document.body.append(filter);
     await filter.updateComplete;
 
-    const select = filter.shadowRoot?.querySelector<HTMLSelectElement>("select");
-    if (select) select.value = "claude";
-    select?.dispatchEvent(new Event("change", { bubbles: true }));
+    const sourceGroup = filter.shadowRoot?.querySelector<HTMLElement>('[role="group"]');
+    const claude = filter.shadowRoot?.querySelector<HTMLButtonElement>('button[data-source="claude"]');
+    expect(sourceGroup?.getAttribute("aria-label")).toBe("Source");
+    expect(filter.shadowRoot?.querySelector('button[data-source=""]')?.getAttribute("aria-pressed")).toBe("true");
+    claude?.click();
     const input = filter.shadowRoot?.querySelector<HTMLInputElement>("input");
     if (input) input.value = "repository review";
     input?.dispatchEvent(new InputEvent("input", { bubbles: true }));
@@ -992,24 +994,26 @@ describe("dashboard components", () => {
     expect(sourceListener).toHaveBeenCalledOnce();
     expect(sourceListener.mock.calls[0][0].detail).toEqual({ sourceId: "claude" });
     expect(searchListener.mock.calls[0][0].detail).toEqual({ search: "repository review" });
-	vi.useRealTimers();
+    vi.useRealTimers();
   });
 
-  it("restores the controlled source value when options return after loading", async () => {
+  it("keeps every observed source available after the active filter narrows results", async () => {
     const filter = document.createElement("am-session-filter") as SessionFilter;
-    filter.selectedSource = "claude";
-    filter.sources = [{ id: "claude", label: "Claude Code" }];
+    filter.sources = [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }];
+    const sourceListener = vi.fn();
+    filter.addEventListener("source-selected", sourceListener);
     document.body.append(filter);
     await filter.updateComplete;
-    expect(filter.shadowRoot?.querySelector<HTMLSelectElement>("select")?.value).toBe("claude");
 
-    filter.sources = [];
+    filter.selectedSource = "codex";
+    filter.sources = [{ id: "codex", label: "Codex" }];
     await filter.updateComplete;
-    expect(filter.shadowRoot?.querySelector<HTMLSelectElement>("select")?.value).toBe("");
+    const root = filter.shadowRoot!;
+    expect(root.querySelector('button[data-source="codex"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector('button[data-source="claude"]')?.textContent).toContain("Claude Code");
 
-    filter.sources = [{ id: "claude", label: "Claude Code" }];
-    await filter.updateComplete;
-    expect(filter.shadowRoot?.querySelector<HTMLSelectElement>("select")?.value).toBe("claude");
+    root.querySelector<HTMLButtonElement>('button[data-source="claude"]')?.click();
+    expect(sourceListener.mock.calls[0][0].detail).toEqual({ sourceId: "claude" });
   });
 
   it("labels each session with its observed telemetry source", async () => {
