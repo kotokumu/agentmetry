@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.19.2](https://github.com/kotokumu/agentmetry/compare/v1.19.1...v1.19.2) (2026-09-10)
+
+
+### Bug Fixes
+
+* **storage:** skip sessionless correlation rebuilds ([#97](https://github.com/kotokumu/agentmetry/issues/97)) ([4e107a7](https://github.com/kotokumu/agentmetry/commit/4e107a7de4a62a1ef3b822a5b542bccb501edacc))
+* **web:** keep source switching available ([#96](https://github.com/kotokumu/agentmetry/issues/96)) ([48f6ba2](https://github.com/kotokumu/agentmetry/commit/48f6ba298dad45f149f475179a5e6cb85dc5f25d))
+* **web:** make session pagination status visible ([#94](https://github.com/kotokumu/agentmetry/issues/94)) ([e5e9d11](https://github.com/kotokumu/agentmetry/commit/e5e9d11557aaa4b1d2d942450b2bcdb7207fb4b4))
+
 ## [1.19.1](https://github.com/kotokumu/agentmetry/compare/v1.19.0...v1.19.1) (2026-09-10)
 
 
