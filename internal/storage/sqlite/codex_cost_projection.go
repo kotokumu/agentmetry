@@ -10,6 +10,9 @@ import (
 // Codex evidence. Exact usage IDs are only accepted while they identify one
 // billable call in the native session; later ambiguity retracts the support.
 func rebuildCodexCorroboratingSupports(ctx context.Context, transaction *sql.Tx, sequence int64, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
 	if _, err := transaction.ExecContext(ctx, `DELETE FROM model_call_activity_links
 WHERE evidence_role = 'corroborating' AND call_id IN (
   SELECT call_id FROM model_calls WHERE source = 'codex' AND native_session_id = ?
