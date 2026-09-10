@@ -102,7 +102,7 @@ Show the agent and execution model together on each row, for example `agent-01 (
 
 Use the value reported for each activity in the [activity model](https://github.com/kotokumu/agentmetry/blob/main/web/src/model/telemetry.ts). An agent can use different models across activities; never overwrite historical rows with its latest model. Display missing values as `agent-01 (model not reported)` without inference from the agent name or adjacent activities. Preserve the received identifier when formatting model names.
 
-Do not restore large global KPIs, topology permanently above details, persistent disconnected-plan explanations, or decorative headings and glow. Preserve the mint selection accent, read-only MCP, detail URLs, and history restoration. The first mockup prioritizes visual simplicity too heavily; the revised design restores investigation clues through optional expansion.
+Do not restore large global KPIs, persistent disconnected-plan explanations, or decorative headings and glow. Keep agent structure visible above operations because it identifies execution participants and filters the operation list. Keep token details available through optional expansion. Preserve the mint selection accent, read-only MCP, detail URLs, and history restoration.
 
 ---
 
