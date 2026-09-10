@@ -81,6 +81,23 @@ describe("conversation workspace completion", () => {
     expect(workspace.shadowRoot!.querySelector("button[data-session-more]")).toBeNull();
   });
 
+  it("shows agent structure before operations and keeps token details collapsed", async () => {
+    const workspace = await mount();
+    const root = workspace.shadowRoot!;
+    const topology = root.querySelector<HTMLElement>(".topology-panel")!;
+    const operations = root.querySelector<HTMLElement>(".operations-panel")!;
+    const tokenDetails = root.querySelector<HTMLDetailsElement>(".token-details")!;
+    const tokenChart = root.querySelector("am-token-chart")!;
+
+    expect(topology).toBeTruthy();
+    expect(topology.hidden).toBe(false);
+    expect(topology.closest("details")).toBeNull();
+    expect(topology.compareDocumentPosition(operations) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tokenDetails).toBeTruthy();
+    expect(tokenDetails.open).toBe(false);
+    expect(tokenDetails.contains(tokenChart)).toBe(true);
+  });
+
   it("defers rework analysis until the rework view is opened", async () => {
     const selected = session("one");
     vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [selected], nextPageToken: "" });

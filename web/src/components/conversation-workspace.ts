@@ -140,7 +140,7 @@ export class ConversationWorkspace extends LocalizedElement {
       scrollbar-gutter: stable;
     }
     .detail { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; min-width: 0; }
-    .session-head-panel, .operations-panel, .detail > .empty, .detail > am-rework-summary, .detail > am-rework-comparison { grid-column: 1 / -1; }
+    .session-head-panel, .topology-panel, .operations-panel, .token-details, .detail > .empty, .detail > am-rework-summary, .detail > am-rework-comparison { grid-column: 1 / -1; }
     .traffic-panel, .topology-panel { padding-bottom: 12px; }
     .session-head-panel { padding-top: 12px; padding-bottom: 12px; }
     .context-return, .list-return { display: inline-flex; margin-bottom: 11px; color: var(--am-accent); font: 700 .75rem/1.3 "SFMono-Regular", "Cascadia Code", monospace; text-decoration: none; }
@@ -155,10 +155,10 @@ export class ConversationWorkspace extends LocalizedElement {
     .copy-session-id { cursor: pointer; }
     .session-partial { color: var(--am-muted); font-size: .78rem; }
     .session-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-top: 10px; }
-    .session-overview, .execution-context { margin-top: 10px; border-top: 1px solid var(--am-border); padding-top: 8px; }
-    .session-overview summary, .execution-context summary { color: var(--am-muted); cursor: pointer; font-size: 12px; }
+    .session-overview, .token-details { margin-top: 10px; border-top: 1px solid var(--am-border); padding-top: 8px; }
+    .session-overview summary, .token-details summary { color: var(--am-muted); cursor: pointer; font-size: 12px; }
     .session-overview .session-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 10px; }
-    .context-grid { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: 12px; margin-top: 10px; }
+    .token-details > .traffic-panel { margin-top: 10px; }
     .operations-panel { margin: 0; }
     .coverage-note { margin: 6px 0 0; color: var(--am-muted); font-size: .85rem; line-height: 1.4; overflow-wrap: anywhere; }
     .empty-settings { grid-column: 1 / -1; color: var(--am-muted); font-size: .85rem; line-height: 1.5; }
@@ -179,7 +179,7 @@ export class ConversationWorkspace extends LocalizedElement {
       .list-toggle, .list-collapsed .restore-list { display: none; }
       .context-return + .list-return { display: none; }
     }
-    @media (max-width: 640px) { .session-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail { gap: 12px; } .context-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 640px) { .session-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } .detail { gap: 12px; } }
     @media (max-width: 480px) { .session-head { display: block; } }
   `];
 
@@ -341,8 +341,9 @@ export class ConversationWorkspace extends LocalizedElement {
         @comparison-baseline-selected=${this.comparisonBaselineSelected}
         @comparison-retry-requested=${this.retryComparison}
       ></am-rework-comparison>
+      <section class="panel topology-panel" ?hidden=${this.purpose !== "execution"}><h2>${localization.t("workspace.agentTopology")}</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section>
       ${this.renderOperations(selected, selectedAgentId, activities)}
-      <details class="execution-context" ?hidden=${this.purpose !== "execution"}><summary>${localization.t("workspace.executionContext")}</summary><div class="context-grid"><section class="panel traffic-panel"><h2>${localization.t("workspace.modelTraffic")}</h2><am-token-chart .usage=${selected.tokens}></am-token-chart></section><section class="panel topology-panel"><h2>${localization.t("workspace.agentTopology")}</h2><am-agent-tree .agents=${selected.agents} .selectedAgentId=${selectedAgentId} @agent-selected=${this.agentSelected}></am-agent-tree></section></div></details>
+      <details class="token-details" ?hidden=${this.purpose !== "execution"}><summary>${localization.t("workspace.modelTraffic")}</summary><div class="panel traffic-panel"><am-token-chart .usage=${selected.tokens}></am-token-chart></div></details>
     `;
   }
 
