@@ -16,6 +16,8 @@ export const sourceMessages = {
   "sessions.child": (_parameters: MessageParameters = {}) => msg("Child session", { id: "sessions.child" }),
   "sessions.root": (_parameters: MessageParameters = {}) => msg("Root session", { id: "sessions.root" }),
   "sessions.loadMore": (_parameters: MessageParameters = {}) => msg("Load more sessions", { id: "sessions.loadMore" }),
+  "sessions.loadingMore": (_parameters: MessageParameters = {}) => msg("Loading more sessions…", { id: "sessions.loadingMore" }),
+  "sessions.allLoaded": (_parameters: MessageParameters = {}) => msg("All sessions loaded", { id: "sessions.allLoaded" }),
   "sessions.retry": (_parameters: MessageParameters = {}) => msg("Retry session list", { id: "sessions.retry" }),
   "language.label": (_parameters: MessageParameters = {}) => msg("Language", { id: "language.label" }),
   "app.backToDashboard": (_parameters: MessageParameters = {}) => msg("Back to Agentmetry dashboard", { id: "app.backToDashboard" }),

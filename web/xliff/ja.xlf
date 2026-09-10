@@ -50,6 +50,14 @@
   <source>Load more sessions</source>
   <target>セッションをさらに表示</target>
 </trans-unit>
+<trans-unit id="sessions.loadingMore">
+  <source>Loading more sessions…</source>
+  <target>セッションをさらに読み込み中…</target>
+</trans-unit>
+<trans-unit id="sessions.allLoaded">
+  <source>All sessions loaded</source>
+  <target>すべてのセッションを読み込みました</target>
+</trans-unit>
 <trans-unit id="sessions.retry">
   <source>Retry session list</source>
   <target>一覧を再取得</target>

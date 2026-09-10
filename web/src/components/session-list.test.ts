@@ -97,7 +97,32 @@ describe("session list presentation", () => {
     expect(root.textContent).toContain("Showing 1 loaded sessions");
     expect(root.textContent).toContain("codex-session");
     expect(root.textContent).toContain("120");
+    const loadMore = root.querySelector<HTMLButtonElement>("button[data-more]");
+    expect(loadMore?.textContent).toContain("Load more sessions");
+    const more = vi.fn();
+    list.addEventListener("sessions-more-requested", more);
+    loadMore!.click();
+    expect(more).toHaveBeenCalledOnce();
+  });
+
+  it("shows pagination progress and completion at the end of the list", async () => {
+    const list = document.createElement("am-session-list") as SessionList;
+    list.sessions = [session("one")];
+    list.hasMore = true;
+    list.loadingMore = true;
+    document.body.append(list);
+    await list.updateComplete;
+
+    const root = list.shadowRoot!;
+    const loading = root.querySelector<HTMLButtonElement>("button[data-more]");
+    expect(loading?.disabled).toBe(true);
+    expect(loading?.textContent).toContain("Loading more sessions");
+
+    list.loadingMore = false;
+    list.hasMore = false;
+    await list.updateComplete;
     expect(root.querySelector("button[data-more]")).toBeNull();
+    expect(root.querySelector(".page-end")?.textContent).toContain("All sessions loaded");
   });
 
   it("keeps full identity and missing values visible with generated titles", async () => {
