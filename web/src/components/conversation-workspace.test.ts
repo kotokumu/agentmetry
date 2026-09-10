@@ -31,9 +31,31 @@ const mount = async (selected = session("one", "codex", "Reported title")) => {
 afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe("conversation workspace completion", () => {
+  it("keeps the session sidebar inside the visible viewport", async () => {
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("innerHeight", 900);
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [session("one")], nextPageToken: "" });
+    const workspace = document.createElement("am-conversation-workspace");
+    document.body.append(workspace);
+    await workspace.updateComplete;
+    const panel = workspace.shadowRoot!.querySelector<HTMLElement>(".list-surface")!;
+    vi.spyOn(panel, "getBoundingClientRect").mockReturnValue({ top: 180 } as DOMRect);
+
+    window.dispatchEvent(new Event("resize"));
+    while (frames.length) frames.shift()!(0);
+
+    expect(panel.style.maxHeight).toBe("708px");
+  });
+
   it("starts with a compact session sidebar and an unselected detail pane", async () => {
     const listSessionsPage = vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [session("one")], nextPageToken: "" });
     const workspace = document.createElement("am-conversation-workspace");

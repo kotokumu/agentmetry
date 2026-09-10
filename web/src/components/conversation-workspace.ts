@@ -39,6 +39,9 @@ export type ConversationSummaryDetail = Readonly<{
   activityCount?: number;
 }>;
 
+const LIST_VIEWPORT_GAP = 12;
+const MIN_LIST_VIEWPORT_HEIGHT = 240;
+
 @customElement("am-conversation-workspace")
 export class ConversationWorkspace extends LocalizedElement {
   @property() range: TimeRange = "24h";
@@ -98,14 +101,21 @@ export class ConversationWorkspace extends LocalizedElement {
 	private restoredAgentKey = "";
 	private lastReadyKey = "";
 	private lastCanonicalKey = "";
+  private listLayoutFrame?: number;
 
   connectedCallback() {
     super.connectedCallback();
     window.addEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+    window.addEventListener("resize", this.scheduleListViewportLayout);
+    window.addEventListener("scroll", this.scheduleListViewportLayout, { passive: true });
   }
 
   disconnectedCallback() {
     window.removeEventListener(LIVE_UPDATE_EVENT, this.liveUpdate as EventListener);
+    window.removeEventListener("resize", this.scheduleListViewportLayout);
+    window.removeEventListener("scroll", this.scheduleListViewportLayout);
+    if (this.listLayoutFrame !== undefined) cancelAnimationFrame(this.listLayoutFrame);
+    this.listLayoutFrame = undefined;
     super.disconnectedCallback();
   }
 
@@ -260,6 +270,7 @@ export class ConversationWorkspace extends LocalizedElement {
   }
 
 	protected updated() {
+    this.scheduleListViewportLayout();
     if (!this.active) this.restoredEvidenceFocus = "";
     else void this.restoreEvidenceFocus();
 	  this.reportCanonicalConversation();
@@ -277,6 +288,17 @@ export class ConversationWorkspace extends LocalizedElement {
     this.lastSummaryKey = key;
     this.dispatchEvent(new CustomEvent<ConversationSummaryDetail>("conversation-summary-changed", { detail, bubbles: true, composed: true }));
 	}
+
+  private readonly scheduleListViewportLayout = () => {
+    if (this.listLayoutFrame !== undefined) return;
+    this.listLayoutFrame = requestAnimationFrame(() => {
+      this.listLayoutFrame = undefined;
+      const panel = this.shadowRoot?.querySelector<HTMLElement>(".list-surface");
+      if (!panel) return;
+      const availableHeight = window.innerHeight - panel.getBoundingClientRect().top - LIST_VIEWPORT_GAP;
+      panel.style.maxHeight = availableHeight >= MIN_LIST_VIEWPORT_HEIGHT ? `${Math.floor(availableHeight)}px` : "none";
+    });
+  };
 
   private readonly toggleList = async () => {
     this.listCollapsed = !this.listCollapsed;
