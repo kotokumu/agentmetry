@@ -115,6 +115,56 @@ func TestCommitExportBatchStoresEveryExportInOneOrderedTransaction(t *testing.T)
 	}
 }
 
+func TestCommitExportWithNoProjectionTargetsDoesNotReapplyHistoricalRollups(t *testing.T) {
+	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+
+	at := time.Date(2026, 9, 10, 0, 0, 0, 0, time.UTC)
+	seed := ingest.AcceptedExport{
+		Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, []byte{0x0a, 0x00}),
+		Projection: canonical.Batch{Signal: canonical.SignalLog, Logs: []canonical.Log{{
+			Source:     "codex",
+			ObservedAt: at,
+			Name:       "response",
+			Kind:       canonical.ActivityResponse,
+			Agent: canonical.AgentContext{
+				RunID: "existing-run",
+			},
+		}}},
+	}
+	if err := database.CommitExport(context.Background(), seed); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.db.Exec(`UPDATE logs SET projection_sequence = 0`); err != nil {
+		t.Fatal(err)
+	}
+
+	empty := ingest.AcceptedExport{
+		Envelope:   ingest.NewEnvelope(canonical.SignalTrace, ingest.TransportGRPC, at.Add(time.Second), []byte{0x0a, 0x01}),
+		Projection: canonical.Batch{Signal: canonical.SignalTrace},
+	}
+	if err := database.CommitExport(context.Background(), empty); err != nil {
+		t.Fatal(err)
+	}
+
+	var exports, changes, activities, logs int
+	if err := database.db.QueryRow(`SELECT COUNT(*) FROM otlp_exports`).Scan(&exports); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.db.QueryRow(`SELECT COUNT(*) FROM projection_changes`).Scan(&changes); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.db.QueryRow(`SELECT activity_count, log_count FROM session_rollups WHERE source = 'codex' AND run_id = 'existing-run'`).Scan(&activities, &logs); err != nil {
+		t.Fatal(err)
+	}
+	if exports != 2 || changes != 1 || activities != 1 || logs != 1 {
+		t.Fatalf("counts = exports:%d changes:%d activities:%d logs:%d, want 2, 1, 1, 1", exports, changes, activities, logs)
+	}
+}
+
 func TestCommitExportBatchRollsBackEveryExportWhenOneIsInvalid(t *testing.T) {
 	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

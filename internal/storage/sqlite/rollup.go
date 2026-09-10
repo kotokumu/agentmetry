@@ -196,6 +196,9 @@ FROM (
 }
 
 func updateAffectedSessionRollups(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, previousSessions map[sessionKey]struct{}, previousSpans map[storedSpanKey]storedSpanScope, sequence int64, incremental bool) error {
+	if sequence == 0 {
+		return nil
+	}
 	if !incremental {
 		return rebuildAffectedSessionRollups(ctx, transaction, batch, previousSessions)
 	}
