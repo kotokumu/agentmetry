@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.4](https://github.com/kotokumu/agentmetry/compare/v1.19.3...v1.19.4) (2026-09-10)
+
+
+### Bug Fixes
+
+* **storage:** bound Codex correlation scans ([#100](https://github.com/kotokumu/agentmetry/issues/100)) ([b529e8c](https://github.com/kotokumu/agentmetry/commit/b529e8c527f1c87dc16d69f52f337e2bff355b98))
+
 ## [1.19.3](https://github.com/kotokumu/agentmetry/compare/v1.19.2...v1.19.3) (2026-09-10)
 
 

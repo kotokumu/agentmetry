@@ -1,6 +1,6 @@
 [package]
 name = "agentmetry-desktop"
-version = "1.19.3"
+version = "1.19.4"
 description = "Agentmetry desktop shell"
 authors = ["Agentmetry"]
 license = "Apache-2.0"
