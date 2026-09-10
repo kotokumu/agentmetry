@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.19.3](https://github.com/kotokumu/agentmetry/compare/v1.19.2...v1.19.3) (2026-09-10)
+
+
+### Bug Fixes
+
+* **web:** redesign source selector ([#98](https://github.com/kotokumu/agentmetry/issues/98)) ([3c20ded](https://github.com/kotokumu/agentmetry/commit/3c20ded6ea9a29940b7e8351bebc49323c56fa3b))
+
 ## [1.19.2](https://github.com/kotokumu/agentmetry/compare/v1.19.1...v1.19.2) (2026-09-10)
 
 
