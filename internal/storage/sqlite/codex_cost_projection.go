@@ -6,6 +6,22 @@ import (
 	"fmt"
 )
 
+const codexCorroboratingCandidatesSQL = `WITH identities AS (
+  SELECT l.run_id, l.usage_id, MIN(links.call_id) AS call_id
+  FROM logs l
+  JOIN model_call_activity_links links ON links.activity_id = l.activity_id
+  WHERE l.source = 'codex' AND l.run_id = ? AND l.usage_id <> ''
+  GROUP BY l.run_id, l.usage_id HAVING COUNT(DISTINCT links.call_id) = 1
+), unique_candidates AS (
+  SELECT s.activity_id, MIN(s.trace_id) AS trace_id, MIN(identities.call_id) AS call_id
+  FROM identities
+  CROSS JOIN spans s INDEXED BY spans_source_run_usage_idx
+  WHERE s.source = 'codex' AND s.run_id = identities.run_id AND s.usage_id = identities.usage_id
+    AND COALESCE(json_extract(s.attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
+  GROUP BY s.activity_id
+)
+`
+
 // rebuildCodexCorroboratingSupports derives trace membership from retained
 // Codex evidence. Exact usage IDs are only accepted while they identify one
 // billable call in the native session; later ambiguity retracts the support.
@@ -25,21 +41,7 @@ WHERE support_kind = 'corroborating' AND call_id IN (
 )`, sessionID); err != nil {
 		return fmt.Errorf("clear Codex corroborating trace supports: %w", err)
 	}
-	const candidates = `WITH identities AS (
-  SELECT l.run_id, l.usage_id, MIN(links.call_id) AS call_id
-  FROM logs l
-  JOIN model_call_activity_links links ON links.activity_id = l.activity_id
-  WHERE l.source = 'codex' AND l.run_id = ? AND l.usage_id <> ''
-  GROUP BY l.run_id, l.usage_id HAVING COUNT(DISTINCT links.call_id) = 1
-), unique_candidates AS (
-  SELECT s.activity_id, MIN(s.trace_id) AS trace_id, MIN(identities.call_id) AS call_id
-  FROM spans s JOIN identities USING (run_id, usage_id)
-  WHERE s.source = 'codex'
-    AND COALESCE(json_extract(s.attributes_json, '$."gen_ai.usage.role"'), '') = 'corroborating'
-  GROUP BY s.activity_id
-)
-`
-	if _, err := transaction.ExecContext(ctx, candidates+`INSERT INTO model_call_activity_links (activity_id, call_id, evidence_role)
+	if _, err := transaction.ExecContext(ctx, codexCorroboratingCandidatesSQL+`INSERT INTO model_call_activity_links (activity_id, call_id, evidence_role)
 SELECT activity_id, call_id, 'corroborating' FROM unique_candidates`, sessionID); err != nil {
 		return fmt.Errorf("project Codex corroborating links: %w", err)
 	}
