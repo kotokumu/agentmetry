@@ -978,22 +978,31 @@ describe("dashboard components", () => {
     document.body.append(filter);
     await filter.updateComplete;
 
-    const sourceGroup = filter.shadowRoot?.querySelector<HTMLElement>('[role="group"]');
+    const trigger = filter.shadowRoot?.querySelector<HTMLButtonElement>(".source-trigger");
+    expect(trigger?.getAttribute("aria-haspopup")).toBe("menu");
+    expect(trigger?.getAttribute("aria-expanded")).toBe("false");
+    expect(trigger?.textContent).toContain("All sources");
+    trigger?.click();
+    await filter.updateComplete;
+    const sourceMenu = filter.shadowRoot?.querySelector<HTMLElement>('[role="menu"]');
     const claude = filter.shadowRoot?.querySelector<HTMLButtonElement>('button[data-source="claude"]');
-    expect(sourceGroup?.getAttribute("aria-label")).toBe("Source");
-    expect(filter.shadowRoot?.querySelector('button[data-source=""]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(sourceMenu?.getAttribute("aria-label")).toBe("Source");
+    expect(filter.shadowRoot?.querySelector('button[data-source=""]')?.getAttribute("aria-checked")).toBe("true");
+    expect(sourceMenu?.textContent).toContain("Claude Code");
+    expect(sourceMenu?.textContent).toContain("Codex");
     claude?.click();
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.activeElement).toBe(trigger);
     const input = filter.shadowRoot?.querySelector<HTMLInputElement>("input");
     if (input) input.value = "repository review";
     input?.dispatchEvent(new InputEvent("input", { bubbles: true }));
 	vi.advanceTimersByTime(250);
 
-    expect(filter.shadowRoot?.textContent).toContain("Claude Code");
-    expect(filter.shadowRoot?.textContent).toContain("Codex");
     expect(input?.placeholder).toContain("Session ID");
     expect(sourceListener).toHaveBeenCalledOnce();
     expect(sourceListener.mock.calls[0][0].detail).toEqual({ sourceId: "claude" });
     expect(searchListener.mock.calls[0][0].detail).toEqual({ search: "repository review" });
+    expect(filter.shadowRoot?.querySelector('[role="menu"]')).toBeNull();
     vi.useRealTimers();
   });
 
@@ -1009,11 +1018,55 @@ describe("dashboard components", () => {
     filter.sources = [{ id: "codex", label: "Codex" }];
     await filter.updateComplete;
     const root = filter.shadowRoot!;
-    expect(root.querySelector('button[data-source="codex"]')?.getAttribute("aria-pressed")).toBe("true");
+    expect(root.querySelector(".source-trigger")?.textContent).toContain("Codex");
+    root.querySelector<HTMLButtonElement>(".source-trigger")?.click();
+    await filter.updateComplete;
+    expect(root.querySelector('button[data-source="codex"]')?.getAttribute("aria-checked")).toBe("true");
     expect(root.querySelector('button[data-source="claude"]')?.textContent).toContain("Claude Code");
 
     root.querySelector<HTMLButtonElement>('button[data-source="claude"]')?.click();
     expect(sourceListener.mock.calls[0][0].detail).toEqual({ sourceId: "claude" });
+  });
+
+  it("closes the source menu with Escape or an outside pointer press", async () => {
+    const filter = document.createElement("am-session-filter") as SessionFilter;
+    filter.sources = [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }];
+    document.body.append(filter);
+    await filter.updateComplete;
+
+    const trigger = filter.shadowRoot!.querySelector<HTMLButtonElement>(".source-trigger")!;
+    trigger.click();
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.querySelector('[role="menu"]')).not.toBeNull();
+
+    filter.shadowRoot?.querySelector('[role="menu"]')?.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.querySelector('[role="menu"]')).toBeNull();
+    expect(filter.shadowRoot?.activeElement).toBe(trigger);
+
+    trigger.click();
+    await filter.updateComplete;
+    document.body.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    await filter.updateComplete;
+    expect(filter.shadowRoot?.querySelector('[role="menu"]')).toBeNull();
+  });
+
+  it("opens source choices from the keyboard in the requested direction", async () => {
+    const filter = document.createElement("am-session-filter") as SessionFilter;
+    filter.sources = [{ id: "claude", label: "Claude Code" }, { id: "codex", label: "Codex" }];
+    document.body.append(filter);
+    await filter.updateComplete;
+
+    const trigger = filter.shadowRoot!.querySelector<HTMLButtonElement>(".source-trigger")!;
+    trigger.click();
+    await filter.updateComplete;
+    trigger.focus();
+    trigger.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true }));
+    await filter.updateComplete;
+    await Promise.resolve();
+
+    expect(filter.shadowRoot?.querySelector('[role="menu"]')).not.toBeNull();
+    expect((filter.shadowRoot?.activeElement as HTMLElement | null)?.dataset.source).toBe("codex");
   });
 
   it("labels each session with its observed telemetry source", async () => {
