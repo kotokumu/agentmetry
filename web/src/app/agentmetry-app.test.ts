@@ -15,6 +15,7 @@ import type { KpiCard } from "../components/kpi-card";
 import type { ReworkComparison } from "../components/rework-comparison";
 import type { ConversationWorkspace } from "../components/conversation-workspace";
 import type { TraceExplorer } from "../components/trace-explorer";
+import type { TraceCatalog } from "../components/trace-catalog";
 import type { DashboardSummary } from "../components/dashboard-summary";
 import type { MCPConnection } from "../components/mcp-connection";
 import type { TokenUsage } from "../model/telemetry";
@@ -331,10 +332,12 @@ describe("Agentmetry app composition", () => {
       conversations: [{ sourceId: "codex", id: session.id }], agents: [], activities: [activity],
     };
     const requests: Record<string, any>[] = [];
+    let traceListCalls = 0;
     history.replaceState({}, "", "/?section=traces&source=codex&traceFailure=observed&traceMinMs=1");
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (url: string, init?: { body?: BodyInit | null }) => {
       const path = connectPath(url).split("/").at(-1);
       if (path === "ListTraces") {
+        traceListCalls += 1;
         const request = connectBody([url, init]);
         requests.push(request);
         return connectResponse({
@@ -379,6 +382,8 @@ describe("Agentmetry app composition", () => {
     await vi.waitFor(() => expect(location.pathname).toBe("/"));
     expect(location.search).toBe("?section=traces&source=codex&traceFailure=observed&traceMinMs=1");
     await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-catalog")).not.toBeNull());
+    expect(app.shadowRoot?.querySelector("am-trace-catalog")).toBe(catalog);
+    expect(traceListCalls).toBe(1);
   });
 
   it("returns from a trace participant session to the exact selected span with one history entry", async () => {
@@ -475,6 +480,50 @@ describe("Agentmetry app composition", () => {
     expect(new URL(location.href).searchParams.get("section")).toBe(section);
     await vi.waitFor(() => expect(calls.slice(initialCalls)).toContain(section === "traces" ? "ListTraces" : "GetDashboard"));
     expect(calls.slice(initialCalls)).not.toContain("ListSessions");
+  });
+
+  it("lazily retains session and trace lists across top-level tab switches", async () => {
+    const session = {
+      id: "resident-session", sourceId: "codex", sources: [{ id: "codex", label: "Codex" }], traceIds: [],
+      startedAt: "2026-09-10T00:00:00Z", endedAt: "2026-09-10T00:01:00Z", activityCount: 1,
+      tokens: emptyOverview.tokens, agents: [], activities: [],
+    };
+    const listSessions = vi.spyOn(agentmetryClient, "listSessionsPage").mockResolvedValue({ sessions: [session], nextPageToken: "session-next" });
+    const listTraces = vi.spyOn(agentmetryClient, "listTraces").mockResolvedValue({
+      traces: [{
+        traceId: "resident-trace", startedAt: session.startedAt, endedAt: session.endedAt, durationMs: 60_000,
+        status: "ok", activityCount: 1, rootSpanCount: 1, missingParentCount: 0, conversations: [],
+      }],
+      nextPageToken: "trace-next", hasMore: true, appliedConditions: {},
+    });
+    vi.stubGlobal("fetch", overviewFetch(emptyOverview));
+    const app = document.createElement("am-app") as AgentmetryApp;
+    document.body.append(app);
+
+    await vi.waitFor(() => expect(workspaceRootOf(app)?.querySelector<SessionList>("am-session-list")?.sessions.map(({ id }) => id)).toEqual(["resident-session"]));
+    const workspace = workspaceOf(app)!;
+    expect(listSessions).toHaveBeenCalledTimes(1);
+    expect(listTraces).not.toHaveBeenCalled();
+
+    app.shadowRoot?.querySelector<HTMLAnchorElement>('a[href*="section=traces"]')?.click();
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-catalog")?.shadowRoot?.textContent).toContain("resident-trace"));
+    const catalog = app.shadowRoot?.querySelector<TraceCatalog>("am-trace-catalog")!;
+    expect(workspace.hidden).toBe(true);
+    expect(workspace.active).toBe(false);
+    expect(listSessions).toHaveBeenCalledTimes(1);
+    expect(listTraces).toHaveBeenCalledTimes(1);
+
+    app.shadowRoot?.querySelector<HTMLAnchorElement>('a[href="/"]')?.click();
+    await vi.waitFor(() => expect(workspaceOf(app)?.hidden).toBe(false));
+    expect(workspaceOf(app)).toBe(workspace);
+    expect(listSessions).toHaveBeenCalledTimes(1);
+    expect(catalog.hasAttribute("hidden")).toBe(true);
+    expect(catalog.active).toBe(false);
+
+    app.shadowRoot?.querySelector<HTMLAnchorElement>('a[href*="section=traces"]')?.click();
+    await vi.waitFor(() => expect(app.shadowRoot?.querySelector("am-trace-catalog")?.hasAttribute("hidden")).toBe(false));
+    expect(app.shadowRoot?.querySelector("am-trace-catalog")).toBe(catalog);
+    expect(listTraces).toHaveBeenCalledTimes(1);
   });
 
   it("switches the application shell and document metadata to Japanese without reloading", async () => {

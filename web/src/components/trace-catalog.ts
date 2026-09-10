@@ -23,6 +23,8 @@ export class TraceCatalog extends LocalizedElement {
   @state() private error = "";
   @state() private appliedConditions: TraceCatalogConditions = {};
   private loadedKey = "";
+  private needsLoad = false;
+  private needsRefresh = false;
   private request = 0;
   private abort?: AbortController;
 
@@ -59,6 +61,8 @@ export class TraceCatalog extends LocalizedElement {
     this.abort = undefined;
     this.request += 1;
     this.loadedKey = "";
+    this.needsLoad = false;
+    this.needsRefresh = false;
     this.loading = false;
     super.disconnectedCallback();
   }
@@ -66,15 +70,33 @@ export class TraceCatalog extends LocalizedElement {
   protected willUpdate() {
     const key = `${this.range}:${this.sourceId}:${JSON.stringify(this.conditions)}`;
     if (!this.active) {
-      this.abort?.abort();
-      this.abort = undefined;
-      this.request += 1;
-      this.loadedKey = "";
-      this.loading = false;
+      if (key !== this.loadedKey) {
+        this.abort?.abort();
+        this.abort = undefined;
+        this.request += 1;
+        this.loadedKey = key;
+        this.needsLoad = true;
+        this.needsRefresh = false;
+        this.traces = [];
+        this.nextPageToken = "";
+        this.appliedConditions = {};
+        this.error = "";
+        this.loading = false;
+      } else if (this.error) {
+        this.needsLoad = true;
+      }
       return;
     }
-    if (key === this.loadedKey) return;
+    if (key === this.loadedKey && !this.needsLoad) {
+      if (this.needsRefresh) {
+        this.needsRefresh = false;
+        void this.reloadAfterLiveUpdate();
+      }
+      return;
+    }
     this.loadedKey = key;
+    this.needsLoad = false;
+    this.needsRefresh = false;
     this.abort?.abort();
     this.abort = new AbortController();
     this.request += 1;
@@ -84,21 +106,30 @@ export class TraceCatalog extends LocalizedElement {
     void this.load(true);
   }
 
-  private async load(reset: boolean) {
+  private async load(reset: boolean, residentCount = 0) {
     const request = ++this.request;
     const abort = this.abort;
     this.loading = true;
     this.error = "";
     try {
-      const page = await agentmetryClient.listTraces(this.range, this.sourceId, reset ? "" : this.nextPageToken, abort?.signal, this.conditions);
-      if (request !== this.request || abort?.signal.aborted || !this.active) return;
-      this.traces = reset ? page.traces : [...this.traces, ...page.traces];
+      let page = await agentmetryClient.listTraces(this.range, this.sourceId, reset ? "" : this.nextPageToken, abort?.signal, this.conditions);
+      const refreshed = [...page.traces];
+      const tokens = new Set<string>();
+      while (reset && refreshed.length < residentCount && page.nextPageToken) {
+        if (request !== this.request || abort?.signal.aborted) return;
+        if (tokens.has(page.nextPageToken)) throw new Error("Repeated trace page token");
+        tokens.add(page.nextPageToken);
+        page = await agentmetryClient.listTraces(this.range, this.sourceId, page.nextPageToken, abort?.signal, this.conditions);
+        refreshed.push(...page.traces);
+      }
+      if (request !== this.request || abort?.signal.aborted) return;
+      this.traces = reset ? refreshed : [...this.traces, ...page.traces];
       this.nextPageToken = page.nextPageToken ?? "";
       this.appliedConditions = page.appliedConditions;
     } catch (error) {
-      if (request === this.request && !abort?.signal.aborted && this.active) this.error = error instanceof Error ? error.message : localization.t("app.tracesUnavailable");
+      if (request === this.request && !abort?.signal.aborted) this.error = error instanceof Error ? error.message : localization.t("app.tracesUnavailable");
     } finally {
-      if (request === this.request && this.active) this.loading = false;
+      if (request === this.request) this.loading = false;
     }
   }
 
@@ -157,23 +188,26 @@ export class TraceCatalog extends LocalizedElement {
   };
 
   private readonly liveUpdate = (event: CustomEvent<LiveUpdateDelivery>) => {
-    if (!this.active || (!event.detail.resyncRequired && !affectsTraceCatalog(event.detail.targets))) return;
+    if (!event.detail.resyncRequired && !affectsTraceCatalog(event.detail.targets)) return;
+    if (!this.active) {
+      this.needsRefresh = true;
+      return;
+    }
     event.detail.waitUntil(this.reloadAfterLiveUpdate());
   };
 
   private async reloadAfterLiveUpdate() {
+    const residentCount = this.traces.length;
     this.abort?.abort();
     this.abort = undefined;
     this.request += 1;
-    this.loadedKey = "";
-    this.traces = [];
-    this.nextPageToken = "";
-    this.appliedConditions = {};
     this.error = "";
     if (!this.active) return;
     this.loadedKey = `${this.range}:${this.sourceId}:${JSON.stringify(this.conditions)}`;
+    this.needsLoad = false;
+    this.needsRefresh = false;
     this.abort = new AbortController();
-    await this.load(true);
+    await this.load(true, residentCount);
   };
 }
 
