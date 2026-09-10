@@ -488,6 +488,70 @@ func TestClaudeCorroboratingTraceSupportIsRetractedWhenAmbiguous(t *testing.T) {
 	}
 }
 
+func TestCorroboratingSpansWithoutSessionDoNotRepublishHistoricalChanges(t *testing.T) {
+	for _, source := range []string{"claude", "codex"} {
+		t.Run(source, func(t *testing.T) {
+			store, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			ctx := context.Background()
+			at := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
+			if err := store.CommitExport(ctx, sessionlessCorroboratingSpanExport(at, source, "11111111111111111111111111111111", "1111111111111111")); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CommitExport(ctx, sessionlessCorroboratingSpanExport(at.Add(time.Second), source, "22222222222222222222222222222222", "2222222222222222")); err != nil {
+				t.Fatal(err)
+			}
+
+			var changes int64
+			if err := store.db.QueryRow(`SELECT COUNT(*) FROM activity_changes
+WHERE sequence = (SELECT MAX(sequence) FROM projection_changes)`).Scan(&changes); err != nil {
+				t.Fatal(err)
+			}
+			if changes != 1 {
+				t.Fatalf("latest sessionless span published %d activity changes, want only its direct trace change", changes)
+			}
+		})
+	}
+}
+
+func TestAuthoritativeCallsWithoutSessionDoNotRepublishSessionlessSpans(t *testing.T) {
+	for _, test := range []struct {
+		source, sourceEvent, eventName, model string
+		attributes                            map[string]any
+	}{
+		{source: "claude", sourceEvent: "api_request", eventName: "gen_ai.model.request", model: "claude-model", attributes: map[string]any{"gen_ai.usage.role": "authoritative_call", "cost_usd_micros": int64(10)}},
+		{source: "codex", sourceEvent: "codex.sse_event", eventName: "gen_ai.response.completed", model: "gpt-6-astra", attributes: map[string]any{"gen_ai.usage.role": "authoritative_call"}},
+	} {
+		t.Run(test.source, func(t *testing.T) {
+			store, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = store.Close() })
+			ctx := context.Background()
+			at := time.Date(2026, 9, 10, 10, 0, 0, 0, time.UTC)
+			if err := store.CommitExport(ctx, sessionlessCorroboratingSpanExport(at, test.source, "11111111111111111111111111111111", "1111111111111111")); err != nil {
+				t.Fatal(err)
+			}
+			if err := store.CommitExport(ctx, costExport(at.Add(time.Second), test.source, test.sourceEvent, test.eventName, "", test.model, canonical.TokenUsage{}, test.attributes)); err != nil {
+				t.Fatal(err)
+			}
+
+			var changes int64
+			if err := store.db.QueryRow(`SELECT COUNT(*) FROM activity_changes
+WHERE sequence = (SELECT MAX(sequence) FROM projection_changes)`).Scan(&changes); err != nil {
+				t.Fatal(err)
+			}
+			if changes != 1 {
+				t.Fatalf("sessionless authoritative call published %d activity changes, want only its direct trace change", changes)
+			}
+		})
+	}
+}
+
 func TestClaudeCorroborationDoesNotCollapseDifferentAliasTypes(t *testing.T) {
 	store, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {
@@ -806,6 +870,15 @@ func codexCorroboratingSpanExport(at time.Time, session, usageID string) ingest.
 		Envelope:     ingest.NewEnvelope(canonical.SignalTrace, ingest.TransportGRPC, at.Add(time.Second), []byte{0x0a, 0x02}),
 		Observations: []observation.Observation{{Ordinal: 0, Signal: canonical.SignalTrace, Source: "codex", SourceEventName: "codex.sse_event", OccurredAt: at, ObservedAt: at, TraceID: traceID, SpanID: spanID, SessionID: session, NormalizerVersion: 3}},
 		Projection:   canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{{Source: "codex", TraceID: traceID, SpanID: spanID, Name: "codex response", StartedAt: at, EndedAt: at.Add(time.Millisecond), Kind: canonical.ActivityResponse, Attributes: attributes, Agent: canonical.AgentContext{RunID: session}}}},
+	}
+}
+
+func sessionlessCorroboratingSpanExport(at time.Time, source, traceID, spanID string) ingest.AcceptedExport {
+	attributes := map[string]any{"gen_ai.usage.role": "corroborating", "gen_ai.usage.id": "usage-1"}
+	return ingest.AcceptedExport{
+		Envelope:     ingest.NewEnvelope(canonical.SignalTrace, ingest.TransportGRPC, at.Add(time.Second), []byte(traceID)),
+		Observations: []observation.Observation{{Ordinal: 0, Signal: canonical.SignalTrace, Source: source, OccurredAt: at, ObservedAt: at, TraceID: traceID, SpanID: spanID, NormalizerVersion: 3}},
+		Projection:   canonical.Batch{Signal: canonical.SignalTrace, Spans: []canonical.Span{{Source: source, TraceID: traceID, SpanID: spanID, Name: "gen_ai.model.request.trace", StartedAt: at, EndedAt: at.Add(time.Millisecond), Kind: canonical.ActivityResponse, Attributes: attributes}}},
 	}
 }
 

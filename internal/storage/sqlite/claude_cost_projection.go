@@ -65,6 +65,9 @@ func aliasStorageValue(alias modelcall.IdentityAlias) string {
 }
 
 func rebuildClaudeCostProjection(ctx context.Context, transaction *sql.Tx, sequence int64, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
 	evidence, err := loadClaudeCallEvidence(ctx, transaction, sessionID)
 	if err != nil {
 		return err
@@ -123,6 +126,9 @@ func rebuildClaudeCostProjection(ctx context.Context, transaction *sql.Tx, seque
 }
 
 func refreshClaudeCorroboratingProjection(ctx context.Context, transaction *sql.Tx, sequence int64, sessionID string) error {
+	if sessionID == "" {
+		return nil
+	}
 	if err := rebuildClaudeCorroboratingSupports(ctx, transaction, sessionID); err != nil {
 		return err
 	}

@@ -41,7 +41,7 @@ func (store *Store) persistModelCallsWithMode(ctx context.Context, transaction *
 		oldCodexSessions := make(map[string]struct{})
 		newCodexSessions := make(map[string]struct{})
 		for _, previous := range previousSpans {
-			if previous.usageRole != "corroborating" {
+			if previous.usageRole != "corroborating" || previous.session == "" {
 				continue
 			}
 			switch previous.source {
@@ -53,11 +53,14 @@ func (store *Store) persistModelCallsWithMode(ctx context.Context, transaction *
 		}
 		for _, span := range accepted.Projection.Spans {
 			role, _ := span.Attributes["gen_ai.usage.role"].(string)
+			if role != "corroborating" || span.Agent.RunID == "" {
+				continue
+			}
 			sourceID := normalizeSource(span.Source)
-			if sourceID == "claude" && role == "corroborating" {
+			if sourceID == "claude" {
 				newClaudeSessions[span.Agent.RunID] = struct{}{}
 			}
-			if sourceID == "codex" && role == "corroborating" {
+			if sourceID == "codex" {
 				newCodexSessions[span.Agent.RunID] = struct{}{}
 			}
 		}
@@ -121,7 +124,9 @@ func (store *Store) persistModelCallsWithMode(ctx context.Context, transaction *
 			if err := persistClaudeCallEvidence(ctx, transaction, observed, log, activityIDs[observed.Ordinal], locator, filterAt); err != nil {
 				return err
 			}
-			claudeSessions[observed.SessionID] = struct{}{}
+			if observed.SessionID != "" {
+				claudeSessions[observed.SessionID] = struct{}{}
+			}
 			continue
 		}
 		basis := modelcall.IdentityJournalEvidenceFallback
@@ -161,7 +166,9 @@ ON CONFLICT(call_id) DO NOTHING`, callID, observed.Source, identityBasisText(bas
 			}
 			continue
 		}
-		codexSessions[observed.SessionID] = struct{}{}
+		if observed.SessionID != "" {
+			codexSessions[observed.SessionID] = struct{}{}
+		}
 		attribution := storedAttribution{basis: "unavailable", reason: "pending_replay_finalization"}
 		if projectionMode == projectModelCallDerived {
 			attribution = attributeCodexCall(observed.Model, mode, observed.OccurredAt, observed.Usage, rates)
