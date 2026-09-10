@@ -97,6 +97,7 @@ export class SessionList extends LocalizedElement {
 
   connectedCallback() {
     super.connectedCallback();
+    this.addEventListener("scroll", this.scrollChanged, { passive: true });
     this.requestUpdate();
   }
 
@@ -115,15 +116,14 @@ export class SessionList extends LocalizedElement {
     this.pageObserver?.disconnect();
     if (!this.hasMore || this.loading || this.loadingMore || this.pageFailed || this.unavailable || typeof IntersectionObserver === "undefined") return;
     this.pageObserver = new IntersectionObserver((entries) => {
-      if (!entries.some((entry) => entry.isIntersecting) || this.pageRequested || !this.isConnected || !this.hasMore || this.loading || this.loadingMore || this.pageFailed || this.unavailable) return;
-      this.pageRequested = true;
-      this.dispatchEvent(new CustomEvent("sessions-more-requested", { bubbles: true, composed: true }));
-    });
+      if (entries.some((entry) => entry.isIntersecting)) this.requestNextPage();
+    }, { root: this, rootMargin: "0px 0px 200px" });
     const end = this.shadowRoot?.querySelector(".page-end");
     if (end) this.pageObserver.observe(end);
   }
 
   disconnectedCallback() {
+    this.removeEventListener("scroll", this.scrollChanged);
     this.pageObserver?.disconnect();
     this.pageObserver = undefined;
     super.disconnectedCallback();
@@ -133,6 +133,16 @@ export class SessionList extends LocalizedElement {
     const view: SessionListView = (event.target as HTMLInputElement).checked ? "all" : "roots";
     this.dispatchEvent(new CustomEvent("session-list-view-selected", { detail: { view }, bubbles: true, composed: true }));
   };
+
+  private readonly scrollChanged = () => {
+    if (this.scrollHeight - this.scrollTop - this.clientHeight <= 200) this.requestNextPage();
+  };
+
+  private requestNextPage() {
+    if (this.pageRequested || !this.isConnected || !this.hasMore || this.loading || this.loadingMore || this.pageFailed || this.unavailable) return;
+    this.pageRequested = true;
+    this.dispatchEvent(new CustomEvent("sessions-more-requested", { bubbles: true, composed: true }));
+  }
 
   private renderRows() {
     if (this.loading) return html`<p class="empty" role="status">${localization.t("sessions.loading")}</p>`;

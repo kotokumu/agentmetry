@@ -13,6 +13,33 @@ const session = (id: string, sourceId = "codex"): SessionListEntry => ({
 });
 
 describe("session list presentation", () => {
+  it("requests the next page when its own scroll viewport reaches the end", async () => {
+    const list = document.createElement("am-session-list") as SessionList;
+    list.sessions = [session("one")];
+    list.hasMore = true;
+    const more = vi.fn();
+    list.addEventListener("sessions-more-requested", more);
+    Object.defineProperties(list, {
+      clientHeight: { configurable: true, value: 300 },
+      scrollHeight: { configurable: true, value: 1_000 },
+      scrollTop: { configurable: true, value: 650, writable: true },
+    });
+    document.body.append(list);
+    await list.updateComplete;
+
+    list.dispatchEvent(new Event("scroll"));
+    list.dispatchEvent(new Event("scroll"));
+    expect(more).toHaveBeenCalledTimes(1);
+
+    list.loadingMore = true;
+    await list.updateComplete;
+    list.loadingMore = false;
+    list.sessions = [...list.sessions, session("two")];
+    await list.updateComplete;
+    list.dispatchEvent(new Event("scroll"));
+    expect(more).toHaveBeenCalledTimes(2);
+  });
+
   it("requests pages at the end, pauses on failure and disconnects", async () => {
     let intersect!: IntersectionObserverCallback;
     const disconnect = vi.fn();
