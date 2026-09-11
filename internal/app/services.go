@@ -2,14 +2,17 @@ package app
 
 import (
 	"context"
+	"errors"
 	"io/fs"
 	"net/http"
 	"time"
 
+	"github.com/kotokumu/agentmetry/internal/archivefs"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/ingest/otel"
 	"github.com/kotokumu/agentmetry/internal/planusage"
 	"github.com/kotokumu/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/retention"
 	"github.com/kotokumu/agentmetry/internal/source/builtin"
 	"github.com/kotokumu/agentmetry/internal/transport/connectapi"
 	"github.com/kotokumu/agentmetry/internal/transport/httpapi"
@@ -36,6 +39,7 @@ type Services struct {
 	OTLPHTTPHandler http.Handler
 	Dashboard       http.Handler
 	committer       *ingest.BatchingExportCommitter
+	retention       *retention.Scheduler
 }
 
 func NewServices(backend Backend, assets fs.FS, now func() time.Time) Services {
@@ -47,14 +51,29 @@ func NewServices(backend Backend, assets fs.FS, now func() time.Time) Services {
 	mux.Handle("/", httpapi.New(backend, assets, now, planImporter))
 	connectPath, connectHandler := connectapi.New(backend, backend, now)
 	mux.Handle(connectPath, connectHandler)
+	var scheduler *retention.Scheduler
+	if repository, ok := backend.(interface {
+		retention.Repository
+		ArchiveDirectory() string
+	}); ok {
+		retentionService := retention.NewServiceWithReplayer(repository, archivefs.New(repository.ArchiveDirectory()), retention.ReplayFunc(otel.ReplayExport), builtin.Registry(), now)
+		retentionPath, retentionHandler := connectapi.NewRetention(retentionService)
+		mux.Handle(retentionPath, retentionHandler)
+		scheduler = retention.StartScheduler(context.Background(), retentionService)
+	}
 	return Services{
 		OTLPReceiver:    receiver,
 		OTLPHTTPHandler: receiver.HTTPHandler(),
 		Dashboard:       mux,
 		committer:       committer,
+		retention:       scheduler,
 	}
 }
 
 func (services Services) Close(ctx context.Context) error {
-	return services.committer.Close(ctx)
+	var retentionErr error
+	if services.retention != nil {
+		retentionErr = services.retention.Close(ctx)
+	}
+	return errors.Join(retentionErr, services.committer.Close(ctx))
 }

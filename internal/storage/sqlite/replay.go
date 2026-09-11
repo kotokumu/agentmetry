@@ -38,7 +38,7 @@ func (store *Store) commitReplayExportTx(ctx context.Context, transaction *sql.T
 	}
 	var logActivityIDs []string
 	sequences := projectionSequences{row: exportID}
-	if err := store.commitProjection(ctx, transaction, accepted.Projection, sequences, previousSpans, &logActivityIDs); err != nil {
+	if err := store.commitProjection(ctx, transaction, exportID, accepted.Projection, sequences, previousSpans, &logActivityIDs); err != nil {
 		return err
 	}
 	if err := store.persistReplayModelCallFacts(ctx, transaction, exportID, accepted, prepared, logActivityIDs, exportID); err != nil {

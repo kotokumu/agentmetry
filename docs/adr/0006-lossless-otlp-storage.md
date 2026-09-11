@@ -17,7 +17,9 @@ Agentmetry must retain every accepted OTLP export while its UI, MCP tools, and v
 6. Every observation references its source export and normalizer version.
 7. Historical exports can be normalized again after the canonical model or a source profile changes.
 8. A normalization failure never loses a valid export. The raw envelope is committed with a failed status and is retryable.
-9. Agentmetry does not currently apply an automatic retention policy.
+9. A stable retained-export identity survives Active, Archived, restored, and Deleted states.
+10. Automatic retention may move exact raw protobuf and replay metadata into a raw-only archive segment and remove its Active observations and projections.
+11. Restoration runs the current normalizer and preserves the original retained-export identity and payload occurrence.
 
 ### Non-goals
 
@@ -28,32 +30,28 @@ Agentmetry must retain every accepted OTLP export while its UI, MCP tools, and v
 
 ## Conceptual Model
 
-```text
-OTLP Export
-  ├── Journal Envelope
-  │     signal, transport, received time, canonical protobuf, hash
-  └── Canonical Observations[]
-        common identity and time fields
-        source-neutral kind and operation
-        agent/session/model/token fields
-        complete canonical payload JSON
-        original attributes JSON
-        source profile and normalizer version
-
-Canonical Observations
-  -> versioned Agentmetry read models
-  -> Dashboard
-  -> MCP
+```mermaid
+flowchart TD
+  OTLP[OTLP Export] --> JE[Active journal envelope]
+  OTLP --> CO[Active canonical observations]
+  CO --> RM[Versioned Agentmetry read models]
+  RM --> UI[Dashboard]
+  RM --> MCP[MCP]
+  JE -->|archive cutoff| AS[Raw-only archive segment]
+  AS -->|restore and renormalize| JE
+  AS -->|deletion cutoff| DE[Non-content deletion evidence]
 ```
 
 ### Invariants
 
-- Journal envelopes are append-only.
+- A retained-export identity is never reused.
 - An acknowledged export has a durable journal row.
 - Every canonical observation references its journal export.
 - Canonical payloads preserve arrays, maps, bytes, integers, booleans, and nested values without string coercion.
 - The journal is the replay source; dashboard and MCP views are derived.
 - Identical payload hashes are not automatically deduplicated because identical arrivals can be legitimate.
+- Archived exports have one current segment membership and no Active journal, observation, or query-projection rows.
+- Deleted exports retain no restorable payload.
 
 ## Responsibility Assignment
 

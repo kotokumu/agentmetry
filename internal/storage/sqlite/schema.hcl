@@ -4,6 +4,11 @@ schema "main" {
 table "spans" {
   schema = schema.main
 
+  column "export_id" {
+    type = integer
+    null = true
+  }
+
   column "source" {
     type    = text
     default = "unknown"
@@ -332,6 +337,11 @@ table "trace_agents" {
 table "logs" {
   schema = schema.main
 
+  column "export_id" {
+    type = integer
+    null = true
+  }
+
   column "source" {
     type    = text
     default = "unknown"
@@ -455,6 +465,11 @@ table "logs" {
 
 table "metrics" {
   schema = schema.main
+
+  column "export_id" {
+    type = integer
+    null = true
+  }
 
   column "source" {
     type    = text
@@ -805,6 +820,10 @@ table "model_rates" {
 
 table "model_calls" {
   schema = schema.main
+  column "export_id" {
+    type = integer
+    null = true
+  }
   column "call_id"                    { type = text }
   column "source"                     { type = text }
   column "identity_basis"             { type = text }
@@ -844,6 +863,10 @@ table "model_calls" {
 
 table "model_call_evidence" {
   schema = schema.main
+  column "export_id" {
+    type = integer
+    null = true
+  }
   column "activity_id"      { type = text }
   column "source"           { type = text }
   column "native_session_id" { type = text }
@@ -967,5 +990,371 @@ table "model_call_trace_supports" {
   index "model_call_trace_support_trace_idx" { columns = [table.model_call_trace_supports.column.trace_id] }
   check "model_call_trace_support_kind" {
     expr = "support_kind IN ('direct', 'corroborating')"
+  }
+}
+
+table "retention_policy" {
+  schema = schema.main
+  column "id"           { type = integer }
+  column "enabled"      { type = integer }
+  column "archive_days" {
+    type = integer
+    null = true
+  }
+  column "delete_days" {
+    type = integer
+    null = true
+  }
+  column "revision"     { type = integer }
+  column "updated_at"   { type = text }
+  primary_key { columns = [table.retention_policy.column.id] }
+  check "retention_policy_singleton" { expr = "id = 1" }
+  check "retention_policy_enabled" { expr = "enabled IN (0, 1)" }
+  check "retention_policy_disabled_values" {
+    expr = "enabled = 1 OR (archive_days IS NULL AND delete_days IS NULL)"
+  }
+  check "retention_policy_enabled_values" {
+    expr = "enabled = 0 OR (archive_days >= 1 AND archive_days <= 36500 AND delete_days >= 1 AND delete_days <= 36500 AND delete_days > archive_days)"
+  }
+}
+
+table "retained_exports" {
+  schema = schema.main
+  column "id" {
+    type           = integer
+    null           = true
+    auto_increment = true
+  }
+  column "received_at" { type = text }
+  column "state" { type = text }
+  column "hold_until" {
+    type = text
+    null = true
+  }
+  column "prior_segment_id" {
+    type = text
+    null = true
+  }
+  column "deleted_at" {
+    type = text
+    null = true
+  }
+  column "deletion_policy_revision" {
+    type = integer
+    null = true
+  }
+  column "deletion_cutoff_days" {
+    type = integer
+    null = true
+  }
+  column "deletion_evaluated_at" {
+    type = text
+    null = true
+  }
+  column "deletion_operation_id" {
+    type = text
+    null = true
+  }
+  primary_key { columns = [table.retained_exports.column.id] }
+  index "retained_exports_received_at_idx" { columns = [table.retained_exports.column.received_at] }
+  index "retained_exports_state_received_idx" { columns = [table.retained_exports.column.state, table.retained_exports.column.received_at] }
+  check "retained_exports_state" { expr = "state IN ('active', 'archived', 'deleted')" }
+}
+
+table "archive_segments" {
+  schema = schema.main
+  column "id" { type = text }
+  column "reference_state" { type = text }
+  column "file_name" {
+    type = text
+    null = true
+  }
+  column "representation_version" { type = integer }
+  column "payload_integrity" { type = text }
+  column "metadata_integrity" { type = text }
+  column "min_received_at" { type = text }
+  column "max_received_at" { type = text }
+  column "export_count" { type = integer }
+  column "original_bytes" { type = integer }
+  column "stored_bytes" { type = integer }
+  column "file_sha256" { type = text }
+  column "membership_sha256" { type = text }
+  column "verification_error" {
+    type = text
+    null = true
+  }
+  column "verified_at" { type = text }
+  column "created_at" { type = text }
+  column "deletion_completed_at" {
+    type = text
+    null = true
+  }
+  primary_key { columns = [table.archive_segments.column.id] }
+  index "archive_segments_file_name_uq" {
+    unique = true
+    columns = [table.archive_segments.column.file_name]
+  }
+  index "archive_segments_inventory_idx" { columns = [table.archive_segments.column.reference_state, table.archive_segments.column.min_received_at, table.archive_segments.column.id] }
+  check "archive_segments_reference_state" { expr = "reference_state IN ('current', 'superseded', 'restored', 'deleted')" }
+  check "archive_segments_payload_integrity" { expr = "payload_integrity IN ('intact', 'corrupt')" }
+  check "archive_segments_metadata_integrity" { expr = "metadata_integrity IN ('verifiable', 'unverifiable')" }
+}
+
+table "archive_segment_members" {
+  schema = schema.main
+  column "segment_id" { type = text }
+  column "export_id" { type = integer }
+  column "ordinal" { type = integer }
+  primary_key { columns = [table.archive_segment_members.column.segment_id, table.archive_segment_members.column.export_id] }
+  index "archive_segment_members_ordinal_uq" {
+    unique = true
+    columns = [table.archive_segment_members.column.segment_id, table.archive_segment_members.column.ordinal]
+  }
+  foreign_key "archive_segment_members_segment" {
+    columns = [table.archive_segment_members.column.segment_id]
+    ref_columns = [table.archive_segments.column.id]
+    on_delete = CASCADE
+  }
+  foreign_key "archive_segment_members_export" {
+    columns = [table.archive_segment_members.column.export_id]
+    ref_columns = [table.retained_exports.column.id]
+  }
+}
+
+table "current_archive_memberships" {
+  schema = schema.main
+  column "export_id" { type = integer }
+  column "segment_id" { type = text }
+  column "ordinal" { type = integer }
+  primary_key { columns = [table.current_archive_memberships.column.export_id] }
+  index "current_archive_memberships_ordinal_uq" {
+    unique = true
+    columns = [table.current_archive_memberships.column.segment_id, table.current_archive_memberships.column.ordinal]
+  }
+  foreign_key "current_archive_memberships_segment" {
+    columns = [table.current_archive_memberships.column.segment_id]
+    ref_columns = [table.archive_segments.column.id]
+    on_delete = CASCADE
+  }
+  foreign_key "current_archive_memberships_export" {
+    columns = [table.current_archive_memberships.column.export_id]
+    ref_columns = [table.retained_exports.column.id]
+  }
+}
+
+table "archive_segment_replacements" {
+  schema = schema.main
+  column "original_segment_id" { type = text }
+  column "replacement_segment_id" { type = text }
+  primary_key { columns = [table.archive_segment_replacements.column.original_segment_id, table.archive_segment_replacements.column.replacement_segment_id] }
+  foreign_key "archive_segment_replacements_original" {
+    columns = [table.archive_segment_replacements.column.original_segment_id]
+    ref_columns = [table.archive_segments.column.id]
+  }
+  foreign_key "archive_segment_replacements_replacement" {
+    columns = [table.archive_segment_replacements.column.replacement_segment_id]
+    ref_columns = [table.archive_segments.column.id]
+  }
+  check "archive_segment_replacements_distinct" { expr = "original_segment_id <> replacement_segment_id" }
+}
+
+table "retention_cycles" {
+  schema = schema.main
+  column "id" { type = text }
+  column "status" { type = text }
+  column "started_at" { type = text }
+  column "evaluated_at" { type = text }
+  column "cohort_size" {
+    type = integer
+    null = true
+  }
+  column "cohort_max_export_id" {
+    type = integer
+    null = true
+  }
+  column "planning_completed" {
+    type = integer
+    default = 0
+  }
+  column "planned_children" {
+    type = integer
+    default = 0
+  }
+  column "cohort_unavailable_reason" {
+    type = text
+    null = true
+  }
+  column "pending_children" {
+    type = integer
+    default = 0
+  }
+  column "running_children" {
+    type = integer
+    default = 0
+  }
+  column "completed_children" {
+    type = integer
+    default = 0
+  }
+  column "failed_children" {
+    type = integer
+    default = 0
+  }
+  column "cancelled_children" {
+    type = integer
+    default = 0
+  }
+  column "completed_at" {
+    type = text
+    null = true
+  }
+  column "error" {
+    type = text
+    null = true
+  }
+  primary_key { columns = [table.retention_cycles.column.id] }
+  index "retention_cycles_status_completed_idx" { columns = [table.retention_cycles.column.status, table.retention_cycles.column.completed_at] }
+  check "retention_cycles_status" { expr = "status IN ('running', 'completed', 'failed', 'cancelled')" }
+  check "retention_cycles_planned_children_nonnegative" { expr = "planned_children >= 0" }
+}
+
+table "retention_cycle_segments" {
+  schema = schema.main
+  column "cycle_id" { type = text }
+  column "segment_id" { type = text }
+  primary_key { columns = [table.retention_cycle_segments.column.cycle_id, table.retention_cycle_segments.column.segment_id] }
+  foreign_key "retention_cycle_segments_cycle" {
+    columns = [table.retention_cycle_segments.column.cycle_id]
+    ref_columns = [table.retention_cycles.column.id]
+    on_delete = CASCADE
+  }
+  foreign_key "retention_cycle_segments_segment" {
+    columns = [table.retention_cycle_segments.column.segment_id]
+    ref_columns = [table.archive_segments.column.id]
+  }
+}
+
+table "retention_operations" {
+  schema = schema.main
+  column "id" { type = text }
+  column "cycle_id" {
+    type = text
+    null = true
+  }
+  column "kind" { type = text }
+  column "status" { type = text }
+  column "phase" { type = text }
+  column "requested_at" { type = text }
+  column "evaluated_at" {
+    type = text
+    null = true
+  }
+  column "completed_at" {
+    type = text
+    null = true
+  }
+  column "error" {
+    type = text
+    null = true
+  }
+  column "staging_token" {
+    type = text
+    null = true
+  }
+  column "decision_policy_revision" {
+    type = integer
+    null = true
+  }
+  column "decision_cutoff_days" {
+    type = integer
+    null = true
+  }
+  column "affected_export_count" {
+    type = integer
+    null = true
+  }
+  column "affected_segment_count" {
+    type = integer
+    null = true
+  }
+  primary_key { columns = [table.retention_operations.column.id] }
+  index "retention_operations_status_completed_idx" { columns = [table.retention_operations.column.status, table.retention_operations.column.completed_at] }
+  foreign_key "retention_operations_cycle" {
+    columns = [table.retention_operations.column.cycle_id]
+    ref_columns = [table.retention_cycles.column.id]
+  }
+  check "retention_operations_kind" { expr = "kind IN ('archive', 'restore', 'delete')" }
+  check "retention_operations_status" { expr = "status IN ('pending', 'running', 'completed', 'failed', 'cancelled')" }
+  check "retention_operations_phase" { expr = "phase IN ('planned', 'file_ready', 'staging', 'staged', 'delete_committing', 'content_removed', 'terminal')" }
+}
+
+table "retention_operation_exports" {
+  schema = schema.main
+  column "operation_id" { type = text }
+  column "export_id" { type = integer }
+  column "role" { type = text }
+  primary_key { columns = [table.retention_operation_exports.column.operation_id, table.retention_operation_exports.column.export_id] }
+  index "retention_operation_exports_export_idx" { columns = [table.retention_operation_exports.column.export_id] }
+  foreign_key "retention_operation_exports_operation" {
+    columns = [table.retention_operation_exports.column.operation_id]
+    ref_columns = [table.retention_operations.column.id]
+    on_delete = CASCADE
+  }
+  foreign_key "retention_operation_exports_export" {
+    columns = [table.retention_operation_exports.column.export_id]
+    ref_columns = [table.retained_exports.column.id]
+  }
+  check "retention_operation_exports_role" { expr = "role IN ('affected', 'selected')" }
+}
+
+table "retention_export_authorities" {
+  schema = schema.main
+  column "export_id" { type = integer }
+  column "operation_id" { type = text }
+  column "kind" { type = text }
+  column "role" { type = text }
+  primary_key { columns = [table.retention_export_authorities.column.export_id] }
+  index "retention_export_authorities_operation_idx" { columns = [table.retention_export_authorities.column.operation_id] }
+  foreign_key "retention_export_authorities_operation" {
+    columns = [table.retention_export_authorities.column.operation_id]
+    ref_columns = [table.retention_operations.column.id]
+    on_delete = CASCADE
+  }
+  foreign_key "retention_export_authorities_export" {
+    columns = [table.retention_export_authorities.column.export_id]
+    ref_columns = [table.retained_exports.column.id]
+  }
+  check "retention_export_authorities_kind" { expr = "kind IN ('archive', 'restore', 'delete')" }
+  check "retention_export_authorities_role" { expr = "role IN ('affected', 'selected')" }
+}
+
+table "span_projection_candidates" {
+  schema = schema.main
+  column "export_id" { type = integer }
+  column "trace_id" { type = text }
+  column "span_id" { type = text }
+  column "projection_sequence" { type = integer }
+  column "projection_json" { type = blob }
+  primary_key { columns = [table.span_projection_candidates.column.export_id, table.span_projection_candidates.column.trace_id, table.span_projection_candidates.column.span_id] }
+  index "span_projection_candidates_winner_idx" { columns = [table.span_projection_candidates.column.trace_id, table.span_projection_candidates.column.span_id, table.span_projection_candidates.column.projection_sequence] }
+  foreign_key "span_projection_candidates_export" {
+    columns = [table.span_projection_candidates.column.export_id]
+    ref_columns = [table.retained_exports.column.id]
+    on_delete = CASCADE
+  }
+}
+
+table "session_link_evidence" {
+  schema = schema.main
+  column "export_id" { type = integer }
+  column "source" { type = text }
+  column "parent_session_id" { type = text }
+  column "child_session_id" { type = text }
+  column "observed_at" { type = text }
+  primary_key { columns = [table.session_link_evidence.column.export_id, table.session_link_evidence.column.source, table.session_link_evidence.column.parent_session_id, table.session_link_evidence.column.child_session_id] }
+  foreign_key "session_link_evidence_export" {
+    columns = [table.session_link_evidence.column.export_id]
+    ref_columns = [table.retained_exports.column.id]
+    on_delete = CASCADE
   }
 }

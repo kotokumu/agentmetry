@@ -115,6 +115,65 @@ func TestCommitExportBatchStoresEveryExportInOneOrderedTransaction(t *testing.T)
 	}
 }
 
+func TestRetainedIdentityAndPayloadOccurrenceAreNeverReused(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "agentmetry.db")
+	database, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	at := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	payload := []byte{0x0a, 0x00}
+	for range 2 {
+		if err := database.CommitExport(context.Background(), ingest.AcceptedExport{
+			Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, payload),
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := database.db.Exec(`DELETE FROM otlp_exports WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.db.Exec(`UPDATE retained_exports SET state = 'archived' WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	database, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := database.CommitExport(context.Background(), ingest.AcceptedExport{
+		Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, payload),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := database.CommitExport(context.Background(), ingest.AcceptedExport{
+		Identity: ingest.RetainedIdentity{ID: 1, PayloadOccurrence: 0},
+		Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, payload),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := database.db.Query(`SELECT id, payload_occurrence FROM otlp_exports ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	var got [][2]int64
+	for rows.Next() {
+		var pair [2]int64
+		if err := rows.Scan(&pair[0], &pair[1]); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, pair)
+	}
+	want := [][2]int64{{1, 0}, {2, 2}, {3, 3}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("stable identities mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestCommitExportWithNoProjectionTargetsDoesNotReapplyHistoricalRollups(t *testing.T) {
 	database, err := Open(filepath.Join(t.TempDir(), "agentmetry.db"))
 	if err != nil {

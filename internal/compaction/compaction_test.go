@@ -14,12 +14,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/kotokumu/agentmetry/internal/archivefs"
 	"github.com/kotokumu/agentmetry/internal/canonical"
 	"github.com/kotokumu/agentmetry/internal/harness"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/ingest/otel"
 	"github.com/kotokumu/agentmetry/internal/journal"
 	"github.com/kotokumu/agentmetry/internal/query"
+	"github.com/kotokumu/agentmetry/internal/retention"
 	"github.com/kotokumu/agentmetry/internal/source/builtin"
 	claudesource "github.com/kotokumu/agentmetry/internal/source/claude"
 	codexsource "github.com/kotokumu/agentmetry/internal/source/codex"
@@ -46,6 +48,128 @@ type replayOverlapProbePlugin struct {
 	firstStarted       chan struct{}
 	releaseFirst       chan struct{}
 	secondBatchStarted chan struct{}
+}
+
+func TestForcedCompactionPreservesArchivedLifecycleCatalog(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "lifecycle.db")
+	database, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, now.Add(-10*24*time.Hour), []byte{0x0a, 0x00}),
+		Journal: ingest.JournalMetadata{Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "failed"}, NormalizationError: "fixture failure"}
+	if err := database.CommitExport(ctx, accepted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.UpdateRetentionPolicy(ctx, true, 1, 30, now); err != nil {
+		t.Fatal(err)
+	}
+	service := retention.NewServiceWithReplayer(database, archivefs.New(database.ArchiveDirectory()), retention.ReplayFunc(otel.ReplayExport), builtin.Registry(), func() time.Time { return now })
+	if err := service.RunMaintenance(ctx); err != nil {
+		t.Fatal(err)
+	}
+	segments, _, err := service.Segments(ctx, "", 100)
+	if err != nil || len(segments) != 1 {
+		t.Fatalf("segments=%v err=%v", segments, err)
+	}
+	segmentID := segments[0].ID
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Migrate(ctx, path, builtin.Registry(), nil); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	policy, _, err := reopened.RetentionPolicy(ctx)
+	if err != nil || !policy.Enabled || policy.Revision == 0 {
+		t.Fatalf("policy=%v err=%v", policy, err)
+	}
+	segments, _, err = reopened.ListArchiveSegments(ctx, "", 100)
+	if err != nil || len(segments) != 1 || segments[0].ID != segmentID {
+		t.Fatalf("segments=%v err=%v", segments, err)
+	}
+	if _, err := archivefs.New(reopened.ArchiveDirectory()).OpenVerified(ctx, segmentID); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCompactionRecoversStagedDeletionBeforeSnapshot(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "staged-deletion.db")
+	database, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, now.Add(-10*retention.Day), []byte{0x0a, 0x00}),
+		Journal: ingest.JournalMetadata{Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "failed"}, NormalizationError: "fixture"}
+	if err := database.CommitExport(ctx, accepted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := database.UpdateRetentionPolicy(ctx, true, 1, 30, now); err != nil {
+		t.Fatal(err)
+	}
+	service := retention.NewServiceWithReplayer(database, archivefs.New(database.ArchiveDirectory()), retention.ReplayFunc(otel.ReplayExport), builtin.Registry(), func() time.Time { return now })
+	if err := service.RunMaintenance(ctx); err != nil {
+		t.Fatal(err)
+	}
+	segments, _, err := service.Segments(ctx, "", 10)
+	if err != nil || len(segments) != 1 {
+		t.Fatalf("segments=%v err=%v", segments, err)
+	}
+	segmentID := segments[0].ID
+	archiveDirectory := database.ArchiveDirectory()
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	rawDB, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`PRAGMA foreign_keys=ON`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`INSERT INTO retention_operations (id, kind, status, phase, requested_at, evaluated_at, staging_token, decision_policy_revision, decision_cutoff_days, affected_export_count, affected_segment_count)
+VALUES ('compaction-staged-delete', 'delete', 'running', 'staged', ?, ?, ?, 1, 30, 1, 1)`, now.Format(time.RFC3339Nano), now.Format(time.RFC3339Nano), segmentID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`INSERT INTO retention_operation_exports (operation_id, export_id, role) VALUES ('compaction-staged-delete', 1, 'affected')`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rawDB.Exec(`INSERT INTO retention_export_authorities (export_id, operation_id, kind, role) VALUES (1, 'compaction-staged-delete', 'delete', 'affected')`); err != nil {
+		t.Fatal(err)
+	}
+	if err := rawDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+	installed := filepath.Join(archiveDirectory, segmentID+".tar.zst")
+	if err := os.Rename(installed, installed+".deleting"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Migrate(ctx, path, builtin.Registry(), nil); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := store.Open(path, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reopened.Close()
+	if _, err := archivefs.New(reopened.ArchiveDirectory()).OpenVerified(ctx, segmentID); err != nil {
+		t.Fatalf("staged archive was not restored before compaction: %v", err)
+	}
+	operations, err := reopened.RetentionOperations(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(operations) == 0 || operations[0].ID != "compaction-staged-delete" || operations[0].Status != retention.OperationCancelled {
+		t.Fatalf("recovered operations=%v", operations)
+	}
 }
 
 func (*profilingProbePlugin) ID() string { return "probe" }

@@ -7,6 +7,7 @@ import "./appearance-settings";
 import "./app-update-control";
 import "./language-selector";
 import "./mcp-connection";
+import "./retention-settings";
 
 const claudeCommand = `{
   "env": {
@@ -69,6 +70,7 @@ export class ConnectionsSettings extends LocalizedElement {
         <section><h2>${msg("Capture scope", { id: "settingsCompletion.scopeHeading" })}</h2><p class="lead">${msg("Agentmetry retains accepted telemetry locally. What is available depends on what the source reports and which content settings are enabled.", { id: "settingsCompletion.scopeIntro" })}</p></section>
         <section><h2>${msg("Reported and retained data", { id: "settingsCompletion.retentionHeading" })}</h2><p class="lead">${msg("Prompts, responses, tool details, and file contents may be unreported, redacted, or unavailable. Missing values are shown as unreported; the app does not infer complete conversations or outcomes.", { id: "settingsCompletion.retentionBody" })}</p></section>
       </div>
+      <am-retention-settings></am-retention-settings>
       <section><h2>${msg("Read-only MCP", { id: "settingsCompletion.mcpHeading" })}</h2><p class="lead">${msg("Use the local MCP URL in a client to query telemetry. MCP is stateless and read only. The Web UI origin and OTLP receiver endpoint are separate addresses.", { id: "settingsCompletion.mcpIntro" })}</p><div class="control"><am-mcp-connection inline></am-mcp-connection></div></section>
       <section class="controls">
         <div class="control"><am-language-selector></am-language-selector></div>

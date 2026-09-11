@@ -121,7 +121,7 @@ func (store *Store) persistModelCallsWithMode(ctx context.Context, transaction *
 			filterAt = accepted.Envelope.ReceivedAt
 		}
 		if observed.Source == "claude" {
-			if err := persistClaudeCallEvidence(ctx, transaction, observed, log, activityIDs[observed.Ordinal], locator, filterAt); err != nil {
+			if err := persistClaudeCallEvidence(ctx, transaction, exportID, observed, log, activityIDs[observed.Ordinal], locator, filterAt); err != nil {
 				return err
 			}
 			if observed.SessionID != "" {
@@ -132,12 +132,12 @@ func (store *Store) persistModelCallsWithMode(ctx context.Context, transaction *
 		basis := modelcall.IdentityJournalEvidenceFallback
 		callID := modelcall.CallID(observed.Source, observed.SessionID, basis, modelcall.JournalAlias(locator))
 		result, err := transaction.ExecContext(ctx, `INSERT INTO model_calls (
-  call_id, source, identity_basis, representative_activity_id, native_session_id,
+  export_id, call_id, source, identity_basis, representative_activity_id, native_session_id,
   filter_at, occurred_at, model, mode, input_tokens, output_tokens,
   cache_read_tokens, cache_write_tokens, reasoning_tokens, input_reported, output_reported,
   cache_read_reported, cache_write_reported, reasoning_reported, projection_sequence
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT(call_id) DO NOTHING`, callID, observed.Source, identityBasisText(basis), activityIDs[observed.Ordinal], observed.SessionID,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(call_id) DO NOTHING`, exportID, callID, observed.Source, identityBasisText(basis), activityIDs[observed.Ordinal], observed.SessionID,
 			formatTime(filterAt), formatOptionalTime(observed.OccurredAt), observed.Model, mode,
 			observed.Usage.Input, observed.Usage.Output, observed.Usage.CacheRead, observed.Usage.CacheWrite, observed.Usage.Reasoning,
 			boolInt(observed.Usage.InputReported()), boolInt(observed.Usage.OutputReported()), boolInt(observed.Usage.CacheReadReported()), boolInt(observed.Usage.CacheWriteReported()), boolInt(observed.Usage.ReasoningReported()), sequence)
