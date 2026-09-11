@@ -23,6 +23,9 @@ const _ = connect.IsAtLeastVersion1_13_0
 const (
 	// AgentmetryQueryServiceName is the fully-qualified name of the AgentmetryQueryService service.
 	AgentmetryQueryServiceName = "agentmetry.v1.AgentmetryQueryService"
+	// AgentmetryRetentionServiceName is the fully-qualified name of the AgentmetryRetentionService
+	// service.
+	AgentmetryRetentionServiceName = "agentmetry.v1.AgentmetryRetentionService"
 )
 
 // These constants are the fully-qualified names of the RPCs defined in this package. They're
@@ -75,6 +78,21 @@ const (
 	// AgentmetryQueryServiceSyncTraceActivitiesProcedure is the fully-qualified name of the
 	// AgentmetryQueryService's SyncTraceActivities RPC.
 	AgentmetryQueryServiceSyncTraceActivitiesProcedure = "/agentmetry.v1.AgentmetryQueryService/SyncTraceActivities"
+	// AgentmetryRetentionServiceGetRetentionStatusProcedure is the fully-qualified name of the
+	// AgentmetryRetentionService's GetRetentionStatus RPC.
+	AgentmetryRetentionServiceGetRetentionStatusProcedure = "/agentmetry.v1.AgentmetryRetentionService/GetRetentionStatus"
+	// AgentmetryRetentionServiceUpdateRetentionPolicyProcedure is the fully-qualified name of the
+	// AgentmetryRetentionService's UpdateRetentionPolicy RPC.
+	AgentmetryRetentionServiceUpdateRetentionPolicyProcedure = "/agentmetry.v1.AgentmetryRetentionService/UpdateRetentionPolicy"
+	// AgentmetryRetentionServiceListArchiveSegmentsProcedure is the fully-qualified name of the
+	// AgentmetryRetentionService's ListArchiveSegments RPC.
+	AgentmetryRetentionServiceListArchiveSegmentsProcedure = "/agentmetry.v1.AgentmetryRetentionService/ListArchiveSegments"
+	// AgentmetryRetentionServiceGetRetentionCapacityProcedure is the fully-qualified name of the
+	// AgentmetryRetentionService's GetRetentionCapacity RPC.
+	AgentmetryRetentionServiceGetRetentionCapacityProcedure = "/agentmetry.v1.AgentmetryRetentionService/GetRetentionCapacity"
+	// AgentmetryRetentionServiceRestoreArchiveProcedure is the fully-qualified name of the
+	// AgentmetryRetentionService's RestoreArchive RPC.
+	AgentmetryRetentionServiceRestoreArchiveProcedure = "/agentmetry.v1.AgentmetryRetentionService/RestoreArchive"
 )
 
 // AgentmetryQueryServiceClient is a client for the agentmetry.v1.AgentmetryQueryService service.
@@ -512,4 +530,180 @@ func (UnimplementedAgentmetryQueryServiceHandler) SyncSessionActivities(context.
 
 func (UnimplementedAgentmetryQueryServiceHandler) SyncTraceActivities(context.Context, *connect.Request[v1.SyncTraceActivitiesRequest]) (*connect.Response[v1.SyncTraceActivitiesResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryQueryService.SyncTraceActivities is not implemented"))
+}
+
+// AgentmetryRetentionServiceClient is a client for the agentmetry.v1.AgentmetryRetentionService
+// service.
+type AgentmetryRetentionServiceClient interface {
+	GetRetentionStatus(context.Context, *connect.Request[v1.GetRetentionStatusRequest]) (*connect.Response[v1.GetRetentionStatusResponse], error)
+	UpdateRetentionPolicy(context.Context, *connect.Request[v1.UpdateRetentionPolicyRequest]) (*connect.Response[v1.UpdateRetentionPolicyResponse], error)
+	ListArchiveSegments(context.Context, *connect.Request[v1.ListArchiveSegmentsRequest]) (*connect.Response[v1.ListArchiveSegmentsResponse], error)
+	GetRetentionCapacity(context.Context, *connect.Request[v1.GetRetentionCapacityRequest]) (*connect.Response[v1.GetRetentionCapacityResponse], error)
+	RestoreArchive(context.Context, *connect.Request[v1.RestoreArchiveRequest]) (*connect.Response[v1.RestoreArchiveResponse], error)
+}
+
+// NewAgentmetryRetentionServiceClient constructs a client for the
+// agentmetry.v1.AgentmetryRetentionService service. By default, it uses the Connect protocol with
+// the binary Protobuf Codec, asks for gzipped responses, and sends uncompressed requests. To use
+// the gRPC or gRPC-Web protocols, supply the connect.WithGRPC() or connect.WithGRPCWeb() options.
+//
+// The URL supplied here should be the base URL for the Connect or gRPC server (for example,
+// http://api.acme.com or https://acme.com/grpc).
+func NewAgentmetryRetentionServiceClient(httpClient connect.HTTPClient, baseURL string, opts ...connect.ClientOption) AgentmetryRetentionServiceClient {
+	baseURL = strings.TrimRight(baseURL, "/")
+	agentmetryRetentionServiceMethods := v1.File_agentmetry_v1_agentmetry_proto.Services().ByName("AgentmetryRetentionService").Methods()
+	return &agentmetryRetentionServiceClient{
+		getRetentionStatus: connect.NewClient[v1.GetRetentionStatusRequest, v1.GetRetentionStatusResponse](
+			httpClient,
+			baseURL+AgentmetryRetentionServiceGetRetentionStatusProcedure,
+			connect.WithSchema(agentmetryRetentionServiceMethods.ByName("GetRetentionStatus")),
+			connect.WithClientOptions(opts...),
+		),
+		updateRetentionPolicy: connect.NewClient[v1.UpdateRetentionPolicyRequest, v1.UpdateRetentionPolicyResponse](
+			httpClient,
+			baseURL+AgentmetryRetentionServiceUpdateRetentionPolicyProcedure,
+			connect.WithSchema(agentmetryRetentionServiceMethods.ByName("UpdateRetentionPolicy")),
+			connect.WithClientOptions(opts...),
+		),
+		listArchiveSegments: connect.NewClient[v1.ListArchiveSegmentsRequest, v1.ListArchiveSegmentsResponse](
+			httpClient,
+			baseURL+AgentmetryRetentionServiceListArchiveSegmentsProcedure,
+			connect.WithSchema(agentmetryRetentionServiceMethods.ByName("ListArchiveSegments")),
+			connect.WithClientOptions(opts...),
+		),
+		getRetentionCapacity: connect.NewClient[v1.GetRetentionCapacityRequest, v1.GetRetentionCapacityResponse](
+			httpClient,
+			baseURL+AgentmetryRetentionServiceGetRetentionCapacityProcedure,
+			connect.WithSchema(agentmetryRetentionServiceMethods.ByName("GetRetentionCapacity")),
+			connect.WithClientOptions(opts...),
+		),
+		restoreArchive: connect.NewClient[v1.RestoreArchiveRequest, v1.RestoreArchiveResponse](
+			httpClient,
+			baseURL+AgentmetryRetentionServiceRestoreArchiveProcedure,
+			connect.WithSchema(agentmetryRetentionServiceMethods.ByName("RestoreArchive")),
+			connect.WithClientOptions(opts...),
+		),
+	}
+}
+
+// agentmetryRetentionServiceClient implements AgentmetryRetentionServiceClient.
+type agentmetryRetentionServiceClient struct {
+	getRetentionStatus    *connect.Client[v1.GetRetentionStatusRequest, v1.GetRetentionStatusResponse]
+	updateRetentionPolicy *connect.Client[v1.UpdateRetentionPolicyRequest, v1.UpdateRetentionPolicyResponse]
+	listArchiveSegments   *connect.Client[v1.ListArchiveSegmentsRequest, v1.ListArchiveSegmentsResponse]
+	getRetentionCapacity  *connect.Client[v1.GetRetentionCapacityRequest, v1.GetRetentionCapacityResponse]
+	restoreArchive        *connect.Client[v1.RestoreArchiveRequest, v1.RestoreArchiveResponse]
+}
+
+// GetRetentionStatus calls agentmetry.v1.AgentmetryRetentionService.GetRetentionStatus.
+func (c *agentmetryRetentionServiceClient) GetRetentionStatus(ctx context.Context, req *connect.Request[v1.GetRetentionStatusRequest]) (*connect.Response[v1.GetRetentionStatusResponse], error) {
+	return c.getRetentionStatus.CallUnary(ctx, req)
+}
+
+// UpdateRetentionPolicy calls agentmetry.v1.AgentmetryRetentionService.UpdateRetentionPolicy.
+func (c *agentmetryRetentionServiceClient) UpdateRetentionPolicy(ctx context.Context, req *connect.Request[v1.UpdateRetentionPolicyRequest]) (*connect.Response[v1.UpdateRetentionPolicyResponse], error) {
+	return c.updateRetentionPolicy.CallUnary(ctx, req)
+}
+
+// ListArchiveSegments calls agentmetry.v1.AgentmetryRetentionService.ListArchiveSegments.
+func (c *agentmetryRetentionServiceClient) ListArchiveSegments(ctx context.Context, req *connect.Request[v1.ListArchiveSegmentsRequest]) (*connect.Response[v1.ListArchiveSegmentsResponse], error) {
+	return c.listArchiveSegments.CallUnary(ctx, req)
+}
+
+// GetRetentionCapacity calls agentmetry.v1.AgentmetryRetentionService.GetRetentionCapacity.
+func (c *agentmetryRetentionServiceClient) GetRetentionCapacity(ctx context.Context, req *connect.Request[v1.GetRetentionCapacityRequest]) (*connect.Response[v1.GetRetentionCapacityResponse], error) {
+	return c.getRetentionCapacity.CallUnary(ctx, req)
+}
+
+// RestoreArchive calls agentmetry.v1.AgentmetryRetentionService.RestoreArchive.
+func (c *agentmetryRetentionServiceClient) RestoreArchive(ctx context.Context, req *connect.Request[v1.RestoreArchiveRequest]) (*connect.Response[v1.RestoreArchiveResponse], error) {
+	return c.restoreArchive.CallUnary(ctx, req)
+}
+
+// AgentmetryRetentionServiceHandler is an implementation of the
+// agentmetry.v1.AgentmetryRetentionService service.
+type AgentmetryRetentionServiceHandler interface {
+	GetRetentionStatus(context.Context, *connect.Request[v1.GetRetentionStatusRequest]) (*connect.Response[v1.GetRetentionStatusResponse], error)
+	UpdateRetentionPolicy(context.Context, *connect.Request[v1.UpdateRetentionPolicyRequest]) (*connect.Response[v1.UpdateRetentionPolicyResponse], error)
+	ListArchiveSegments(context.Context, *connect.Request[v1.ListArchiveSegmentsRequest]) (*connect.Response[v1.ListArchiveSegmentsResponse], error)
+	GetRetentionCapacity(context.Context, *connect.Request[v1.GetRetentionCapacityRequest]) (*connect.Response[v1.GetRetentionCapacityResponse], error)
+	RestoreArchive(context.Context, *connect.Request[v1.RestoreArchiveRequest]) (*connect.Response[v1.RestoreArchiveResponse], error)
+}
+
+// NewAgentmetryRetentionServiceHandler builds an HTTP handler from the service implementation. It
+// returns the path on which to mount the handler and the handler itself.
+//
+// By default, handlers support the Connect, gRPC, and gRPC-Web protocols with the binary Protobuf
+// and JSON codecs. They also support gzip compression.
+func NewAgentmetryRetentionServiceHandler(svc AgentmetryRetentionServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
+	agentmetryRetentionServiceMethods := v1.File_agentmetry_v1_agentmetry_proto.Services().ByName("AgentmetryRetentionService").Methods()
+	agentmetryRetentionServiceGetRetentionStatusHandler := connect.NewUnaryHandler(
+		AgentmetryRetentionServiceGetRetentionStatusProcedure,
+		svc.GetRetentionStatus,
+		connect.WithSchema(agentmetryRetentionServiceMethods.ByName("GetRetentionStatus")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryRetentionServiceUpdateRetentionPolicyHandler := connect.NewUnaryHandler(
+		AgentmetryRetentionServiceUpdateRetentionPolicyProcedure,
+		svc.UpdateRetentionPolicy,
+		connect.WithSchema(agentmetryRetentionServiceMethods.ByName("UpdateRetentionPolicy")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryRetentionServiceListArchiveSegmentsHandler := connect.NewUnaryHandler(
+		AgentmetryRetentionServiceListArchiveSegmentsProcedure,
+		svc.ListArchiveSegments,
+		connect.WithSchema(agentmetryRetentionServiceMethods.ByName("ListArchiveSegments")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryRetentionServiceGetRetentionCapacityHandler := connect.NewUnaryHandler(
+		AgentmetryRetentionServiceGetRetentionCapacityProcedure,
+		svc.GetRetentionCapacity,
+		connect.WithSchema(agentmetryRetentionServiceMethods.ByName("GetRetentionCapacity")),
+		connect.WithHandlerOptions(opts...),
+	)
+	agentmetryRetentionServiceRestoreArchiveHandler := connect.NewUnaryHandler(
+		AgentmetryRetentionServiceRestoreArchiveProcedure,
+		svc.RestoreArchive,
+		connect.WithSchema(agentmetryRetentionServiceMethods.ByName("RestoreArchive")),
+		connect.WithHandlerOptions(opts...),
+	)
+	return "/agentmetry.v1.AgentmetryRetentionService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case AgentmetryRetentionServiceGetRetentionStatusProcedure:
+			agentmetryRetentionServiceGetRetentionStatusHandler.ServeHTTP(w, r)
+		case AgentmetryRetentionServiceUpdateRetentionPolicyProcedure:
+			agentmetryRetentionServiceUpdateRetentionPolicyHandler.ServeHTTP(w, r)
+		case AgentmetryRetentionServiceListArchiveSegmentsProcedure:
+			agentmetryRetentionServiceListArchiveSegmentsHandler.ServeHTTP(w, r)
+		case AgentmetryRetentionServiceGetRetentionCapacityProcedure:
+			agentmetryRetentionServiceGetRetentionCapacityHandler.ServeHTTP(w, r)
+		case AgentmetryRetentionServiceRestoreArchiveProcedure:
+			agentmetryRetentionServiceRestoreArchiveHandler.ServeHTTP(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+}
+
+// UnimplementedAgentmetryRetentionServiceHandler returns CodeUnimplemented from all methods.
+type UnimplementedAgentmetryRetentionServiceHandler struct{}
+
+func (UnimplementedAgentmetryRetentionServiceHandler) GetRetentionStatus(context.Context, *connect.Request[v1.GetRetentionStatusRequest]) (*connect.Response[v1.GetRetentionStatusResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryRetentionService.GetRetentionStatus is not implemented"))
+}
+
+func (UnimplementedAgentmetryRetentionServiceHandler) UpdateRetentionPolicy(context.Context, *connect.Request[v1.UpdateRetentionPolicyRequest]) (*connect.Response[v1.UpdateRetentionPolicyResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryRetentionService.UpdateRetentionPolicy is not implemented"))
+}
+
+func (UnimplementedAgentmetryRetentionServiceHandler) ListArchiveSegments(context.Context, *connect.Request[v1.ListArchiveSegmentsRequest]) (*connect.Response[v1.ListArchiveSegmentsResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryRetentionService.ListArchiveSegments is not implemented"))
+}
+
+func (UnimplementedAgentmetryRetentionServiceHandler) GetRetentionCapacity(context.Context, *connect.Request[v1.GetRetentionCapacityRequest]) (*connect.Response[v1.GetRetentionCapacityResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryRetentionService.GetRetentionCapacity is not implemented"))
+}
+
+func (UnimplementedAgentmetryRetentionServiceHandler) RestoreArchive(context.Context, *connect.Request[v1.RestoreArchiveRequest]) (*connect.Response[v1.RestoreArchiveResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("agentmetry.v1.AgentmetryRetentionService.RestoreArchive is not implemented"))
 }

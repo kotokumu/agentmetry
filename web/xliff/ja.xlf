@@ -2514,6 +2514,162 @@
   <source>Select a session to inspect its operations and cost.</source>
   <target>セッションを選択すると、操作とコストを確認できます。</target>
 </trans-unit>
+<trans-unit id="retention.heading">
+  <source>Data retention</source>
+  <target>データ保持</target>
+</trans-unit>
+<trans-unit id="retention.intro">
+  <source>Archives keep only exact raw OTLP data in cross-export compressed files. Archived data disappears from searches until it is restored; expiry permanently removes the archive.</source>
+  <target>アーカイブは、複数のエクスポートをまとめて圧縮したファイルに正確な OTLP 生データだけを保持します。アーカイブしたデータは復元するまで検索結果に表示されず、保存期限を過ぎると完全に削除されます。</target>
+</trans-unit>
+<trans-unit id="retention.enable">
+  <source>Enable automatic retention</source>
+  <target>自動保持を有効にする</target>
+</trans-unit>
+<trans-unit id="retention.archiveDays">
+  <source>Archive after days</source>
+  <target>アーカイブまでの日数</target>
+</trans-unit>
+<trans-unit id="retention.deleteDays">
+  <source>Delete after days</source>
+  <target>削除までの日数</target>
+</trans-unit>
+<trans-unit id="retention.saving">
+  <source>Saving…</source>
+  <target>保存中…</target>
+</trans-unit>
+<trans-unit id="retention.save">
+  <source>Save retention policy</source>
+  <target>保持ポリシーを保存</target>
+</trans-unit>
+<trans-unit id="retention.capacity">
+  <source>Storage capacity</source>
+  <target>ストレージ容量</target>
+</trans-unit>
+<trans-unit id="retention.totalAllocated">
+  <source>Total allocated</source>
+  <target>合計割り当て容量</target>
+</trans-unit>
+<trans-unit id="retention.activeRaw">
+  <source>Active raw</source>
+  <target>アクティブな生データ</target>
+</trans-unit>
+<trans-unit id="retention.observations">
+  <source>Normalized observations</source>
+  <target>正規化 observation</target>
+</trans-unit>
+<trans-unit id="retention.projections">
+  <source>Query projections</source>
+  <target>検索・表示用 projection</target>
+</trans-unit>
+<trans-unit id="retention.sqliteFree">
+  <source>Reusable SQLite pages</source>
+  <target>再利用可能な SQLite 領域</target>
+</trans-unit>
+<trans-unit id="retention.archives">
+  <source>Archive files</source>
+  <target>アーカイブファイル</target>
+</trans-unit>
+<trans-unit id="retention.staging">
+  <source>Staging files</source>
+  <target>処理中ファイル</target>
+</trans-unit>
+<trans-unit id="retention.free">
+  <source>Filesystem available</source>
+  <target>ファイルシステムの空き容量</target>
+</trans-unit>
+<trans-unit id="retention.capacityUnavailable">
+  <source>Capacity unavailable</source>
+  <target>容量情報を取得できません</target>
+</trans-unit>
+<trans-unit id="retention.inventory">
+  <source>Archive inventory</source>
+  <target>アーカイブ一覧</target>
+</trans-unit>
+<trans-unit id="retention.empty">
+  <source>No current archive segments.</source>
+  <target>現在のアーカイブセグメントはありません。</target>
+</trans-unit>
+<trans-unit id="retention.exports">
+  <source>exports</source>
+  <target>エクスポート</target>
+</trans-unit>
+<trans-unit id="retention.restore">
+  <source>Restore…</source>
+  <target>復元…</target>
+</trans-unit>
+<trans-unit id="retention.period">
+  <source>Restore a receive-time period</source>
+  <target>受信期間を指定して復元</target>
+</trans-unit>
+<trans-unit id="retention.start">
+  <source>Start</source>
+  <target>開始</target>
+</trans-unit>
+<trans-unit id="retention.end">
+  <source>End (exclusive)</source>
+  <target>終了（含まない）</target>
+</trans-unit>
+<trans-unit id="retention.holdDays">
+  <source>Hold days</source>
+  <target>保持日数</target>
+</trans-unit>
+<trans-unit id="retention.restorePeriod">
+  <source>Restore period</source>
+  <target>期間を復元</target>
+</trans-unit>
+<trans-unit id="retention.operations">
+  <source>Recent operations</source>
+  <target>最近の処理</target>
+</trans-unit>
+<trans-unit id="retention.cycles">
+  <source>Maintenance cycles</source>
+  <target>メンテナンスサイクル</target>
+</trans-unit>
+<trans-unit id="retention.restoreDialog">
+  <source>Restore archive segment</source>
+  <target>アーカイブセグメントを復元</target>
+</trans-unit>
+<trans-unit id="retention.restoreHelp">
+  <source>The raw data will be normalized again and become searchable. A finite hold prevents immediate re-archiving.</source>
+  <target>生データを現行バージョンで再度正規化し、検索できる状態に戻します。指定した保持期間中は再アーカイブされません。</target>
+</trans-unit>
+<trans-unit id="retention.cancel">
+  <source>Cancel</source>
+  <target>キャンセル</target>
+</trans-unit>
+<trans-unit id="retention.restoreSegment">
+  <source>Restore segment</source>
+  <target>セグメントを復元</target>
+</trans-unit>
+<trans-unit id="retention.payloadIntegrity">
+  <source>Payload</source>
+  <target>ペイロード</target>
+</trans-unit>
+<trans-unit id="retention.metadataIntegrity">
+  <source>Metadata</source>
+  <target>メタデータ</target>
+</trans-unit>
+<trans-unit id="retention.scheduledDeletion">
+  <source>Scheduled deletion</source>
+  <target>削除予定</target>
+</trans-unit>
+<trans-unit id="retention.restoreResult">
+  <source>Restore result</source>
+  <target>復元結果</target>
+</trans-unit>
+<trans-unit id="retention.activeMatches">
+  <source>Active</source>
+  <target>アクティブ</target>
+</trans-unit>
+<trans-unit id="retention.archivedMatches">
+  <source>Archived</source>
+  <target>アーカイブ済み</target>
+</trans-unit>
+<trans-unit id="retention.deletedMatches">
+  <source>Deleted</source>
+  <target>削除済み</target>
+</trans-unit>
 </body>
 </file>
 </xliff>

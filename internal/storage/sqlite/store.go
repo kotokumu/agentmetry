@@ -12,11 +12,13 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kotokumu/agentmetry/internal/archivefs"
 	"github.com/kotokumu/agentmetry/internal/billing"
 	"github.com/kotokumu/agentmetry/internal/canonical"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/journal"
 	"github.com/kotokumu/agentmetry/internal/observation"
+	"github.com/kotokumu/agentmetry/internal/retention"
 	"github.com/kotokumu/agentmetry/internal/storage/ownership"
 	storageversion "github.com/kotokumu/agentmetry/internal/storage/version"
 	"github.com/kotokumu/agentmetry/sourceplugin"
@@ -24,19 +26,29 @@ import (
 )
 
 type Store struct {
-	db         *sql.DB
-	readDB     *sql.DB
-	profiles   sourceplugin.Registry
-	owner      *ownership.Lock
-	writeGate  chan struct{}
-	notifyMu   sync.Mutex
-	notify     chan struct{}
-	generation string
+	path         string
+	db           *sql.DB
+	readDB       *sql.DB
+	profiles     sourceplugin.Registry
+	owner        *ownership.Lock
+	writeGate    chan struct{}
+	notifyMu     sync.Mutex
+	notify       chan struct{}
+	generation   string
+	deletionFile func(string) (retention.DeletionHandle, error)
+	retentionNow func() time.Time
 }
 
 type sqlReader interface {
 	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
 	QueryRowContext(context.Context, string, ...any) *sql.Row
+}
+
+func archiveDeletionResolver(path string) func(string) (retention.DeletionHandle, error) {
+	archiveStore := archivefs.New(path + ".archives")
+	return func(segmentID string) (retention.DeletionHandle, error) {
+		return archiveStore.DeletionFile(segmentID)
+	}
 }
 
 func Open(path string, profiles ...sourceplugin.Registry) (*Store, error) {
@@ -104,7 +116,7 @@ func open(path string, applyBuiltinRates bool, profiles ...sourceplugin.Registry
 	database.SetMaxOpenConns(1)
 	database.SetMaxIdleConns(1)
 
-	store := &Store{db: database, owner: owner, writeGate: make(chan struct{}, 1), notify: make(chan struct{})}
+	store := &Store{path: path, db: database, owner: owner, writeGate: make(chan struct{}, 1), notify: make(chan struct{}), deletionFile: archiveDeletionResolver(path), retentionNow: time.Now}
 	store.writeGate <- struct{}{}
 	if len(profiles) > 0 {
 		store.profiles = profiles[0]
@@ -115,6 +127,16 @@ func open(path string, applyBuiltinRates bool, profiles ...sourceplugin.Registry
 		return nil, err
 	}
 	if err := convergeSchema(context.Background(), database); err != nil {
+		_ = database.Close()
+		_ = owner.Close()
+		return nil, err
+	}
+	if err := initializeRetentionCatalog(context.Background(), database); err != nil {
+		_ = database.Close()
+		_ = owner.Close()
+		return nil, err
+	}
+	if err := store.recoverRetentionLifecycle(context.Background()); err != nil {
 		_ = database.Close()
 		_ = owner.Close()
 		return nil, err
@@ -247,7 +269,7 @@ func (store *Store) CommitBatch(ctx context.Context, batch canonical.Batch) erro
 		return err
 	}
 	sequences := projectionSequences{row: sequence, change: sequence}
-	if err := store.commitProjection(ctx, transaction, batch, sequences, plan.previousSpans, nil); err != nil {
+	if err := store.commitProjection(ctx, transaction, 0, batch, sequences, plan.previousSpans, nil); err != nil {
 		return err
 	}
 	attribution, err := reconcileClaudeModelCallAgents(ctx, transaction, batch, plan.previousSpans, sequences)
@@ -396,7 +418,7 @@ func (store *Store) commitExportTx(ctx context.Context, transaction *sql.Tx, acc
 		}
 		var logActivityIDs []string
 		sequences := projectionSequences{row: sequence, change: sequence}
-		if err := store.commitProjection(ctx, transaction, accepted.Projection, sequences, plan.previousSpans, &logActivityIDs); err != nil {
+		if err := store.commitProjection(ctx, transaction, exportID, accepted.Projection, sequences, plan.previousSpans, &logActivityIDs); err != nil {
 			return 0, err
 		}
 		if err := store.persistModelCalls(ctx, transaction, exportID, accepted, prepared, logActivityIDs, sequence, plan.previousSpans); err != nil {
@@ -435,7 +457,7 @@ type projectionSequences struct {
 	change int64
 }
 
-func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, batch canonical.Batch, sequences projectionSequences, previousSpans map[storedSpanKey]storedSpanScope, logActivityIDs *[]string) error {
+func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, exportID int64, batch canonical.Batch, sequences projectionSequences, previousSpans map[storedSpanKey]storedSpanScope, logActivityIDs *[]string) error {
 	ordinal := 0
 	for _, span := range batch.Spans {
 		if !canonical.IsSemanticSpan(span) {
@@ -451,7 +473,7 @@ func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, b
 				}
 			}
 		}
-		if err := putSpan(ctx, transaction, span, sequences.row, activityID); err != nil {
+		if err := putSpan(ctx, transaction, exportID, span, sequences.row, activityID); err != nil {
 			return err
 		}
 		if span.Agent.RunID != "" {
@@ -468,7 +490,7 @@ func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, b
 		}
 	}
 	for _, log := range batch.Logs {
-		activityID, err := store.appendLog(ctx, transaction, log, sequences.row)
+		activityID, err := store.appendLog(ctx, transaction, exportID, log, sequences.row)
 		if err != nil {
 			return err
 		}
@@ -489,7 +511,7 @@ func (store *Store) commitProjection(ctx context.Context, transaction *sql.Tx, b
 		}
 	}
 	for _, metric := range batch.Metrics {
-		if err := appendMetric(ctx, transaction, metric, sequences.row); err != nil {
+		if err := appendMetric(ctx, transaction, exportID, metric, sequences.row); err != nil {
 			return err
 		}
 	}
@@ -502,6 +524,15 @@ VALUES (?, ?, ?, ?)
 ON CONFLICT(source, parent_session_id, child_session_id) DO UPDATE SET observed_at = excluded.observed_at`,
 			normalizeSource(link.Source), link.ParentSessionID, link.ChildSessionID, formatTime(link.ObservedAt)); err != nil {
 			return fmt.Errorf("store session link: %w", err)
+		}
+		if exportID > 0 {
+			if _, err := transaction.ExecContext(ctx, `INSERT INTO session_link_evidence (
+  export_id, source, parent_session_id, child_session_id, observed_at
+) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(export_id, source, parent_session_id, child_session_id) DO UPDATE SET observed_at = excluded.observed_at`,
+				exportID, normalizeSource(link.Source), link.ParentSessionID, link.ChildSessionID, formatTime(link.ObservedAt)); err != nil {
+				return fmt.Errorf("retain session link evidence: %w", err)
+			}
 		}
 	}
 	return nil
@@ -547,27 +578,49 @@ func insertExport(ctx context.Context, transaction *sql.Tx, accepted ingest.Acce
 	}
 	hash := payload.SHA256()
 	hashText := hex.EncodeToString(hash[:])
-	var occurrence int64
-	if err := transaction.QueryRowContext(ctx, `SELECT COALESCE(MAX(payload_occurrence) + 1, 0)
-FROM otlp_exports WHERE signal = ? AND payload_sha256 = ?`, accepted.Envelope.Signal, hashText).Scan(&occurrence); err != nil {
-		return 0, fmt.Errorf("allocate OTLP payload occurrence: %w", err)
+	restoredIdentity := accepted.Identity.ID != 0
+	exportID := accepted.Identity.ID
+	if exportID == 0 {
+		result, err := transaction.ExecContext(ctx, `INSERT INTO retained_exports (received_at, state) VALUES (?, 'active')`, formatTime(accepted.Envelope.ReceivedAt))
+		if err != nil {
+			return 0, fmt.Errorf("allocate retained export: %w", err)
+		}
+		exportID, err = result.LastInsertId()
+		if err != nil {
+			return 0, fmt.Errorf("read retained export identity: %w", err)
+		}
+	} else {
+		result, err := transaction.ExecContext(ctx, `INSERT INTO retained_exports (id, received_at, state)
+VALUES (?, ?, 'active')
+ON CONFLICT(id) DO UPDATE SET state = 'active', hold_until = NULL
+WHERE retained_exports.received_at = excluded.received_at AND retained_exports.state = 'archived'`, exportID, formatTime(accepted.Envelope.ReceivedAt))
+		if err != nil {
+			return 0, fmt.Errorf("restore retained export identity: %w", err)
+		}
+		changed, err := result.RowsAffected()
+		if err != nil {
+			return 0, fmt.Errorf("read restored retained export result: %w", err)
+		}
+		if changed != 1 {
+			return 0, fmt.Errorf("restore retained export identity %d: immutable receive time mismatch or terminal state", exportID)
+		}
 	}
-	result, err := transaction.ExecContext(ctx, `INSERT INTO otlp_exports (
-  received_at, signal, transport, payload_protobuf, payload_codec, payload_sha256, payload_occurrence,
+	occurrence := accepted.Identity.PayloadOccurrence
+	if !restoredIdentity {
+		occurrence = exportID
+	}
+	_, err := transaction.ExecContext(ctx, `INSERT INTO otlp_exports (
+  id, received_at, signal, transport, payload_protobuf, payload_codec, payload_sha256, payload_occurrence,
   payload_size, source, normalizer_version, normalization_status, normalization_error,
   harness_receipt_state, harness_scope, harness_fingerprint, harness_label
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		formatTime(accepted.Envelope.ReceivedAt), accepted.Envelope.Signal, accepted.Envelope.Transport,
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		exportID, formatTime(accepted.Envelope.ReceivedAt), accepted.Envelope.Signal, accepted.Envelope.Transport,
 		payload.Bytes(), payload.Codec(), hashText, occurrence, payload.OriginalSize(),
 		metadata.Source, metadata.NormalizerVersion, metadata.NormalizationStatus, accepted.NormalizationError,
 		metadata.Harness.State, metadata.Harness.Scope, metadata.Harness.Fingerprint, metadata.Harness.Label,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("insert OTLP export: %w", err)
-	}
-	exportID, err := result.LastInsertId()
-	if err != nil {
-		return 0, fmt.Errorf("read OTLP export identity: %w", err)
 	}
 	return exportID, nil
 }
@@ -596,22 +649,23 @@ func insertObservation(ctx context.Context, transaction *sql.Tx, exportID int64,
 	return nil
 }
 
-func putSpan(ctx context.Context, transaction *sql.Tx, span canonical.Span, sequence int64, activityID string) error {
+func putSpan(ctx context.Context, transaction *sql.Tx, exportID int64, span canonical.Span, sequence int64, activityID string) error {
 	attributes, err := json.Marshal(span.Attributes)
 	if err != nil {
 		return fmt.Errorf("encode span attributes: %w", err)
 	}
 	const statement = `
 INSERT INTO spans (
-  source, trace_id, span_id, parent_span_id, name, started_at, ended_at, status,
+  export_id, source, trace_id, span_id, parent_span_id, name, started_at, ended_at, status,
   activity_kind, tool_name, target_agent_id, target_agent_type, content,
   agent_id, agent_definition, agent_type, parent_agent_id, run_id, usage_id, model, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
   reasoning_tokens, input_tokens_reported, output_tokens_reported,
   cache_read_tokens_reported, cache_write_tokens_reported, reasoning_tokens_reported,
   attributes_json, projection_sequence, activity_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT(trace_id, span_id) DO UPDATE SET
+  export_id=excluded.export_id,
   source=excluded.source,
   parent_span_id=excluded.parent_span_id,
   name=excluded.name,
@@ -645,7 +699,7 @@ ON CONFLICT(trace_id, span_id) DO UPDATE SET
   projection_sequence=excluded.projection_sequence,
   activity_id=excluded.activity_id`
 	_, err = transaction.ExecContext(ctx, statement,
-		normalizeSource(span.Source), span.TraceID, span.SpanID, span.ParentSpanID, span.Name,
+		nullableExportID(exportID), normalizeSource(span.Source), span.TraceID, span.SpanID, span.ParentSpanID, span.Name,
 		formatTime(span.StartedAt), formatTime(span.EndedAt), span.Status,
 		span.Kind, span.ToolName, span.TargetAgentID, span.TargetAgentType, span.Content,
 		span.Agent.AgentID, span.Agent.AgentDefinition, span.Agent.AgentType, span.Agent.ParentAgentID,
@@ -659,10 +713,24 @@ ON CONFLICT(trace_id, span_id) DO UPDATE SET
 	if err != nil {
 		return fmt.Errorf("put span: %w", err)
 	}
+	if exportID > 0 {
+		projection, err := json.Marshal(span)
+		if err != nil {
+			return fmt.Errorf("encode span projection candidate: %w", err)
+		}
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO span_projection_candidates (
+  export_id, trace_id, span_id, projection_sequence, projection_json
+) VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(export_id, trace_id, span_id) DO UPDATE SET
+  projection_sequence = excluded.projection_sequence,
+  projection_json = excluded.projection_json`, exportID, span.TraceID, span.SpanID, sequence, projection); err != nil {
+			return fmt.Errorf("retain span projection candidate: %w", err)
+		}
+	}
 	return nil
 }
 
-func (store *Store) appendLog(ctx context.Context, transaction *sql.Tx, log canonical.Log, sequence int64) (string, error) {
+func (store *Store) appendLog(ctx context.Context, transaction *sql.Tx, exportID int64, log canonical.Log, sequence int64) (string, error) {
 	attributes, err := json.Marshal(log.Attributes)
 	if err != nil {
 		return "", fmt.Errorf("encode log attributes: %w", err)
@@ -672,14 +740,14 @@ func (store *Store) appendLog(ctx context.Context, transaction *sql.Tx, log cano
 		return "", err
 	}
 	const statement = `INSERT INTO logs (
-  source, observed_at, severity, name, body, trace_id, span_id, activity_kind, tool_name,
+  export_id, source, observed_at, severity, name, body, trace_id, span_id, activity_kind, tool_name,
   target_agent_id, target_agent_type, agent_id, agent_definition, agent_type, parent_agent_id, run_id, usage_id, model, cost_usd,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_tokens_reported, output_tokens_reported, cache_read_tokens_reported,
   cache_write_tokens_reported, reasoning_tokens_reported, attributes_json, projection_sequence, activity_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = transaction.ExecContext(ctx, statement,
-		normalizeSource(log.Source), formatTime(log.ObservedAt), log.Severity, log.Name, log.Body, log.TraceID, log.SpanID,
+		nullableExportID(exportID), normalizeSource(log.Source), formatTime(log.ObservedAt), log.Severity, log.Name, log.Body, log.TraceID, log.SpanID,
 		log.Kind, log.ToolName, log.TargetAgentID, log.TargetAgentType, log.Agent.AgentID, log.Agent.AgentDefinition, log.Agent.AgentType,
 		log.Agent.ParentAgentID, log.Agent.RunID, canonicalUsageID(log.Attributes), log.Agent.Model, log.CostUSD,
 		log.Agent.Tokens.Input, log.Agent.Tokens.Output, log.Agent.Tokens.CacheRead,
@@ -694,17 +762,17 @@ func (store *Store) appendLog(ctx context.Context, transaction *sql.Tx, log cano
 	return activityID, nil
 }
 
-func appendMetric(ctx context.Context, transaction *sql.Tx, metric canonical.MetricPoint, sequence int64) error {
+func appendMetric(ctx context.Context, transaction *sql.Tx, exportID int64, metric canonical.MetricPoint, sequence int64) error {
 	attributes, err := json.Marshal(metric.Attributes)
 	if err != nil {
 		return fmt.Errorf("encode metric attributes: %w", err)
 	}
 	const statement = `INSERT INTO metrics (
-  source, observed_at, name, kind, value, agent_id, agent_definition, agent_type, parent_agent_id, run_id,
+  export_id, source, observed_at, name, kind, value, agent_id, agent_definition, agent_type, parent_agent_id, run_id,
   model, cost_usd, attributes_json, projection_sequence
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
 	_, err = transaction.ExecContext(ctx, statement,
-		normalizeSource(metric.Source), formatTime(metric.ObservedAt), metric.Name, metric.Kind, metric.Value,
+		nullableExportID(exportID), normalizeSource(metric.Source), formatTime(metric.ObservedAt), metric.Name, metric.Kind, metric.Value,
 		metric.Agent.AgentID, metric.Agent.AgentDefinition, metric.Agent.AgentType, metric.Agent.ParentAgentID,
 		metric.Agent.RunID, metric.Agent.Model, metric.CostUSD, string(attributes), sequence,
 	)
@@ -712,6 +780,13 @@ func appendMetric(ctx context.Context, transaction *sql.Tx, metric canonical.Met
 		return fmt.Errorf("append metric: %w", err)
 	}
 	return nil
+}
+
+func nullableExportID(exportID int64) any {
+	if exportID == 0 {
+		return nil
+	}
+	return exportID
 }
 
 func normalizeSource(source string) string {

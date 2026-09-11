@@ -17,6 +17,7 @@ import (
 
 type storedExport struct {
 	Ordinal            int64
+	Identity           ingest.RetainedIdentity
 	ReceivedAt         time.Time
 	Signal             canonical.Signal
 	Transport          ingest.Transport
@@ -57,7 +58,15 @@ func newLegacyReader(ctx context.Context, transaction *sql.Tx) (*legacyReader, e
 			harnessExpressions[index] = column
 		}
 	}
-	rows, err := transaction.QueryContext(ctx, `SELECT received_at, signal, transport,
+	hasOccurrence, err := columnExistsTx(ctx, transaction, "otlp_exports", "payload_occurrence")
+	if err != nil {
+		return nil, err
+	}
+	occurrenceExpression := "id"
+	if hasOccurrence {
+		occurrenceExpression = "payload_occurrence"
+	}
+	rows, err := transaction.QueryContext(ctx, `SELECT id, `+occurrenceExpression+`, received_at, signal, transport,
 payload_protobuf, `+codecExpression+`, payload_size, payload_sha256, source,
 normalizer_version, normalization_status, normalization_error, `+
 		harnessExpressions[0]+`, `+harnessExpressions[1]+`, `+harnessExpressions[2]+`, `+harnessExpressions[3]+`
@@ -75,9 +84,10 @@ func (reader *legacyReader) Export() (storedExport, error) {
 	var receivedText, signalText, transportText, codecText, hashText string
 	var sourceID, status, normalizationError, harnessState, harnessScope, harnessFingerprint, harnessLabel string
 	var stored []byte
+	var exportID, occurrence int64
 	var originalSize, normalizerVersion int
 	if err := reader.rows.Scan(
-		&receivedText, &signalText, &transportText, &stored, &codecText,
+		&exportID, &occurrence, &receivedText, &signalText, &transportText, &stored, &codecText,
 		&originalSize, &hashText, &sourceID, &normalizerVersion, &status,
 		&normalizationError, &harnessState, &harnessScope, &harnessFingerprint, &harnessLabel,
 	); err != nil {
@@ -93,7 +103,7 @@ func (reader *legacyReader) Export() (storedExport, error) {
 		return storedExport{}, err
 	}
 	return storedExport{
-		Ordinal: reader.next, ReceivedAt: receivedAt,
+		Ordinal: reader.next, Identity: ingest.RetainedIdentity{ID: exportID, PayloadOccurrence: occurrence}, ReceivedAt: receivedAt,
 		Signal: canonical.Signal(signalText), Transport: ingest.Transport(transportText),
 		Stored: stored, Codec: journal.Codec(codecText), Size: originalSize, Hash: hash,
 		Metadata: ingest.JournalMetadata{

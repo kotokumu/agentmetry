@@ -17,38 +17,43 @@ import (
 func ReplayExport(signal canonical.Signal, transport ingest.Transport, receivedAt time.Time, protobuf []byte, profiles source.Registry) (ingest.AcceptedExport, error) {
 	normalizer := NewNormalizer(profiles)
 	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(signal, transport, receivedAt, protobuf)}
-	var err error
+	var normalizationErr error
 	switch signal {
 	case canonical.SignalTrace:
 		request := ptraceotlp.NewExportRequest()
-		if err = request.UnmarshalProto(protobuf); err == nil {
-			accepted.Projection, err = normalizer.NormalizeTraces(request.Traces())
+		if err := request.UnmarshalProto(protobuf); err != nil {
+			return ingest.AcceptedExport{}, fmt.Errorf("decode replay %s export: %w", signal, err)
 		}
-		if err == nil {
-			accepted.Observations, err = BuildTraceObservations(request.Traces(), accepted.Projection)
+		accepted.Projection, normalizationErr = normalizer.NormalizeTraces(request.Traces())
+		if normalizationErr == nil {
+			accepted.Observations, normalizationErr = BuildTraceObservations(request.Traces(), accepted.Projection)
 		}
 	case canonical.SignalLog:
 		request := plogotlp.NewExportRequest()
-		if err = request.UnmarshalProto(protobuf); err == nil {
-			accepted.Projection, err = normalizer.NormalizeLogs(request.Logs())
+		if err := request.UnmarshalProto(protobuf); err != nil {
+			return ingest.AcceptedExport{}, fmt.Errorf("decode replay %s export: %w", signal, err)
 		}
-		if err == nil {
-			accepted.Observations, err = BuildLogObservations(request.Logs(), accepted.Projection)
+		accepted.Projection, normalizationErr = normalizer.NormalizeLogs(request.Logs())
+		if normalizationErr == nil {
+			accepted.Observations, normalizationErr = BuildLogObservations(request.Logs(), accepted.Projection)
 		}
 	case canonical.SignalMetric:
 		request := pmetricotlp.NewExportRequest()
-		if err = request.UnmarshalProto(protobuf); err == nil {
-			accepted.Projection, err = normalizer.NormalizeMetrics(request.Metrics())
+		if err := request.UnmarshalProto(protobuf); err != nil {
+			return ingest.AcceptedExport{}, fmt.Errorf("decode replay %s export: %w", signal, err)
 		}
-		if err == nil {
-			accepted.Observations, err = normalizer.BuildMetricObservations(request.Metrics())
+		accepted.Projection, normalizationErr = normalizer.NormalizeMetrics(request.Metrics())
+		if normalizationErr == nil {
+			accepted.Observations, normalizationErr = normalizer.BuildMetricObservations(request.Metrics())
 		}
 	default:
-		err = fmt.Errorf("unsupported OTLP signal %q", signal)
+		return ingest.AcceptedExport{}, fmt.Errorf("unsupported OTLP signal %q", signal)
 	}
-	if err != nil {
-		return ingest.AcceptedExport{}, fmt.Errorf("replay %s export: %w", signal, err)
+	if normalizationErr != nil {
+		accepted.Observations = nil
+		accepted.Projection = canonical.Batch{}
+		accepted.NormalizationError = normalizationErr.Error()
 	}
-	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, "")
+	accepted.Journal = ingest.DeriveJournalMetadata(accepted.Observations, accepted.Projection, accepted.NormalizationError)
 	return accepted, nil
 }

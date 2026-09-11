@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/kotokumu/agentmetry/internal/archivefs"
 	"github.com/kotokumu/agentmetry/internal/ingest"
 	"github.com/kotokumu/agentmetry/internal/journal"
 )
@@ -75,7 +76,7 @@ func extendJournalDigest(previous [sha256.Size]byte, identity journalIdentity) (
 	return digest, nil
 }
 
-func validateCandidate(ctx context.Context, path string, expected validationExpectation) error {
+func validateCandidate(ctx context.Context, path, archiveDirectory string, expected validationExpectation) error {
 	database, err := sql.Open("sqlite", path)
 	if err != nil {
 		return fmt.Errorf("open candidate for validation: %w", err)
@@ -191,6 +192,104 @@ FROM otlp_exports ORDER BY id`)
 	}
 	if calls != attributions || missingSupport != 0 || missingMembership != 0 || pendingCosts != 0 || replaySequences != 0 {
 		return fmt.Errorf("candidate projection is incomplete: calls=%d attributions=%d membership_without_support=%d support_without_membership=%d pending_costs=%d replay_sequences=%d", calls, attributions, missingSupport, missingMembership, pendingCosts, replaySequences)
+	}
+	if err := validateRetentionCatalog(ctx, database, archiveDirectory); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateRetentionCatalog(ctx context.Context, database *sql.DB, archiveDirectory string) error {
+	var violations int
+	if err := database.QueryRowContext(ctx, `SELECT
+ (SELECT COUNT(*) FROM retained_exports r WHERE r.state = 'archived' AND (SELECT COUNT(*) FROM current_archive_memberships m WHERE m.export_id = r.id) <> 1)
+ + (SELECT COUNT(*) FROM retained_exports r WHERE r.state IN ('active', 'deleted') AND EXISTS (SELECT 1 FROM current_archive_memberships m WHERE m.export_id = r.id))
+ + (SELECT COUNT(*) FROM current_archive_memberships m JOIN retained_exports r ON r.id = m.export_id JOIN archive_segments s ON s.id = m.segment_id WHERE r.state <> 'archived' OR s.reference_state <> 'current')
+ + (SELECT COUNT(*) FROM archive_segments s WHERE s.reference_state = 'current' AND ((SELECT COUNT(*) FROM current_archive_memberships m WHERE m.segment_id = s.id) <> s.export_count OR s.file_name IS NULL))
+ + (SELECT COUNT(*) FROM retained_exports WHERE state = 'deleted' AND (deleted_at IS NULL OR deletion_policy_revision IS NULL OR deletion_cutoff_days IS NULL OR deletion_evaluated_at IS NULL OR deletion_operation_id IS NULL))
+ + (SELECT COUNT(*) FROM retention_export_authorities a JOIN retention_operations o ON o.id = a.operation_id WHERE o.status NOT IN ('pending', 'running'))`).Scan(&violations); err != nil {
+		return fmt.Errorf("validate candidate retention invariants: %w", err)
+	}
+	if violations != 0 {
+		return fmt.Errorf("candidate retention catalog has %d invariant violations", violations)
+	}
+	if err := database.QueryRowContext(ctx, `WITH RECURSIVE reach(origin, node) AS (
+ SELECT original_segment_id, replacement_segment_id FROM archive_segment_replacements
+ UNION
+ SELECT reach.origin, replacements.replacement_segment_id FROM reach
+ JOIN archive_segment_replacements replacements ON replacements.original_segment_id = reach.node
+) SELECT COUNT(*) FROM reach WHERE origin = node`).Scan(&violations); err != nil {
+		return fmt.Errorf("validate candidate replacement graph: %w", err)
+	}
+	if violations != 0 {
+		return fmt.Errorf("candidate archive replacement graph contains a cycle")
+	}
+	rows, err := database.QueryContext(ctx, `SELECT id, file_sha256, membership_sha256, export_count, stored_bytes
+FROM archive_segments WHERE reference_state = 'current' ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	type current struct {
+		id, fileHash, membershipHash string
+		count                        int
+		storedBytes                  int64
+	}
+	var segments []current
+	for rows.Next() {
+		var segment current
+		if err := rows.Scan(&segment.id, &segment.fileHash, &segment.membershipHash, &segment.count, &segment.storedBytes); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		segments = append(segments, segment)
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	archives := archivefs.New(archiveDirectory)
+	for _, segment := range segments {
+		verified, err := archives.OpenVerified(ctx, segment.id)
+		if err != nil {
+			return fmt.Errorf("validate current archive %s: %w", segment.id, err)
+		}
+		if verified.FileSHA256 != segment.fileHash || verified.MembershipSHA256 != segment.membershipHash || len(verified.Exports) != segment.count || verified.StoredBytes != segment.storedBytes {
+			return fmt.Errorf("current archive %s differs from retention catalog", segment.id)
+		}
+		membershipRows, err := database.QueryContext(ctx, `SELECT immutable.export_id, immutable.ordinal, current.segment_id, current.ordinal, retained.received_at
+FROM archive_segment_members immutable
+JOIN retained_exports retained ON retained.id = immutable.export_id
+LEFT JOIN current_archive_memberships current ON current.export_id = immutable.export_id
+WHERE immutable.segment_id = ? ORDER BY immutable.ordinal`, segment.id)
+		if err != nil {
+			return err
+		}
+		index := 0
+		for membershipRows.Next() {
+			if index >= len(verified.Members) {
+				_ = membershipRows.Close()
+				return fmt.Errorf("current archive %s has extra catalog membership", segment.id)
+			}
+			var exportID, immutableOrdinal int64
+			var currentSegment sql.NullString
+			var currentOrdinal sql.NullInt64
+			var receivedAt string
+			if err := membershipRows.Scan(&exportID, &immutableOrdinal, &currentSegment, &currentOrdinal, &receivedAt); err != nil {
+				_ = membershipRows.Close()
+				return err
+			}
+			member := verified.Members[index]
+			if member.ID != exportID || immutableOrdinal != int64(index) || !currentSegment.Valid || currentSegment.String != segment.id || !currentOrdinal.Valid || currentOrdinal.Int64 != int64(index) || member.ReceivedAt != receivedAt {
+				_ = membershipRows.Close()
+				return fmt.Errorf("current archive %s member %d differs from SQLite authority", segment.id, index)
+			}
+			index++
+		}
+		if err := membershipRows.Close(); err != nil {
+			return err
+		}
+		if index != len(verified.Members) {
+			return fmt.Errorf("current archive %s catalog omits manifest members", segment.id)
+		}
 	}
 	return nil
 }

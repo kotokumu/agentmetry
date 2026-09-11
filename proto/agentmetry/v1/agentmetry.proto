@@ -51,6 +51,137 @@ service AgentmetryQueryService {
   rpc SyncTraceActivities(SyncTraceActivitiesRequest) returns (SyncTraceActivitiesResponse);
 }
 
+service AgentmetryRetentionService {
+  rpc GetRetentionStatus(GetRetentionStatusRequest) returns (GetRetentionStatusResponse);
+  rpc UpdateRetentionPolicy(UpdateRetentionPolicyRequest) returns (UpdateRetentionPolicyResponse);
+  rpc ListArchiveSegments(ListArchiveSegmentsRequest) returns (ListArchiveSegmentsResponse);
+  rpc GetRetentionCapacity(GetRetentionCapacityRequest) returns (GetRetentionCapacityResponse);
+  rpc RestoreArchive(RestoreArchiveRequest) returns (RestoreArchiveResponse);
+}
+
+message RetentionPolicy {
+  bool enabled = 1;
+  optional int32 archive_days = 2;
+  optional int32 delete_days = 3;
+  int64 revision = 4;
+  google.protobuf.Timestamp updated_at = 5;
+}
+
+message RetentionOperation {
+  string id = 1;
+  string kind = 2;
+  string status = 3;
+  string phase = 4;
+  google.protobuf.Timestamp requested_at = 5;
+  optional google.protobuf.Timestamp completed_at = 6;
+  string error = 7;
+  optional google.protobuf.Timestamp evaluated_at = 8;
+  int64 affected_exports = 9;
+  int64 affected_segments = 10;
+}
+
+message RetentionCycle {
+  string id = 1;
+  string status = 2;
+  google.protobuf.Timestamp started_at = 3;
+  google.protobuf.Timestamp evaluated_at = 4;
+  int64 cohort_size = 5;
+  optional google.protobuf.Timestamp completed_at = 6;
+  string error = 7;
+  string cohort_unavailable_reason = 8;
+  int64 pending_children = 9;
+  int64 running_children = 10;
+  int64 completed_children = 11;
+  int64 failed_children = 12;
+  int64 cancelled_children = 13;
+}
+
+message GetRetentionStatusRequest {}
+
+message GetRetentionStatusResponse {
+  RetentionPolicy policy = 1;
+  repeated RetentionOperation operations = 2;
+  repeated RetentionCycle cycles = 3;
+}
+
+message UpdateRetentionPolicyRequest {
+  bool enabled = 1;
+  optional int32 archive_days = 2;
+  optional int32 delete_days = 3;
+}
+
+message UpdateRetentionPolicyResponse {
+  RetentionPolicy policy = 1;
+}
+
+message ArchiveSegment {
+  string id = 1;
+  google.protobuf.Timestamp min_received_at = 2;
+  google.protobuf.Timestamp max_received_at = 3;
+  int64 export_count = 4;
+  int64 original_bytes = 5;
+  int64 stored_bytes = 6;
+  string payload_integrity = 7;
+  string metadata_integrity = 8;
+  optional google.protobuf.Timestamp scheduled_delete_at = 9;
+  string schedule_unavailable_reason = 10;
+  string integrity_error = 11;
+}
+
+message ListArchiveSegmentsRequest {
+  int32 page_size = 1;
+  string page_token = 2;
+}
+
+message ListArchiveSegmentsResponse {
+  repeated ArchiveSegment segments = 1;
+  string next_page_token = 2;
+}
+
+message GetRetentionCapacityRequest {}
+
+message GetRetentionCapacityResponse {
+  google.protobuf.Timestamp observed_at = 1;
+  int64 database_bytes = 2;
+  int64 database_unused_bytes = 3;
+  int64 wal_bytes = 4;
+  int64 archive_bytes = 5;
+  optional int64 filesystem_free_bytes = 6;
+  string unavailable_reason = 7;
+  int64 total_allocated_bytes = 8;
+  int64 archive_allocated_bytes = 9;
+  int64 staging_allocated_bytes = 10;
+  int64 active_raw_bytes = 11;
+  int64 observation_bytes = 12;
+  int64 query_projection_bytes = 13;
+  int64 estimated_archive_peak_bytes = 14;
+  int64 estimated_restore_peak_bytes = 15;
+  string warning = 16;
+}
+
+message ReceiveTimeRange {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+message RestoreArchiveRequest {
+  oneof scope {
+    string segment_id = 1;
+    ReceiveTimeRange receive_time = 2;
+  }
+  optional int32 hold_days = 3;
+}
+
+message RestoreArchiveResponse {
+  bool accepted = 1;
+  string operation_id = 2;
+  string result = 3;
+  repeated string current_segment_ids = 4;
+  int64 active_matches = 5;
+  int64 archived_matches = 6;
+  int64 deleted_matches = 7;
+}
+
 enum TimeRange {
   TIME_RANGE_UNSPECIFIED = 0;
   TIME_RANGE_ONE_HOUR = 1;

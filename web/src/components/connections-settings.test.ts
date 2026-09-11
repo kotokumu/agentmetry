@@ -1,7 +1,8 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import "./connections-settings";
 import type { ConnectionsSettings } from "./connections-settings";
 import type { DesktopUpdater } from "../api/desktop-updater";
+import { retentionClient } from "../api/retention-client";
 
 const supportedUpdater = (): DesktopUpdater => ({
   supported: true,
@@ -14,6 +15,12 @@ const supportedUpdater = (): DesktopUpdater => ({
 afterEach(() => {
   document.body.replaceChildren();
   vi.restoreAllMocks();
+});
+
+beforeEach(() => {
+  vi.spyOn(retentionClient, "status").mockResolvedValue({ policy: { enabled: false, revision: 0n }, operations: [], cycles: [] });
+  vi.spyOn(retentionClient, "segments").mockResolvedValue({ segments: [], nextPageToken: "" });
+  vi.spyOn(retentionClient, "capacity").mockResolvedValue({ totalAllocatedBytes: 0n, databaseBytes: 0n, databaseUnusedBytes: 0n, walBytes: 0n, archiveBytes: 0n, archiveAllocatedBytes: 0n, stagingAllocatedBytes: 0n, activeRawBytes: 0n, observationBytes: 0n, queryProjectionBytes: 0n, estimatedArchivePeakBytes: 0n, estimatedRestorePeakBytes: 0n, unavailableReason: "test", warning: "" });
 });
 
 describe("connections settings", () => {

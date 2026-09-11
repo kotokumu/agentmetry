@@ -44,6 +44,7 @@ The server listens on:
 | OTLP gRPC | `127.0.0.1:4317` |
 | OTLP HTTP | `http://127.0.0.1:4318` |
 | SQLite database | `data/agentmetry.db` |
+| Raw-only archive segments | `data/agentmetry.db.archives/` |
 
 The Web UI is built into the Go binary. `make build` builds the frontend first,
 then builds the backend with the generated assets embedded.

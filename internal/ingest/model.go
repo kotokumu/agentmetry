@@ -34,11 +34,19 @@ func NewEnvelope(signal canonical.Signal, transport Transport, receivedAt time.T
 }
 
 type AcceptedExport struct {
+	Identity           RetainedIdentity
 	Envelope           Envelope
 	Journal            JournalMetadata
 	Observations       []observation.Observation
 	Projection         canonical.Batch
 	NormalizationError string
+}
+
+// RetainedIdentity is empty for a newly admitted export. Replay and restore
+// set both values to preserve the original logical and locator identities.
+type RetainedIdentity struct {
+	ID                int64
+	PayloadOccurrence int64
 }
 
 // JournalMetadata is immutable receipt/normalization metadata owned by the

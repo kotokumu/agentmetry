@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strings"
 	"sync"
 
 	"github.com/kotokumu/agentmetry/internal/billing"
@@ -81,6 +82,9 @@ func migrate(ctx context.Context, sourcePath string, profiles source.Registry, r
 	}
 	if info.Size() == 0 {
 		return Result{}, nil
+	}
+	if err := store.RecoverRetentionLifecycleOwned(ctx, sourcePath); err != nil {
+		return Result{}, fmt.Errorf("recover telemetry retention lifecycle: %w", err)
 	}
 	needed, err := needsDataMigration(ctx, sourcePath)
 	if err != nil {
@@ -226,6 +230,10 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		return fail(err)
 	}
 	expected.planSnapshots = planCount
+	if err := copyRetentionCatalog(ctx, tx, candidatePath); err != nil {
+		_ = closeSource()
+		return fail(err)
+	}
 	if err := closeSource(); err != nil {
 		return fail(fmt.Errorf("close legacy database: %w", err))
 	}
@@ -238,7 +246,7 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 	if err := finalizeCandidate(ctx, candidatePath); err != nil {
 		return fail(err)
 	}
-	if err := validateCandidate(ctx, candidatePath, expected); err != nil {
+	if err := validateCandidate(ctx, candidatePath, sourcePath+".archives", expected); err != nil {
 		return fail(err)
 	}
 	semanticSpans, err := candidateSpanCount(ctx, candidatePath)
@@ -254,6 +262,133 @@ func buildCandidate(ctx context.Context, sourcePath string, sourceBytes int64, p
 		SemanticSpans: semanticSpans, SourceBytes: sourceBytes,
 		CompactBytes: compactInfo.Size(),
 	}, nil
+}
+
+func copyRetentionCatalog(ctx context.Context, source *sql.Tx, candidatePath string) error {
+	exists, err := tableExistsTx(ctx, source, "retained_exports")
+	if err != nil || !exists {
+		return err
+	}
+	destination, err := sql.Open("sqlite", candidatePath)
+	if err != nil {
+		return fmt.Errorf("open candidate retention catalog: %w", err)
+	}
+	defer destination.Close()
+	if _, err := destination.ExecContext(ctx, `PRAGMA foreign_keys=ON`); err != nil {
+		return err
+	}
+	transaction, err := destination.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = transaction.Rollback() }()
+	if _, err := transaction.ExecContext(ctx, `DELETE FROM retention_policy`); err != nil {
+		return err
+	}
+	if err := copyTableRows(ctx, source, transaction, "retention_policy", "INSERT"); err != nil {
+		return err
+	}
+	rows, err := source.QueryContext(ctx, `SELECT id, received_at, state, hold_until, prior_segment_id, deleted_at,
+ deletion_policy_revision, deletion_cutoff_days, deletion_evaluated_at, deletion_operation_id FROM retained_exports ORDER BY id`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		values := make([]any, 10)
+		pointers := make([]any, len(values))
+		for index := range values {
+			pointers[index] = &values[index]
+		}
+		if err := rows.Scan(pointers...); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		if _, err := transaction.ExecContext(ctx, `INSERT INTO retained_exports (id, received_at, state, hold_until, prior_segment_id,
+ deleted_at, deletion_policy_revision, deletion_cutoff_days, deletion_evaluated_at, deletion_operation_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET received_at=excluded.received_at, state=excluded.state, hold_until=excluded.hold_until,
+ prior_segment_id=excluded.prior_segment_id, deleted_at=excluded.deleted_at,
+ deletion_policy_revision=excluded.deletion_policy_revision, deletion_cutoff_days=excluded.deletion_cutoff_days,
+ deletion_evaluated_at=excluded.deletion_evaluated_at, deletion_operation_id=excluded.deletion_operation_id`, values...); err != nil {
+			_ = rows.Close()
+			return err
+		}
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	for _, table := range []string{"archive_segments", "archive_segment_members", "current_archive_memberships",
+		"archive_segment_replacements", "retention_cycles", "retention_cycle_segments", "retention_operations", "retention_operation_exports", "retention_export_authorities"} {
+		exists, err := tableExistsTx(ctx, source, table)
+		if err != nil {
+			return err
+		}
+		if exists {
+			if err := copyTableRows(ctx, source, transaction, table, "INSERT"); err != nil {
+				return fmt.Errorf("copy %s: %w", table, err)
+			}
+		}
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf("commit candidate retention catalog: %w", err)
+	}
+	return nil
+}
+
+func copyTableRows(ctx context.Context, source *sql.Tx, destination *sql.Tx, table, verb string) error {
+	columns, err := source.QueryContext(ctx, `SELECT name FROM pragma_table_info(?) ORDER BY cid`, table)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for columns.Next() {
+		var name string
+		if err := columns.Scan(&name); err != nil {
+			_ = columns.Close()
+			return err
+		}
+		names = append(names, name)
+	}
+	if err := columns.Close(); err != nil {
+		return err
+	}
+	if len(names) == 0 {
+		return nil
+	}
+	quoted := make([]string, len(names))
+	placeholders := make([]string, len(names))
+	for index, name := range names {
+		quoted[index] = `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+		placeholders[index] = "?"
+	}
+	rows, err := source.QueryContext(ctx, `SELECT `+strings.Join(quoted, ",")+` FROM "`+strings.ReplaceAll(table, `"`, `""`)+`"`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	statement := verb + ` INTO "` + strings.ReplaceAll(table, `"`, `""`) + `" (` + strings.Join(quoted, ",") + `) VALUES (` + strings.Join(placeholders, ",") + `)`
+	for rows.Next() {
+		values := make([]any, len(names))
+		pointers := make([]any, len(names))
+		for index := range values {
+			pointers[index] = &values[index]
+		}
+		if err := rows.Scan(pointers...); err != nil {
+			return err
+		}
+		if _, err := destination.ExecContext(ctx, statement, values...); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func tableExistsTx(ctx context.Context, transaction *sql.Tx, table string) (bool, error) {
+	var count int
+	if err := transaction.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_schema WHERE type = 'table' AND name = ?`, table).Scan(&count); err != nil {
+		return false, err
+	}
+	return count == 1, nil
 }
 
 func candidateSpanCount(ctx context.Context, path string) (int64, error) {
@@ -360,6 +495,7 @@ func prepareReplayItem(ctx context.Context, record storedExport, profiles source
 		return replayItem{}, fmt.Errorf("restore legacy export: %w", err)
 	}
 	accepted := ingest.AcceptedExport{
+		Identity:           record.Identity,
 		Envelope:           ingest.NewEnvelope(record.Signal, record.Transport, record.ReceivedAt, raw),
 		Journal:            record.Metadata,
 		NormalizationError: record.NormalizationError,
@@ -370,6 +506,7 @@ func prepareReplayItem(ctx context.Context, record storedExport, profiles source
 			return replayItem{}, err
 		}
 		accepted.Journal = record.Metadata
+		accepted.Identity = record.Identity
 	}
 	return replayItem{record: record, accepted: accepted}, nil
 }

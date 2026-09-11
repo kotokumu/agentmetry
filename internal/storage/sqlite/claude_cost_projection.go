@@ -13,15 +13,15 @@ import (
 	claudesource "github.com/kotokumu/agentmetry/internal/source/claude"
 )
 
-func persistClaudeCallEvidence(ctx context.Context, transaction *sql.Tx, observed observation.Observation, log canonical.Log, activityID string, locator []byte, filterAt time.Time) error {
+func persistClaudeCallEvidence(ctx context.Context, transaction *sql.Tx, exportID int64, observed observation.Observation, log canonical.Log, activityID string, locator []byte, filterAt time.Time) error {
 	providerCost := claudesource.ResolveProviderCost(log.Attributes)
 	_, err := transaction.ExecContext(ctx, `INSERT OR IGNORE INTO model_call_evidence (
-  activity_id, source, native_session_id, trace_id, locator, filter_at, model, occurred_at, mode,
+  export_id, activity_id, source, native_session_id, trace_id, locator, filter_at, model, occurred_at, mode,
   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, reasoning_tokens,
   input_reported, output_reported, cache_read_reported, cache_write_reported, reasoning_reported,
   provider_amount_state, provider_amount_micro_usd
-) VALUES (?, 'claude', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		activityID, observed.SessionID, observed.TraceID, locator, formatTime(filterAt), observed.Model,
+) VALUES (?, ?, 'claude', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		exportID, activityID, observed.SessionID, observed.TraceID, locator, formatTime(filterAt), observed.Model,
 		formatOptionalTime(observed.OccurredAt), "",
 		observed.Usage.Input, observed.Usage.Output, observed.Usage.CacheRead, observed.Usage.CacheWrite, observed.Usage.Reasoning,
 		boolInt(observed.Usage.InputReported()), boolInt(observed.Usage.OutputReported()), boolInt(observed.Usage.CacheReadReported()),
