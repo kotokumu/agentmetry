@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.0](https://github.com/kotokumu/agentmetry/compare/v1.19.4...v1.20.0) (2026-09-11)
+
+
+### Features
+
+* **retention:** add automatic telemetry archive lifecycle ([#102](https://github.com/kotokumu/agentmetry/issues/102)) ([f769ec4](https://github.com/kotokumu/agentmetry/commit/f769ec4d6da983b584bfec7cd9097160974c2a06))
+
 ## [1.19.4](https://github.com/kotokumu/agentmetry/compare/v1.19.3...v1.19.4) (2026-09-10)
 
 
