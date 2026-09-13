@@ -26,15 +26,19 @@ export class RetentionSettings extends LocalizedElement {
   static styles = css`
     :host { display: block; }
     section { display: grid; gap: 14px; border: 1px solid var(--am-border); border-radius: 10px; padding: 18px; background: var(--am-surface-raised); }
-    h2, h3, p { margin: 0; } h2 { font-size: 1rem; } h3 { font-size: .9rem; }
+    h3, p { margin: 0; } h3 { font-size: .9rem; } h3.section-heading { font-size: 1rem; }
     p, .hint { color: var(--am-muted); font-size: 14px; line-height: 1.5; }
-    .policy, .period, .capacity { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+    .policy, .period { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
     label { display: grid; gap: 5px; font-size: 13px; }
     label.toggle { display: flex; align-items: center; gap: 8px; align-self: center; }
     input { min-width: 7rem; border: 1px solid var(--am-border-strong); border-radius: 6px; padding: 7px; color: var(--am-text); background: var(--am-surface); }
     button { border: 1px solid var(--am-border-strong); border-radius: 7px; padding: 8px 11px; color: var(--am-accent); background: var(--am-accent-soft); font-weight: 700; cursor: pointer; }
     button:disabled { opacity: .55; cursor: default; }
-    .capacity span { min-width: 9rem; }
+    .capacity { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin: 8px 0 0; }
+    .capacity div { min-width: 0; border: 1px solid var(--am-border); border-radius: 8px; padding: 11px 12px; background: var(--am-surface); }
+    .capacity dt { color: var(--am-muted); font-size: 12px; line-height: 1.35; }
+    .capacity dd { margin: 5px 0 0; color: var(--am-text); font: 650 1rem/1.2 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
+    .capacity .capacity-total, .capacity .capacity-free { border-color: var(--am-border-strong); background: var(--am-accent-soft); }
     .segments { display: grid; gap: 8px; padding: 0; list-style: none; }
     .segments li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border-top: 1px solid var(--am-border); padding-top: 10px; }
     code { overflow-wrap: anywhere; font-size: 11px; }
@@ -42,7 +46,9 @@ export class RetentionSettings extends LocalizedElement {
     dialog::backdrop { background: rgb(0 0 0 / .45); }
     .dialog-actions { display: flex; justify-content: end; gap: 8px; margin-top: 16px; }
     .error { color: var(--am-danger, #c33); }
+    @media (max-width: 860px) { .capacity { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
     @media (max-width: 620px) { .segments li { grid-template-columns: 1fr; } }
+    @media (max-width: 420px) { .capacity { grid-template-columns: 1fr; } }
   `;
 
   connectedCallback() { super.connectedCallback(); void this.load(); }
@@ -50,7 +56,7 @@ export class RetentionSettings extends LocalizedElement {
 
   render() {
     return html`<section aria-busy=${this.loading ? "true" : "false"}>
-      <div><h2>${msg("Data retention", { id: "retention.heading" })}</h2><p>${msg("Archives keep only exact raw OTLP data in cross-export compressed files. Archived data disappears from searches until it is restored; expiry permanently removes the archive.", { id: "retention.intro" })}</p></div>
+      <div><h3 class="section-heading">${msg("Data retention", { id: "retention.heading" })}</h3><p>${msg("Archives keep only exact raw OTLP data in cross-export compressed files. Archived data disappears from searches until it is restored; expiry permanently removes the archive.", { id: "retention.intro" })}</p></div>
       ${this.error ? html`<p class="error" role="alert">${this.error}</p>` : nothing}
       <form class="policy" @submit=${this.savePolicy}>
         <label class="toggle"><input type="checkbox" .checked=${this.enabled} @change=${(event: Event) => { this.enabled = (event.target as HTMLInputElement).checked; }}>${msg("Enable automatic retention", { id: "retention.enable" })}</label>
@@ -58,7 +64,7 @@ export class RetentionSettings extends LocalizedElement {
         <label>${msg("Delete after days", { id: "retention.deleteDays" })}<input name="deleteDays" type="number" min="1" max="36500" required .value=${String(this.deleteDays)} ?disabled=${!this.enabled} @input=${this.numberInput("deleteDays")}></label>
         <button type="submit" ?disabled=${this.saving}>${this.saving ? msg("Saving…", { id: "retention.saving" }) : msg("Save retention policy", { id: "retention.save" })}</button>
       </form>
-      <div><h3>${msg("Storage capacity", { id: "retention.capacity" })}</h3>${this.capacity ? html`<div class="capacity"><span>${msg("Total allocated", { id: "retention.totalAllocated" })}: ${formatBytes(this.capacity.totalAllocatedBytes)}</span><span>${msg("Active raw", { id: "retention.activeRaw" })}: ${formatBytes(this.capacity.activeRawBytes)}</span><span>${msg("Normalized observations", { id: "retention.observations" })}: ${formatBytes(this.capacity.observationBytes)}</span><span>${msg("Query projections", { id: "retention.projections" })}: ${formatBytes(this.capacity.queryProjectionBytes)}</span><span>${msg("Reusable SQLite pages", { id: "retention.sqliteFree" })}: ${formatBytes(this.capacity.databaseUnusedBytes)}</span><span>${msg("Archive files", { id: "retention.archives" })}: ${formatBytes(this.capacity.archiveAllocatedBytes)}</span><span>${msg("Staging files", { id: "retention.staging" })}: ${formatBytes(this.capacity.stagingAllocatedBytes)}</span><span>${msg("Filesystem available", { id: "retention.free" })}: ${this.capacity.filesystemFreeBytes === undefined ? this.capacity.unavailableReason : formatBytes(this.capacity.filesystemFreeBytes)}</span></div>${this.capacity.warning ? html`<p class="error" role="status">${this.capacity.warning}</p>` : nothing}` : html`<p>${msg("Capacity unavailable", { id: "retention.capacityUnavailable" })}</p>`}</div>
+      <div><h3>${msg("Storage capacity", { id: "retention.capacity" })}</h3>${this.capacity ? html`<dl class="capacity"><div class="capacity-total"><dt>${msg("Total allocated", { id: "retention.totalAllocated" })}</dt><dd>${formatBytes(this.capacity.totalAllocatedBytes)}</dd></div><div><dt>${msg("Active raw", { id: "retention.activeRaw" })}</dt><dd>${formatBytes(this.capacity.activeRawBytes)}</dd></div><div><dt>${msg("Normalized observations", { id: "retention.observations" })}</dt><dd>${formatBytes(this.capacity.observationBytes)}</dd></div><div><dt>${msg("Query projections", { id: "retention.projections" })}</dt><dd>${formatBytes(this.capacity.queryProjectionBytes)}</dd></div><div><dt>${msg("Reusable SQLite pages", { id: "retention.sqliteFree" })}</dt><dd>${formatBytes(this.capacity.databaseUnusedBytes)}</dd></div><div><dt>${msg("Archive files", { id: "retention.archives" })}</dt><dd>${formatBytes(this.capacity.archiveAllocatedBytes)}</dd></div><div><dt>${msg("Staging files", { id: "retention.staging" })}</dt><dd>${formatBytes(this.capacity.stagingAllocatedBytes)}</dd></div><div class="capacity-free"><dt>${msg("Filesystem available", { id: "retention.free" })}</dt><dd>${this.capacity.filesystemFreeBytes === undefined ? this.capacity.unavailableReason : formatBytes(this.capacity.filesystemFreeBytes)}</dd></div></dl>${this.capacity.warning ? html`<p class="error" role="status">${this.capacity.warning}</p>` : nothing}` : html`<p>${msg("Capacity unavailable", { id: "retention.capacityUnavailable" })}</p>`}</div>
       <div><h3>${msg("Archive inventory", { id: "retention.inventory" })}</h3>
         ${this.segments.length === 0 ? html`<p>${msg("No current archive segments.", { id: "retention.empty" })}</p>` : html`<ul class="segments">${this.segments.map((segment) => html`<li><span><code>${segment.id}</code><br><span class="hint">${formatDate(segment.minReceivedAt)} – ${formatDate(segment.maxReceivedAt)} · ${segment.exportCount} ${msg("exports", { id: "retention.exports" })} · ${formatBytes(segment.storedBytes)} / ${formatBytes(segment.originalBytes)}<br>${msg("Payload", { id: "retention.payloadIntegrity" })}: ${segment.payloadIntegrity} · ${msg("Metadata", { id: "retention.metadataIntegrity" })}: ${segment.metadataIntegrity}${segment.integrityError ? ` — ${segment.integrityError}` : ""}<br>${segment.scheduledDeleteAt ? `${msg("Scheduled deletion", { id: "retention.scheduledDeletion" })}: ${formatDate(segment.scheduledDeleteAt)}` : segment.scheduleUnavailableReason}</span></span><button type="button" @click=${() => this.openSegmentRestore(segment.id)}>${msg("Restore…", { id: "retention.restore" })}</button></li>`)}</ul>`}
       </div>

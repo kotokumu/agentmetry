@@ -27,6 +27,37 @@ describe("retention settings", () => {
     expect([...element.shadowRoot!.querySelectorAll("button")].map((button) => button.textContent)).not.toContain("Delete now");
   });
 
+  it("presents storage capacity as labeled values that can be scanned independently", async () => {
+    arrange();
+    const element = document.createElement("am-retention-settings") as RetentionSettings;
+    document.body.append(element);
+    await vi.waitFor(() => expect(element.shadowRoot?.textContent).toContain("Storage capacity"));
+
+    const capacity = element.shadowRoot?.querySelector("dl.capacity");
+    const items = [...capacity!.querySelectorAll(":scope > div")];
+    expect(items).toHaveLength(8);
+    expect(items.map((item) => item.querySelector("dt")?.textContent)).toEqual([
+      "Total allocated",
+      "Active raw",
+      "Normalized observations",
+      "Query projections",
+      "Reusable SQLite pages",
+      "Archive files",
+      "Staging files",
+      "Filesystem available",
+    ]);
+    expect(items.map((item) => item.querySelector("dd")?.textContent)).toEqual([
+      "2.3 MiB",
+      "488.3 KiB",
+      "195.3 KiB",
+      "293.0 KiB",
+      "97.7 KiB",
+      "390.6 KiB",
+      "0 B",
+      "8.6 MiB",
+    ]);
+  });
+
   it("persists enabled archive and deletion day cutoffs", async () => {
     arrange();
     const update = vi.spyOn(retentionClient, "updatePolicy").mockResolvedValue();
