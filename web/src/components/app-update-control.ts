@@ -32,7 +32,7 @@ export class AppUpdateControl extends LocalizedElement {
     .update-section { display: grid; gap: 12px; padding: 18px; border: 1px solid var(--am-border); border-radius: 10px; background: var(--am-surface-raised); }
     .update-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 16px; }
     .info { min-width: 0; display: grid; gap: 6px; }
-    h2 { margin: 0; color: var(--am-text); font-size: 1rem; }
+    h3 { margin: 0; color: var(--am-text); font-size: 1rem; }
     .installed-version { margin: 0; color: var(--am-text); font: 14px/1.4 "SFMono-Regular", "Cascadia Code", monospace; overflow-wrap: anywhere; }
     .installed-version span { color: var(--am-muted); }
     .installed-version code { color: var(--am-accent); }
@@ -81,7 +81,7 @@ export class AppUpdateControl extends LocalizedElement {
     return html`<section class="update-section" aria-labelledby="update-heading">
       <div class="update-row">
         <div class="info">
-          <h2 id="update-heading">${localization.t("update.heading")}</h2>
+          <h3 id="update-heading">${localization.t("update.heading")}</h3>
           <p class="installed-version"><span>${localization.t("update.currentVersionLabel")}</span> ${this.versionText()}</p>
           <div class="message-area" aria-live="polite">${this.message()}</div>
         </div>

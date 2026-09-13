@@ -61,7 +61,7 @@ export class MCPConnection extends LocalizedElement {
     :host([inline]) .eyebrow { display: none; }
     .panel[hidden] { display: none; }
     .eyebrow { margin: 0 0 6px; color: var(--am-accent); font: 700 .61rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .15em; text-transform: uppercase; }
-    h2 { margin: 0; color: var(--am-text); font: 650 1rem/1.25 Inter, ui-sans-serif, sans-serif; }
+    h2, h3 { margin: 0; color: var(--am-text); font: 650 1rem/1.25 Inter, ui-sans-serif, sans-serif; }
     .intro { margin: 7px 0 14px; color: var(--am-muted); font: .75rem/1.55 Inter, ui-sans-serif, sans-serif; }
     .label { display: block; margin-bottom: 6px; color: var(--am-muted); font: 700 .6rem/1 "SFMono-Regular", "Cascadia Code", monospace; letter-spacing: .11em; text-transform: uppercase; }
     .endpoint { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: stretch; }
@@ -93,7 +93,9 @@ export class MCPConnection extends LocalizedElement {
       ><span class="signal" aria-hidden="true">//</span><span>MCP</span><span class="action">${localization.t(this.open ? "mcp.close" : "mcp.details")}</span></button>`}
       <section id="mcp-connection-panel" class="panel" ?hidden=${!this.inline && !this.open} aria-labelledby="mcp-connection-title" @keydown=${this.keyDown}>
         <p class="eyebrow">${localization.t("mcp.eyebrow")}</p>
-        <h2 id="mcp-connection-title">${localization.t("mcp.title")}</h2>
+        ${this.inline
+          ? html`<h3 id="mcp-connection-title">${localization.t("mcp.title")}</h3>`
+          : html`<h2 id="mcp-connection-title">${localization.t("mcp.title")}</h2>`}
         <p class="intro">${localization.t("mcp.intro")}</p>
         <span class="label">${localization.t("mcp.serverUrl")}</span>
         <div class="endpoint">

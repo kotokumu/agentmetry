@@ -43,17 +43,47 @@ describe("connections settings", () => {
     expect(settings.shadowRoot?.textContent).not.toContain("Installed version");
   });
 
-  it("places one update section first for supported desktop settings", async () => {
+  it("separates general, telemetry ingestion, data management, and MCP access", async () => {
+    const settings = document.createElement("am-connections-settings") as ConnectionsSettings;
+    document.body.append(settings);
+    await settings.updateComplete;
+
+    const categories = [...settings.shadowRoot!.querySelectorAll<HTMLElement>("[data-settings-category]")];
+    expect(categories.map((category) => category.dataset.settingsCategory)).toEqual([
+      "general",
+      "telemetry-ingestion",
+      "data-management",
+      "mcp-access",
+    ]);
+    expect(categories.map((category) => category.querySelector(":scope > h2")?.textContent)).toEqual([
+      "General",
+      "Telemetry ingestion",
+      "Data management",
+      "MCP access",
+    ]);
+    expect(categories[1]?.textContent).toContain("OTLP receiver endpoints");
+    expect(categories[3]?.textContent).toContain("read only");
+    const retention = categories[2]?.querySelector("am-retention-settings");
+    const mcp = categories[3]?.querySelector("am-mcp-connection");
+    await Promise.all([
+      (retention as { updateComplete: Promise<unknown> }).updateComplete,
+      (mcp as { updateComplete: Promise<unknown> }).updateComplete,
+    ]);
+    expect(retention?.shadowRoot?.querySelector("h3.section-heading")?.textContent).toBe("Data retention");
+    expect(mcp?.shadowRoot?.querySelector("h3")?.textContent).toBe("MCP connection");
+  });
+
+  it("places one update control in the general category for supported desktop settings", async () => {
     const settings = document.createElement("am-connections-settings") as ConnectionsSettings;
     settings.updater = supportedUpdater();
     document.body.append(settings);
     await settings.updateComplete;
 
-    const stack = settings.shadowRoot?.querySelector(".stack");
-    expect(stack?.firstElementChild?.matches("am-app-update-control")).toBe(true);
-    expect(stack?.querySelectorAll("am-app-update-control")).toHaveLength(1);
-    const control = stack?.querySelector("am-app-update-control");
+    const general = settings.shadowRoot?.querySelector('[data-settings-category="general"]');
+    expect(general?.querySelectorAll("am-app-update-control")).toHaveLength(1);
+    const control = general?.querySelector("am-app-update-control");
     await (control as { updateComplete: Promise<unknown> }).updateComplete;
+    expect(control?.shadowRoot?.querySelector("h3")?.textContent).toBe("Updates");
     expect(control?.shadowRoot?.textContent).toContain("Current version:");
     expect(control?.shadowRoot?.textContent).toContain("v1.17.0");
   });

@@ -2238,13 +2238,25 @@
   <source>Appearance</source>
   <target>外観</target>
 </trans-unit>
+<trans-unit id="settingsCompletion.generalHeading">
+  <source>General</source>
+  <target>一般</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.telemetryHeading">
+  <source>Telemetry ingestion</source>
+  <target>データ受信</target>
+</trans-unit>
+<trans-unit id="settingsCompletion.dataHeading">
+  <source>Data management</source>
+  <target>データ管理</target>
+</trans-unit>
 <trans-unit id="settingsCompletion.sourcesHeading">
-  <source>Connect sources</source>
-  <target>ソースの接続</target>
+  <source>Send telemetry to Agentmetry</source>
+  <target>データ送信元の接続</target>
 </trans-unit>
 <trans-unit id="settingsCompletion.sourcesIntro">
-  <source>Copy these settings into the source configuration, then restart the source. Agentmetry does not edit source files.</source>
-  <target>設定をソースの設定ファイルにコピーし、ソースを再起動してください。Agentmetryが設定ファイルを変更することはありません。</target>
+  <source>Copy these settings into each source configuration, then restart it to send telemetry to Agentmetry. Agentmetry does not edit source files.</source>
+  <target>各送信元の設定ファイルに設定をコピーし、再起動してAgentmetryへのテレメトリー送信を開始します。Agentmetryが設定ファイルを変更することはありません。</target>
 </trans-unit>
 <trans-unit id="settingsCompletion.claudeIntro">
   <source>Add this env object to ~/.claude/settings.json. It enables the documented telemetry signals and content fields.</source>
@@ -2255,8 +2267,8 @@
   <target>この[otel]ブロックを ~/.codex/config.toml に追加します。プロジェクト内のCodex設定では適用されません。</target>
 </trans-unit>
 <trans-unit id="settingsCompletion.endpointsHeading">
-  <source>Local endpoints</source>
-  <target>ローカルの接続先</target>
+  <source>OTLP receiver endpoints</source>
+  <target>OTLP受信先</target>
 </trans-unit>
 <trans-unit id="settingsCompletion.endpointsBody">
   <source>Defaults are OTLP gRPC 4317 and OTLP HTTP 4318. If you start Agentmetry with custom receiver ports, replace the port in the source configuration. The Web UI, HTTP API, and MCP use 17890; that browser address is not an OTLP receiver.</source>
@@ -2287,8 +2299,8 @@
   <target>プロンプト・応答・ツール詳細・ファイル内容は、未報告、秘匿、または取得できない場合があります。未報告の値を補完したり、会話全体や実行結果を推測したりすることはありません。</target>
 </trans-unit>
 <trans-unit id="settingsCompletion.mcpHeading">
-  <source>Read-only MCP</source>
-  <target>読み取り専用MCP</target>
+  <source>MCP access</source>
+  <target>MCPアクセス</target>
 </trans-unit>
 <trans-unit id="settingsCompletion.mcpIntro">
   <source>Use the local MCP URL in a client to query telemetry. MCP is stateless and read only. The Web UI origin and OTLP receiver endpoint are separate addresses.</source>
@@ -2556,11 +2568,11 @@
 </trans-unit>
 <trans-unit id="retention.observations">
   <source>Normalized observations</source>
-  <target>正規化 observation</target>
+  <target>正規化済みデータ</target>
 </trans-unit>
 <trans-unit id="retention.projections">
   <source>Query projections</source>
-  <target>検索・表示用 projection</target>
+  <target>検索・表示用データ</target>
 </trans-unit>
 <trans-unit id="retention.sqliteFree">
   <source>Reusable SQLite pages</source>
