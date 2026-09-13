@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/kotokumu/agentmetry/compare/v1.20.0...v1.20.1) (2026-09-13)
+
+
+### Bug Fixes
+
+* **web:** clarify settings connections and storage ([#104](https://github.com/kotokumu/agentmetry/issues/104)) ([76afe6a](https://github.com/kotokumu/agentmetry/commit/76afe6a616bd37bde5830272de54430c3606894c))
+
 ## [1.20.0](https://github.com/kotokumu/agentmetry/compare/v1.19.4...v1.20.0) (2026-09-11)
 
 
