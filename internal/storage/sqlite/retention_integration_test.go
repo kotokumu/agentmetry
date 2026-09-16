@@ -1553,12 +1553,138 @@ func TestRetentionCycleHighWaterExcludesExportsCommittedAfterStart(t *testing.T)
 		t.Fatal(err)
 	}
 	commitOld()
-	exports, err := store.EligibleActiveExportsForCycle(ctx, policy, now, cycleID)
+	groups, err := store.CountArchiveGroupsForCycle(ctx, policy, now, cycleID, retention.MaxSegmentOriginalBytes)
 	if err != nil {
 		t.Fatal(err)
 	}
+	exports, err := store.NextArchiveGroupForCycle(ctx, policy, now, cycleID, retention.MaxSegmentOriginalBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if groups != 1 {
+		t.Fatalf("fixed cohort groups=%d, want 1", groups)
+	}
 	if len(exports) != 1 || exports[0].ID != 1 {
 		t.Fatalf("fixed cohort exports=%v, want only pre-start export 1", exports)
+	}
+}
+
+func TestArchiveCyclePlanningCountsMetadataAndSelectionReturnsOnlyTheFirstGroup(t *testing.T) {
+	ctx := context.Background()
+	store, err := open(filepath.Join(t.TempDir(), "bounded-cycle.db"), false, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	commit := func(at time.Time, payload byte) {
+		t.Helper()
+		accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, []byte{payload, 0x00}),
+			Journal: ingest.JournalMetadata{Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "failed"}, NormalizationError: "fixture"}
+		if err := store.CommitExport(ctx, accepted); err != nil {
+			t.Fatal(err)
+		}
+	}
+	old := now.Add(-10 * retention.Day)
+	commit(old, 1)
+	commit(old.Add(time.Second), 2)
+	commit(old.Add(2*time.Second), 3)
+	policy, err := store.UpdateRetentionPolicy(ctx, true, 1, 30, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycleID, err := store.BeginRetentionCycle(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// This later arrival sorts before the fixed cohort by receive time, but its
+	// larger identity keeps it outside this cycle.
+	commit(old.Add(-time.Hour), 4)
+
+	groups, err := store.CountArchiveGroupsForCycle(ctx, policy, now, cycleID, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := store.NextArchiveGroupForCycle(ctx, policy, now, cycleID, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if groups != 2 || len(first) != 2 || first[0].ID != 1 || first[1].ID != 2 {
+		t.Fatalf("groups=%d first=%v, want two groups and first IDs [1 2]", groups, first)
+	}
+}
+
+func TestArchiveCyclePlanningDoesNotDecodePayloads(t *testing.T) {
+	ctx := context.Background()
+	store, err := open(filepath.Join(t.TempDir(), "metadata-plan.db"), false, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	accepted := ingest.AcceptedExport{Envelope: ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, now.Add(-10*retention.Day), []byte{0x0a, 0x00}),
+		Journal: ingest.JournalMetadata{Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "failed"}, NormalizationError: "fixture"}
+	if err := store.CommitExport(ctx, accepted); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.db.Exec(`UPDATE otlp_exports SET payload_codec = 'unsupported' WHERE id = 1`); err != nil {
+		t.Fatal(err)
+	}
+	policy, err := store.UpdateRetentionPolicy(ctx, true, 1, 30, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycleID, err := store.BeginRetentionCycle(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	groups, err := store.CountArchiveGroupsForCycle(ctx, policy, now, cycleID, retention.MaxSegmentOriginalBytes)
+	if err != nil || groups != 1 {
+		t.Fatalf("metadata plan groups=%d err=%v, want one without decode", groups, err)
+	}
+	if _, err := store.NextArchiveGroupForCycle(ctx, policy, now, cycleID, retention.MaxSegmentOriginalBytes); err == nil {
+		t.Fatal("payload selection accepted an unsupported codec")
+	}
+}
+
+func TestArchiveCycleSelectionOrdersEqualReceiveTimesByID(t *testing.T) {
+	ctx := context.Background()
+	store, err := open(filepath.Join(t.TempDir(), "stable-order.db"), false, builtin.Registry())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	now := time.Date(2026, 9, 11, 12, 0, 0, 0, time.UTC)
+	at := now.Add(-10 * retention.Day)
+	for _, id := range []int64{2, 1} {
+		accepted := ingest.AcceptedExport{
+			Identity:           ingest.RetainedIdentity{ID: id, PayloadOccurrence: id},
+			Envelope:           ingest.NewEnvelope(canonical.SignalLog, ingest.TransportGRPC, at, []byte{byte(id), 0x00}),
+			Journal:            ingest.JournalMetadata{Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "failed"},
+			NormalizationError: "fixture",
+		}
+		if err := store.CommitExport(ctx, accepted); err != nil {
+			t.Fatal(err)
+		}
+	}
+	policy, err := store.UpdateRetentionPolicy(ctx, true, 1, 30, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cycleID, err := store.BeginRetentionCycle(ctx, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	group, err := store.NextArchiveGroupForCycle(ctx, policy, now, cycleID, retention.MaxSegmentOriginalBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids := make([]int64, len(group))
+	for index := range group {
+		ids[index] = group[index].ID
+	}
+	if len(group) != 2 || group[0].ID != 1 || group[1].ID != 2 {
+		t.Fatalf("equal-time group IDs=%v, want [1 2]", ids)
 	}
 }
 

@@ -81,45 +81,85 @@ func (store *Store) UpdateRetentionPolicy(ctx context.Context, enabled bool, arc
 }
 
 func (store *Store) EligibleActiveExports(ctx context.Context, policy retention.Policy, evaluatedAt time.Time) ([]retention.RawExport, error) {
-	return store.eligibleActiveExports(ctx, policy, evaluatedAt, 0)
+	return store.eligibleActiveExports(ctx, policy, evaluatedAt, 0, 0)
 }
 
-func (store *Store) EligibleActiveExportsForCycle(ctx context.Context, policy retention.Policy, evaluatedAt time.Time, cycleID string) ([]retention.RawExport, error) {
+func (store *Store) CountArchiveGroupsForCycle(ctx context.Context, policy retention.Policy, evaluatedAt time.Time, cycleID string, maxOriginalBytes int64) (int, error) {
+	highWater, err := store.retentionCycleHighWater(ctx, cycleID)
+	if err != nil || highWater == 0 || !policy.Enabled {
+		return 0, err
+	}
+	if maxOriginalBytes <= 0 {
+		maxOriginalBytes = retention.MaxSegmentOriginalBytes
+	}
+	rows, err := store.queryEligibleActiveExports(ctx, policy, evaluatedAt, highWater, "e.received_at, e.payload_size")
+	if err != nil {
+		return 0, fmt.Errorf("count archive groups: %w", err)
+	}
+	defer rows.Close()
+	groups := 0
+	var boundary retention.ArchiveGroupBoundary
+	for rows.Next() {
+		var receivedText string
+		var originalSize int64
+		if err := rows.Scan(&receivedText, &originalSize); err != nil {
+			return 0, fmt.Errorf("scan archive group metadata: %w", err)
+		}
+		receivedAt, err := time.Parse(time.RFC3339Nano, receivedText)
+		if err != nil {
+			return 0, fmt.Errorf("parse retained export receive time: %w", err)
+		}
+		if boundary.TryInclude(receivedAt, originalSize, maxOriginalBytes) {
+			if groups == 0 {
+				groups = 1
+			}
+			continue
+		}
+		groups++
+		boundary = retention.ArchiveGroupBoundary{}
+		if !boundary.TryInclude(receivedAt, originalSize, maxOriginalBytes) {
+			return 0, fmt.Errorf("count archive groups: invalid original payload size %d", originalSize)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("count archive groups: %w", err)
+	}
+	return groups, nil
+}
+
+func (store *Store) NextArchiveGroupForCycle(ctx context.Context, policy retention.Policy, evaluatedAt time.Time, cycleID string, maxOriginalBytes int64) ([]retention.RawExport, error) {
+	highWater, err := store.retentionCycleHighWater(ctx, cycleID)
+	if err != nil || highWater == 0 {
+		return nil, err
+	}
+	if maxOriginalBytes <= 0 {
+		maxOriginalBytes = retention.MaxSegmentOriginalBytes
+	}
+	return store.eligibleActiveExports(ctx, policy, evaluatedAt, highWater, maxOriginalBytes)
+}
+
+func (store *Store) retentionCycleHighWater(ctx context.Context, cycleID string) (int64, error) {
 	var highWater int64
 	if err := store.readDB.QueryRowContext(ctx, `SELECT COALESCE(cohort_max_export_id, 0) FROM retention_cycles WHERE id = ? AND status = 'running'`, cycleID).Scan(&highWater); err != nil {
-		return nil, fmt.Errorf("read retention cycle cohort boundary: %w", err)
+		return 0, fmt.Errorf("read retention cycle cohort boundary: %w", err)
 	}
-	if highWater == 0 {
-		return nil, nil
-	}
-	return store.eligibleActiveExports(ctx, policy, evaluatedAt, highWater)
+	return highWater, nil
 }
 
-func (store *Store) eligibleActiveExports(ctx context.Context, policy retention.Policy, evaluatedAt time.Time, highWater int64) ([]retention.RawExport, error) {
+func (store *Store) eligibleActiveExports(ctx context.Context, policy retention.Policy, evaluatedAt time.Time, highWater, maxOriginalBytes int64) ([]retention.RawExport, error) {
 	if !policy.Enabled {
 		return nil, nil
 	}
-	cutoff := evaluatedAt.UTC().Add(-policy.ArchiveAfter.Duration())
-	highWaterClause := ""
-	arguments := []any{formatTime(cutoff), formatTime(evaluatedAt)}
-	if highWater > 0 {
-		highWaterClause = " AND r.id <= ?"
-		arguments = append(arguments, highWater)
-	}
-	rows, err := store.readDB.QueryContext(ctx, `SELECT e.id, e.received_at, e.signal, e.transport,
+	rows, err := store.queryEligibleActiveExports(ctx, policy, evaluatedAt, highWater, `e.id, e.received_at, e.signal, e.transport,
  e.payload_protobuf, e.payload_codec, e.payload_sha256, e.payload_occurrence, e.payload_size,
  e.source, e.normalizer_version, e.normalization_status, e.normalization_error,
- e.harness_receipt_state, e.harness_scope, e.harness_fingerprint, e.harness_label
-FROM otlp_exports e JOIN retained_exports r ON r.id = e.id
-WHERE r.state = 'active' AND r.received_at <= ? AND (r.hold_until IS NULL OR r.hold_until <= ?)
-  `+highWaterClause+`
-  AND NOT EXISTS (SELECT 1 FROM retention_export_authorities a WHERE a.export_id = r.id)
-ORDER BY r.received_at, r.id`, arguments...)
+ e.harness_receipt_state, e.harness_scope, e.harness_fingerprint, e.harness_label`)
 	if err != nil {
 		return nil, fmt.Errorf("select archive-eligible exports: %w", err)
 	}
 	defer rows.Close()
 	var exports []retention.RawExport
+	var boundary retention.ArchiveGroupBoundary
 	for rows.Next() {
 		var value retention.RawExport
 		var receivedText, codecText, hashText string
@@ -135,6 +175,9 @@ ORDER BY r.received_at, r.id`, arguments...)
 		if err != nil {
 			return nil, fmt.Errorf("parse retained export receive time: %w", err)
 		}
+		if maxOriginalBytes > 0 && !boundary.TryInclude(value.ReceivedAt, int64(originalSize), maxOriginalBytes) {
+			break
+		}
 		hashBytes, err := hex.DecodeString(hashText)
 		if err != nil || len(hashBytes) != sha256.Size {
 			return nil, fmt.Errorf("decode retained export %d digest", value.ID)
@@ -148,6 +191,22 @@ ORDER BY r.received_at, r.id`, arguments...)
 		exports = append(exports, value)
 	}
 	return exports, rows.Err()
+}
+
+func (store *Store) queryEligibleActiveExports(ctx context.Context, policy retention.Policy, evaluatedAt time.Time, highWater int64, columns string) (*sql.Rows, error) {
+	cutoff := evaluatedAt.UTC().Add(-policy.ArchiveAfter.Duration())
+	highWaterClause := ""
+	arguments := []any{formatTime(cutoff), formatTime(evaluatedAt)}
+	if highWater > 0 {
+		highWaterClause = " AND r.id <= ?"
+		arguments = append(arguments, highWater)
+	}
+	return store.readDB.QueryContext(ctx, `SELECT `+columns+`
+FROM otlp_exports e JOIN retained_exports r ON r.id = e.id
+WHERE r.state = 'active' AND r.received_at <= ? AND (r.hold_until IS NULL OR r.hold_until <= ?)
+  `+highWaterClause+`
+  AND NOT EXISTS (SELECT 1 FROM retention_export_authorities a WHERE a.export_id = r.id)
+ORDER BY r.received_at, r.id`, arguments...)
 }
 
 func (store *Store) ClaimArchive(ctx context.Context, exports []retention.RawExport, policy retention.Policy, evaluatedAt time.Time, cycleID string) (retention.ArchiveClaim, error) {

@@ -46,6 +46,26 @@ func TestSegmentRoundTripPreservesRawExportsAndUsesWholeStreamCompression(t *tes
 	}
 }
 
+func TestCandidateVerificationReturnsMetadataWithoutHydratedExports(t *testing.T) {
+	ctx := context.Background()
+	store := New(t.TempDir())
+	exports := []Export{
+		{ID: 1, PayloadOccurrence: 1, ReceivedAt: time.Now().UTC(), Signal: "logs", Transport: "grpc", Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "projected", HarnessState: "unreported", Protobuf: bytes.Repeat([]byte("payload"), 128)},
+		{ID: 2, PayloadOccurrence: 2, ReceivedAt: time.Now().UTC().Add(time.Second), Signal: "logs", Transport: "grpc", Source: "unknown", NormalizerVersion: 1, NormalizationStatus: "projected", HarnessState: "unreported", Protobuf: bytes.Repeat([]byte("payload"), 128)},
+	}
+	installed, err := store.BuildWithIncarnation(ctx, exports, "memory-bound")
+	if err != nil {
+		t.Fatal(err)
+	}
+	verified, err := verifyCandidateFile(ctx, installed.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(verified.Exports) != 0 {
+		t.Fatalf("candidate verification retained %d hydrated exports", len(verified.Exports))
+	}
+}
+
 func TestWholeSegmentCompressionBeatsIndependentPayloadCompressionForSimilarExports(t *testing.T) {
 	store := New(t.TempDir())
 	at := time.Date(2026, 9, 10, 1, 0, 0, 0, time.UTC)
