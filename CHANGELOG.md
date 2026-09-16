@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.2](https://github.com/kotokumu/agentmetry/compare/v1.20.1...v1.20.2) (2026-09-16)
+
+
+### Bug Fixes
+
+* **retention:** bound archive maintenance memory ([#106](https://github.com/kotokumu/agentmetry/issues/106)) ([064a40c](https://github.com/kotokumu/agentmetry/commit/064a40ce0780e04b9c26a9b73a3550fe93ae042a))
+
 ## [1.20.1](https://github.com/kotokumu/agentmetry/compare/v1.20.0...v1.20.1) (2026-09-13)
 
 
