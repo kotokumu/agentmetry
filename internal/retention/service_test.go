@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -11,17 +12,153 @@ import (
 	"github.com/kotokumu/agentmetry/sourceplugin"
 )
 
-func TestPlanSegmentsGroupsByUTCDateAndOriginalByteBound(t *testing.T) {
-	at := time.Date(2026, 9, 10, 23, 59, 0, 0, time.UTC)
-	exports := []RawExport{
-		{ID: 1, ReceivedAt: at, Protobuf: make([]byte, 4)},
-		{ID: 2, ReceivedAt: at.Add(time.Minute), Protobuf: make([]byte, 4)},
-		{ID: 3, ReceivedAt: at.Add(2 * time.Minute), Protobuf: make([]byte, 5)},
-		{ID: 4, ReceivedAt: at.Add(3 * time.Minute), Protobuf: make([]byte, 5)},
+func TestArchiveGroupBoundaryUsesUTCDateAndOriginalByteBound(t *testing.T) {
+	at := time.Date(2026, 9, 10, 23, 59, 0, 0, time.FixedZone("west", -7*60*60))
+	for _, test := range []struct {
+		name    string
+		firstAt time.Time
+		first   int64
+		nextAt  time.Time
+		next    int64
+		limit   int64
+		want    bool
+	}{
+		{name: "exact bound remains in the group", firstAt: at, first: 4, nextAt: at.Add(time.Minute), next: 6, limit: 10, want: true},
+		{name: "overflow starts the next group", firstAt: at, first: 4, nextAt: at.Add(time.Minute), next: 7, limit: 10},
+		{name: "UTC date starts the next group", firstAt: at, first: 4, nextAt: at.Add(18 * time.Hour), next: 1, limit: 10},
+		{name: "oversized first export is admitted alone", firstAt: at, first: 11, nextAt: at.Add(time.Minute), next: 1, limit: 10},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var boundary ArchiveGroupBoundary
+			if !boundary.TryInclude(test.firstAt, test.first, test.limit) {
+				t.Fatal("empty group rejected its first export")
+			}
+			if got := boundary.TryInclude(test.nextAt, test.next, test.limit); got != test.want {
+				t.Fatalf("TryInclude()=%v, want %v", got, test.want)
+			}
+		})
 	}
-	groups := PlanSegments(exports, 10)
-	if len(groups) != 3 || len(groups[0]) != 1 || len(groups[1]) != 2 || len(groups[2]) != 1 {
-		t.Fatalf("unexpected segment plan: %#v", groups)
+}
+
+type boundedMaintenanceRepository struct {
+	Repository
+	groups           [][]RawExport
+	next             int
+	planned          int
+	planningComplete bool
+	groupOutstanding bool
+	selectionCalls   int
+	completionErr    error
+}
+
+func (*boundedMaintenanceRepository) BeginRetentionCycle(context.Context, time.Time) (string, error) {
+	return "bounded-cycle", nil
+}
+
+func (*boundedMaintenanceRepository) RetentionPolicy(context.Context) (Policy, time.Time, error) {
+	policy, _ := NewPolicy(1, 30, 1)
+	return policy, time.Time{}, nil
+}
+
+func (*boundedMaintenanceRepository) ResumeRetentionDeletions(context.Context) error { return nil }
+
+func (*boundedMaintenanceRepository) EligibleDeletionSegmentsForCycle(context.Context, Policy, time.Time, string) ([]Segment, error) {
+	return nil, nil
+}
+
+func (repository *boundedMaintenanceRepository) CountArchiveGroupsForCycle(context.Context, Policy, time.Time, string, int64) (int, error) {
+	return len(repository.groups), nil
+}
+
+func (repository *boundedMaintenanceRepository) MarkRetentionCyclePlanned(_ context.Context, _ string, planned int) error {
+	repository.planned = planned
+	repository.planningComplete = true
+	return nil
+}
+
+func (repository *boundedMaintenanceRepository) NextArchiveGroupForCycle(context.Context, Policy, time.Time, string, int64) ([]RawExport, error) {
+	repository.selectionCalls++
+	if !repository.planningComplete {
+		return nil, errors.New("selected before planning completed")
+	}
+	if repository.groupOutstanding {
+		return nil, errors.New("selected while prior group remained unresolved")
+	}
+	if repository.next >= len(repository.groups) {
+		return nil, nil
+	}
+	repository.groupOutstanding = true
+	return repository.groups[repository.next], nil
+}
+
+func (repository *boundedMaintenanceRepository) ClaimArchive(_ context.Context, exports []RawExport, _ Policy, _ time.Time, _ string) (ArchiveClaim, error) {
+	if !repository.groupOutstanding || len(exports) == 0 {
+		return ArchiveClaim{}, errors.New("claimed without one selected group")
+	}
+	return ArchiveClaim{OperationID: fmt.Sprintf("archive-%d", repository.next+1), Exports: exports}, nil
+}
+
+func (*boundedMaintenanceRepository) RetentionCapacity(context.Context, time.Time) (CapacityReport, error) {
+	return CapacityReport{}, nil
+}
+
+func (repository *boundedMaintenanceRepository) PublishArchive(context.Context, ArchivePublication) error {
+	if !repository.groupOutstanding {
+		return errors.New("published without selected group")
+	}
+	repository.groupOutstanding = false
+	repository.next++
+	return nil
+}
+
+func (repository *boundedMaintenanceRepository) CompleteRetentionCycle(_ context.Context, _ string, cycleErr error) error {
+	repository.completionErr = cycleErr
+	return nil
+}
+
+type boundedArchiveStore struct{ SegmentStore }
+
+func (*boundedArchiveStore) BuildWithIncarnation(_ context.Context, exports []RawExport, incarnation string) (ArchiveInstall, error) {
+	return ArchiveInstall{SegmentID: incarnation, Path: incarnation + ".tar.zst", OriginalBytes: int64(len(exports)), StoredBytes: 1, ExportCount: len(exports)}, nil
+}
+
+func TestMaintenancePlansBeforeProcessingOneArchiveGroupAtATime(t *testing.T) {
+	repository := &boundedMaintenanceRepository{groups: [][]RawExport{
+		{{ID: 1, ReceivedAt: time.Now(), Protobuf: []byte{1}}},
+		{{ID: 2, ReceivedAt: time.Now(), Protobuf: []byte{2}}},
+	}}
+	service := NewServiceWithReplayer(repository, &boundedArchiveStore{}, nil, sourceplugin.NewRegistry(), time.Now)
+
+	if err := service.RunMaintenance(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.planned != 2 || repository.next != 2 || repository.selectionCalls != 2 || repository.completionErr != nil {
+		t.Fatalf("planned=%d published=%d selections=%d completion=%v", repository.planned, repository.next, repository.selectionCalls, repository.completionErr)
+	}
+}
+
+func TestMaintenanceFailsWhenPlannedArchiveGroupIsMissing(t *testing.T) {
+	repository := &boundedMaintenanceRepository{groups: [][]RawExport{nil}}
+	service := NewServiceWithReplayer(repository, &boundedArchiveStore{}, nil, sourceplugin.NewRegistry(), time.Now)
+
+	err := service.RunMaintenance(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "planned archive group 1 is unavailable") {
+		t.Fatalf("RunMaintenance() error=%v", err)
+	}
+	if repository.next != 0 || repository.completionErr == nil {
+		t.Fatalf("published=%d completion=%v", repository.next, repository.completionErr)
+	}
+}
+
+func TestMaintenanceCompletesAnEmptyPlanWithoutSelecting(t *testing.T) {
+	repository := &boundedMaintenanceRepository{}
+	service := NewServiceWithReplayer(repository, &boundedArchiveStore{}, nil, sourceplugin.NewRegistry(), time.Now)
+
+	if err := service.RunMaintenance(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if repository.planned != 0 || repository.selectionCalls != 0 || repository.completionErr != nil {
+		t.Fatalf("planned=%d selections=%d completion=%v", repository.planned, repository.selectionCalls, repository.completionErr)
 	}
 }
 
@@ -168,7 +305,10 @@ func (*failureThenSuccessRepository) MarkRetentionCyclePlanned(context.Context, 
 func (*failureThenSuccessRepository) EligibleDeletionSegmentsForCycle(context.Context, Policy, time.Time, string) ([]Segment, error) {
 	return nil, nil
 }
-func (*failureThenSuccessRepository) EligibleActiveExportsForCycle(context.Context, Policy, time.Time, string) ([]RawExport, error) {
+func (*failureThenSuccessRepository) CountArchiveGroupsForCycle(context.Context, Policy, time.Time, string, int64) (int, error) {
+	return 0, nil
+}
+func (*failureThenSuccessRepository) NextArchiveGroupForCycle(context.Context, Policy, time.Time, string, int64) ([]RawExport, error) {
 	return nil, nil
 }
 
@@ -194,7 +334,10 @@ func (*cadenceRepository) EligibleDeletionSegmentsForCycle(ctx context.Context, 
 	return nil, ctx.Err()
 }
 
-func (*cadenceRepository) EligibleActiveExportsForCycle(context.Context, Policy, time.Time, string) ([]RawExport, error) {
+func (*cadenceRepository) CountArchiveGroupsForCycle(context.Context, Policy, time.Time, string, int64) (int, error) {
+	return 0, nil
+}
+func (*cadenceRepository) NextArchiveGroupForCycle(context.Context, Policy, time.Time, string, int64) ([]RawExport, error) {
 	return nil, nil
 }
 

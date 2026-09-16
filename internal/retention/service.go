@@ -21,7 +21,13 @@ type PolicyRepository interface {
 }
 
 type ArchiveRepository interface {
-	EligibleActiveExportsForCycle(context.Context, Policy, time.Time, string) ([]RawExport, error)
+	// CountArchiveGroupsForCycle plans from metadata only. It must not decode or
+	// retain raw payloads, and it must use the cycle's fixed high-water mark.
+	CountArchiveGroupsForCycle(context.Context, Policy, time.Time, string, int64) (int, error)
+	// NextArchiveGroupForCycle returns the first remaining legal group in the
+	// fixed cohort. Repeating it before successful publication returns the same
+	// group; publication advances selection by moving that group out of Active.
+	NextArchiveGroupForCycle(context.Context, Policy, time.Time, string, int64) ([]RawExport, error)
 	ClaimArchive(context.Context, []RawExport, Policy, time.Time, string) (ArchiveClaim, error)
 	FailArchive(context.Context, string, error, time.Time) error
 	PublishArchive(context.Context, ArchivePublication) error
@@ -182,47 +188,15 @@ func (service *Service) runMaintenance(ctx context.Context, evaluatedAt time.Tim
 	if err != nil {
 		return err
 	}
-	exports, err := service.repository.EligibleActiveExportsForCycle(ctx, policy, evaluatedAt, cycleID)
+	archiveGroups, err := service.repository.CountArchiveGroupsForCycle(ctx, policy, evaluatedAt, cycleID, MaxSegmentOriginalBytes)
 	if err != nil {
 		return err
 	}
-	archiveGroups := PlanSegments(exports, MaxSegmentOriginalBytes)
-	if err := service.repository.MarkRetentionCyclePlanned(ctx, cycleID, len(archiveGroups)+len(deletionSegments)); err != nil {
+	if err := service.repository.MarkRetentionCyclePlanned(ctx, cycleID, archiveGroups+len(deletionSegments)); err != nil {
 		return err
 	}
-	for _, group := range archiveGroups {
-		claim, err := service.repository.ClaimArchive(ctx, group, policy, evaluatedAt, cycleID)
-		if err != nil {
-			return err
-		}
-		group = claim.Exports
-		capacity, err := service.repository.RetentionCapacity(ctx, evaluatedAt)
-		if err != nil {
-			_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
-			return err
-		}
-		var candidateBytes int64
-		for _, exported := range group {
-			candidateBytes += int64(len(exported.Protobuf))
-		}
-		archivePeakBytes := candidateBytes * 2
-		if capacity.FilesystemAvailable && capacity.FilesystemFreeBytes < archivePeakBytes {
-			err := fmt.Errorf("%w: archive candidate needs up to %d bytes, have %d", ErrInsufficientCapacity, archivePeakBytes, capacity.FilesystemFreeBytes)
-			_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
-			return err
-		}
-		installed, err := service.archives.BuildWithIncarnation(ctx, group, cycleID)
-		if err != nil {
-			_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
-			return err
-		}
-		publication := ArchivePublication{OperationID: claim.OperationID, CycleID: cycleID, SegmentID: installed.SegmentID, FileName: installed.Path,
-			FileSHA256: installed.FileSHA256, MembershipSHA256: installed.MembershipSHA256,
-			StoredBytes: installed.StoredBytes, OriginalBytes: installed.OriginalBytes, Exports: group,
-			EvaluatedAt: evaluatedAt, PolicyRevision: policy.Revision}
-		if err := service.repository.PublishArchive(ctx, publication); err != nil {
-			_ = service.archives.Remove(installed.SegmentID)
-			_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
+	for index := 0; index < archiveGroups; index++ {
+		if err := service.archiveNextGroup(ctx, policy, evaluatedAt, cycleID, index); err != nil {
 			return err
 		}
 	}
@@ -239,31 +213,74 @@ func (service *Service) runMaintenance(ctx context.Context, evaluatedAt time.Tim
 	return nil
 }
 
-func PlanSegments(exports []RawExport, maxOriginalBytes int64) [][]RawExport {
-	if maxOriginalBytes <= 0 {
-		maxOriginalBytes = MaxSegmentOriginalBytes
+// archiveNextGroup owns every hydrated payload reference for one archive
+// group. Returning before the next selection makes the working-set lifetime
+// explicit and prevents groups from accumulating across the cycle.
+func (service *Service) archiveNextGroup(ctx context.Context, policy Policy, evaluatedAt time.Time, cycleID string, index int) error {
+	group, err := service.repository.NextArchiveGroupForCycle(ctx, policy, evaluatedAt, cycleID, MaxSegmentOriginalBytes)
+	if err != nil {
+		return err
 	}
-	var result [][]RawExport
-	var current []RawExport
-	var currentDate string
-	var currentBytes int64
-	for _, exported := range exports {
-		date := exported.ReceivedAt.UTC().Format("2006-01-02")
-		size := int64(len(exported.Protobuf))
-		if len(current) > 0 && (date != currentDate || currentBytes+size > maxOriginalBytes) {
-			result = append(result, current)
-			current, currentBytes = nil, 0
-		}
-		if len(current) == 0 {
-			currentDate = date
-		}
-		current = append(current, exported)
-		currentBytes += size
+	if len(group) == 0 {
+		return fmt.Errorf("planned archive group %d is unavailable", index+1)
 	}
-	if len(current) > 0 {
-		result = append(result, current)
+	claim, err := service.repository.ClaimArchive(ctx, group, policy, evaluatedAt, cycleID)
+	if err != nil {
+		return err
 	}
-	return result
+	group = claim.Exports
+	capacity, err := service.repository.RetentionCapacity(ctx, evaluatedAt)
+	if err != nil {
+		_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
+		return err
+	}
+	var candidateBytes int64
+	for _, exported := range group {
+		candidateBytes += int64(len(exported.Protobuf))
+	}
+	archivePeakBytes := candidateBytes * 2
+	if capacity.FilesystemAvailable && capacity.FilesystemFreeBytes < archivePeakBytes {
+		err := fmt.Errorf("%w: archive candidate needs up to %d bytes, have %d", ErrInsufficientCapacity, archivePeakBytes, capacity.FilesystemFreeBytes)
+		_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
+		return err
+	}
+	installed, err := service.archives.BuildWithIncarnation(ctx, group, cycleID)
+	if err != nil {
+		_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
+		return err
+	}
+	publication := ArchivePublication{OperationID: claim.OperationID, CycleID: cycleID, SegmentID: installed.SegmentID, FileName: installed.Path,
+		FileSHA256: installed.FileSHA256, MembershipSHA256: installed.MembershipSHA256,
+		StoredBytes: installed.StoredBytes, OriginalBytes: installed.OriginalBytes, Exports: group,
+		EvaluatedAt: evaluatedAt, PolicyRevision: policy.Revision}
+	if err := service.repository.PublishArchive(ctx, publication); err != nil {
+		_ = service.archives.Remove(installed.SegmentID)
+		_ = service.repository.FailArchive(context.Background(), claim.OperationID, err, service.now().UTC())
+		return err
+	}
+	return nil
+}
+
+// ArchiveGroupBoundary is the single owner of archive segment membership
+// boundaries used by metadata planning and payload selection.
+type ArchiveGroupBoundary struct {
+	receiveDate   string
+	originalBytes int64
+	exports       int
+}
+
+func (boundary *ArchiveGroupBoundary) TryInclude(receivedAt time.Time, originalBytes, maxOriginalBytes int64) bool {
+	if originalBytes < 0 || maxOriginalBytes <= 0 {
+		return false
+	}
+	receiveDate := receivedAt.UTC().Format("2006-01-02")
+	if boundary.exports > 0 && (receiveDate != boundary.receiveDate || boundary.originalBytes+originalBytes > maxOriginalBytes) {
+		return false
+	}
+	boundary.receiveDate = receiveDate
+	boundary.originalBytes += originalBytes
+	boundary.exports++
+	return true
 }
 
 func (service *Service) Restore(ctx context.Context, scope RestoreScope, hold Hold) error {

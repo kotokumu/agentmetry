@@ -27,7 +27,7 @@ import (
 
 const (
 	FormatVersion           = 1
-	MaxSegmentOriginalBytes = 256 << 20
+	MaxSegmentOriginalBytes = retention.MaxSegmentOriginalBytes
 )
 
 var ErrInvalidSegment = retention.ErrInvalidArchive
@@ -232,7 +232,7 @@ func (store *Store) BuildWithIncarnation(ctx context.Context, exports []Export, 
 	if err := candidate.Close(); err != nil {
 		return Installed{}, fmt.Errorf("close archive candidate: %w", err)
 	}
-	verification, err := verifyFile(ctx, candidatePath)
+	verification, err := verifyCandidateFile(ctx, candidatePath)
 	if err != nil {
 		return Installed{}, err
 	}
@@ -329,7 +329,7 @@ func (store *Store) OpenVerified(ctx context.Context, segmentID string) (retenti
 	if !validSegmentID(segmentID) {
 		return retention.VerifiedArchive{}, fmt.Errorf("%w: invalid segment identity", ErrInvalidSegment)
 	}
-	verified, err := verifyFile(ctx, filepath.Join(store.directory, segmentID+".tar.zst"))
+	verified, err := openVerifiedFile(ctx, filepath.Join(store.directory, segmentID+".tar.zst"))
 	if err != nil {
 		return retention.VerifiedArchive{}, err
 	}
@@ -356,7 +356,15 @@ func (store *Store) Remove(segmentID string) error {
 	return syncDirectory(store.directory)
 }
 
-func verifyFile(ctx context.Context, path string) (verifiedFile, error) {
+func verifyCandidateFile(ctx context.Context, path string) (verifiedFile, error) {
+	return verifyFile(ctx, path, false)
+}
+
+func openVerifiedFile(ctx context.Context, path string) (verifiedFile, error) {
+	return verifyFile(ctx, path, true)
+}
+
+func verifyFile(ctx context.Context, path string, retainExports bool) (verifiedFile, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return verifiedFile{}, fmt.Errorf("%w: open archive segment: %v", ErrPayloadCorrupt, err)
@@ -401,9 +409,15 @@ func verifyFile(ctx context.Context, path string) (verifiedFile, error) {
 	if hex.EncodeToString(segmentHash[:]) != manifest.SegmentID {
 		return verifiedFile{}, fmt.Errorf("%w: segment identity mismatch", ErrMetadataUnverifiable)
 	}
-	exports := make([]Export, len(manifest.Members))
+	var exports []Export
+	if retainExports {
+		exports = make([]Export, len(manifest.Members))
+	}
 	var totalOriginal int64
 	for index, member := range manifest.Members {
+		if err := ctx.Err(); err != nil {
+			return verifiedFile{}, err
+		}
 		if member.Size < 0 || member.Size > journal.MaxPayloadBytes || member.Entry != "exports/"+strconv.FormatInt(member.ID, 10)+".pb" {
 			return verifiedFile{}, fmt.Errorf("%w: invalid member framing", ErrMetadataUnverifiable)
 		}
@@ -415,24 +429,34 @@ func verifyFile(ctx context.Context, path string) (verifiedFile, error) {
 		if err != nil || header.Name != member.Entry || header.Size != member.Size {
 			return verifiedFile{}, fmt.Errorf("%w: member order or length mismatch", ErrMetadataUnverifiable)
 		}
-		payload, err := io.ReadAll(io.LimitReader(tarReader, member.Size+1))
-		if err != nil || int64(len(payload)) != member.Size {
-			return verifiedFile{}, fmt.Errorf("%w: incomplete member %d", ErrPayloadCorrupt, member.ID)
+		memberHasher := sha256.New()
+		var payload []byte
+		if retainExports {
+			payload, err = io.ReadAll(io.TeeReader(io.LimitReader(tarReader, member.Size+1), memberHasher))
+			if err != nil || int64(len(payload)) != member.Size {
+				return verifiedFile{}, fmt.Errorf("%w: incomplete member %d", ErrPayloadCorrupt, member.ID)
+			}
+		} else {
+			written, copyErr := io.CopyN(memberHasher, tarReader, member.Size)
+			if copyErr != nil || written != member.Size {
+				return verifiedFile{}, fmt.Errorf("%w: incomplete member %d", ErrPayloadCorrupt, member.ID)
+			}
 		}
-		hash := sha256.Sum256(payload)
-		if hex.EncodeToString(hash[:]) != member.SHA256 {
+		if hex.EncodeToString(memberHasher.Sum(nil)) != member.SHA256 {
 			return verifiedFile{}, fmt.Errorf("%w: member %d digest mismatch", ErrPayloadCorrupt, member.ID)
 		}
 		receivedAt, err := time.Parse(time.RFC3339Nano, member.ReceivedAt)
 		if err != nil {
 			return verifiedFile{}, fmt.Errorf("%w: member %d receive time", ErrMetadataUnverifiable, member.ID)
 		}
-		exports[index] = Export{ID: member.ID, PayloadOccurrence: member.PayloadOccurrence, ReceivedAt: receivedAt,
-			Signal: member.Signal, Transport: member.Transport, Source: member.Source,
-			NormalizerVersion: member.NormalizerVersion, NormalizationStatus: member.NormalizationStatus,
-			NormalizationError: member.NormalizationError, HarnessState: member.HarnessState,
-			HarnessScope: member.HarnessScope, HarnessFingerprint: member.HarnessFingerprint,
-			HarnessLabel: member.HarnessLabel, Protobuf: payload}
+		if retainExports {
+			exports[index] = Export{ID: member.ID, PayloadOccurrence: member.PayloadOccurrence, ReceivedAt: receivedAt,
+				Signal: member.Signal, Transport: member.Transport, Source: member.Source,
+				NormalizerVersion: member.NormalizerVersion, NormalizationStatus: member.NormalizationStatus,
+				NormalizationError: member.NormalizationError, HarnessState: member.HarnessState,
+				HarnessScope: member.HarnessScope, HarnessFingerprint: member.HarnessFingerprint,
+				HarnessLabel: member.HarnessLabel, Protobuf: payload}
+		}
 	}
 	if trailing, err := tarReader.Next(); err != io.EOF || trailing != nil {
 		return verifiedFile{}, fmt.Errorf("%w: unexpected trailing archive entry", ErrMetadataUnverifiable)
